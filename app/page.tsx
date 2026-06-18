@@ -1,6 +1,7 @@
 import { loadDashboard } from "@/lib/services/dashboard";
 import { tierForTask, tierForOpportunity } from "@/lib/briefing";
 import { AddTaskForm, TaskActions } from "@/components/tasks";
+import { AddObligationForm, ObligationActions } from "@/components/obligations";
 import {
   Badge,
   Card,
@@ -34,6 +35,10 @@ export default async function DashboardPage() {
   const exploreTasks = openTasks.filter((t) => tierForTask(t) === "explore");
   const actOpps = d.opportunities.filter((o) => tierForOpportunity(o) === "act_today");
   const awareOpps = d.opportunities.filter((o) => tierForOpportunity(o) === "be_aware");
+  // Only still-open obligations stay on the board.
+  const openObligations = d.obligations.filter(
+    (o) => o.status !== "done" && o.status !== "cancelled" && o.status !== "missed",
+  );
 
   return (
     <div className="shell">
@@ -44,11 +49,17 @@ export default async function DashboardPage() {
         <span className="date num">{longDate}</span>
       </header>
 
-      {d.tasksLive ? (
+      {d.tasksLive || d.obligationsLive ? (
         <div className="mockbanner">
-          <b>Tasks are live</b> from your database — add, complete, and delete
-          below. Obligations, finances, signals, and the rest still show mock
-          data until those verticals are wired.
+          <b>
+            {[d.tasksLive && "Tasks", d.obligationsLive && "obligations"]
+              .filter(Boolean)
+              .join(" and ")}{" "}
+            are live
+          </b>{" "}
+          from your database — add, complete, and delete below. Finances,
+          signals, and the rest still show mock data until those verticals are
+          wired.
         </div>
       ) : (
         <div className="mockbanner">
@@ -133,8 +144,9 @@ export default async function DashboardPage() {
         </div>
         <div className="grid cols-3">
           <Card title="Upcoming obligations" edge="aware" className="span-2">
-            {d.obligations.length === 0 && <Empty>Calendar is clear.</Empty>}
-            {d.obligations.map((o) => (
+            {d.obligationsLive && <AddObligationForm />}
+            {openObligations.length === 0 && <Empty>Calendar is clear.</Empty>}
+            {openObligations.map((o) => (
               <div className="row" key={o.id}>
                 <div>
                   <div className="main">{o.title}</div>
@@ -143,9 +155,12 @@ export default async function DashboardPage() {
                     {o.location ? ` · ${o.location}` : ""}
                   </div>
                 </div>
-                <div className="right num">
-                  {shortDate(o.startDate)}
-                  {o.startTime ? ` · ${o.startTime}` : ""}
+                <div className="right">
+                  <span className="num">
+                    {shortDate(o.startDate)}
+                    {o.startTime ? ` · ${o.startTime}` : ""}
+                  </span>
+                  {d.obligationsLive && <ObligationActions obligation={o} />}
                 </div>
               </div>
             ))}
@@ -291,7 +306,7 @@ export default async function DashboardPage() {
         <div className="grid" style={{ marginTop: "var(--gap)" }}>
           <Card title="Next seven days" edge="explore" className="span-2">
             <NextSevenDays
-              obligations={d.obligations}
+              obligations={openObligations}
               tasks={openTasks.map((t) => ({ date: t.dueDate }))}
             />
           </Card>

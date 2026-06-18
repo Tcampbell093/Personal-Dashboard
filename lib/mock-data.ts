@@ -72,6 +72,7 @@ export const mockObligations: ObligationView[] = [
     startTime: "14:00",
     location: "Conference Room B",
     importance: "high",
+    status: "upcoming",
   },
   {
     id: 2,
@@ -81,6 +82,7 @@ export const mockObligations: ObligationView[] = [
     startTime: null,
     location: null,
     importance: "high",
+    status: "upcoming",
   },
   {
     id: 3,
@@ -90,6 +92,7 @@ export const mockObligations: ObligationView[] = [
     startTime: "10:00",
     location: "Bridgewater Dental",
     importance: "medium",
+    status: "upcoming",
   },
 ];
 

@@ -40,11 +40,13 @@ export function topTask(tasks: TaskView[]): TaskView | null {
   })[0];
 }
 
-/** Nearest upcoming obligation by start date. */
+const OBLIGATION_CLOSED = new Set(["done", "cancelled", "missed"]);
+
+/** Nearest still-open obligation by start date. */
 export function topObligation(obligations: ObligationView[]): ObligationView | null {
-  const upcoming = [...obligations].sort((a, b) =>
-    a.startDate.localeCompare(b.startDate),
-  );
+  const upcoming = obligations
+    .filter((o) => !OBLIGATION_CLOSED.has(o.status))
+    .sort((a, b) => a.startDate.localeCompare(b.startDate));
   return upcoming[0] ?? null;
 }
 
@@ -103,10 +105,13 @@ export function generateBriefing(input: {
   const openTaskCount = input.tasks.filter(
     (t) => t.status !== "completed" && t.status !== "cancelled",
   ).length;
+  const openObligationCount = input.obligations.filter(
+    (o) => !OBLIGATION_CLOSED.has(o.status),
+  ).length;
 
   const summary =
     `${openTaskCount} open ${openTaskCount === 1 ? "task" : "tasks"}, ` +
-    `${input.obligations.length} upcoming ${input.obligations.length === 1 ? "obligation" : "obligations"}` +
+    `${openObligationCount} upcoming ${openObligationCount === 1 ? "obligation" : "obligations"}` +
     (opp ? `, 1 live opportunity worth a look.` : `.`);
 
   return {

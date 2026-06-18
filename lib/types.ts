@@ -24,6 +24,7 @@ export interface ObligationView {
   startTime: string | null;
   location: string | null;
   importance: Priority;
+  status: string;
 }
 
 export interface FinancialOutlook {
@@ -102,6 +103,7 @@ export interface DashboardData {
   jobs: JobView[];
   interest: InterestItemView[];
   usingMockData: boolean;
-  // True once tasks are read from the real database (the rest may still be mock).
+  // True once that section is read from the real database (others may still be mock).
   tasksLive: boolean;
+  obligationsLive: boolean;
 }
