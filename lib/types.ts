@@ -39,6 +39,29 @@ export interface FinancialOutlook {
   due30: number;
 }
 
+export interface AccountView {
+  id: number;
+  name: string;
+  type: string;
+  currentBalance: number;
+}
+
+export interface BillView {
+  id: number;
+  name: string;
+  expectedAmount: number;
+  dueDate: string | null;
+  status: string;
+}
+
+export interface IncomeView {
+  id: number;
+  source: string;
+  expectedAmount: number;
+  payDate: string;
+  isPayday: boolean;
+}
+
 export interface SignalView {
   id: number;
   title: string;
@@ -98,6 +121,9 @@ export interface DashboardData {
   tasks: TaskView[];
   obligations: ObligationView[];
   finances: FinancialOutlook;
+  accounts: AccountView[];
+  bills: BillView[];
+  income: IncomeView[];
   signals: SignalView[];
   opportunities: OpportunityView[];
   jobs: JobView[];
@@ -106,4 +132,5 @@ export interface DashboardData {
   // True once that section is read from the real database (others may still be mock).
   tasksLive: boolean;
   obligationsLive: boolean;
+  financesLive: boolean;
 }

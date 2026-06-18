@@ -2,22 +2,13 @@
  * Mirrors /api/tasks: explicit validation, user resolved server-side. */
 
 import { NextResponse } from "next/server";
-import { createObligation, listObligations } from "@/lib/services/obligations";
+import {
+  createObligation,
+  listObligations,
+  OBLIGATION_TYPES,
+  IMPORTANCE,
+} from "@/lib/services/obligations";
 import { CURRENT_USER_ID } from "@/lib/auth";
-
-export const OBLIGATION_TYPES = [
-  "appointment",
-  "meeting",
-  "work_shift",
-  "renewal",
-  "application_deadline",
-  "payment",
-  "personal_commitment",
-  "event",
-  "other_deadline",
-] as const;
-
-export const IMPORTANCE = ["low", "medium", "high", "critical"] as const;
 
 // "YYYY-MM-DD"
 const isDate = (s: unknown): s is string =>

@@ -472,6 +472,45 @@ a {
   cursor: not-allowed;
 }
 
+/* ----------------------------------------------------- finance manager --- */
+
+.finance-cols {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--gap);
+}
+@media (max-width: 860px) {
+  .finance-cols {
+    grid-template-columns: 1fr;
+  }
+}
+.finance-block {
+  min-width: 0;
+}
+.finance-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.finance-head .num {
+  color: var(--good);
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+/* in the finance lists, let the right column stack value over actions */
+.finance-block .row .right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .card {
     transition: border-color 0.15s ease;

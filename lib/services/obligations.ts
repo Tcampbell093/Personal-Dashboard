@@ -10,6 +10,28 @@ import type { ObligationView } from "@/lib/types";
 export type NewObligation = typeof obligations.$inferInsert;
 export type ObligationRow = typeof obligations.$inferSelect;
 
+/* Validation enums — shared by the API routes. Kept here (not in route.ts) so
+ * route files only export HTTP handlers, as Next.js requires. */
+export const OBLIGATION_TYPES = [
+  "appointment",
+  "meeting",
+  "work_shift",
+  "renewal",
+  "application_deadline",
+  "payment",
+  "personal_commitment",
+  "event",
+  "other_deadline",
+] as const;
+export const IMPORTANCE = ["low", "medium", "high", "critical"] as const;
+export const OBLIGATION_STATUSES = [
+  "upcoming",
+  "in_progress",
+  "done",
+  "missed",
+  "cancelled",
+] as const;
+
 /* Map DB rows -> the UI view model. As with tasks, the Neon HTTP driver returns
  * `date` columns as "YYYY-MM-DD" and `time` as "HH:MM:SS"; trim seconds. */
 export function toObligationViews(rows: ObligationRow[]): ObligationView[] {

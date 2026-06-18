@@ -2,6 +2,7 @@ import { loadDashboard } from "@/lib/services/dashboard";
 import { tierForTask, tierForOpportunity } from "@/lib/briefing";
 import { AddTaskForm, TaskActions } from "@/components/tasks";
 import { AddObligationForm, ObligationActions } from "@/components/obligations";
+import { FinanceManager } from "@/components/finances";
 import {
   Badge,
   Card,
@@ -49,17 +50,20 @@ export default async function DashboardPage() {
         <span className="date num">{longDate}</span>
       </header>
 
-      {d.tasksLive || d.obligationsLive ? (
+      {d.tasksLive || d.obligationsLive || d.financesLive ? (
         <div className="mockbanner">
           <b>
-            {[d.tasksLive && "Tasks", d.obligationsLive && "obligations"]
+            {[
+              d.tasksLive && "Tasks",
+              d.obligationsLive && "obligations",
+              d.financesLive && "finances",
+            ]
               .filter(Boolean)
-              .join(" and ")}{" "}
+              .join(", ")}{" "}
             are live
           </b>{" "}
-          from your database — add, complete, and delete below. Finances,
-          signals, and the rest still show mock data until those verticals are
-          wired.
+          from your database — add and edit below. Signals, opportunities, jobs,
+          and interests still show mock data until those verticals are wired.
         </div>
       ) : (
         <div className="mockbanner">
@@ -250,6 +254,18 @@ export default async function DashboardPage() {
             ))}
           </Card>
         </div>
+
+        {d.financesLive && (
+          <div className="grid" style={{ marginTop: "var(--gap)" }}>
+            <Card title="Manage money" edge="aware" className="span-2">
+              <FinanceManager
+                accounts={d.accounts}
+                bills={d.bills}
+                income={d.income}
+              />
+            </Card>
+          </div>
+        )}
       </section>
 
       {/* =============================== EXPLORE ============================= */}

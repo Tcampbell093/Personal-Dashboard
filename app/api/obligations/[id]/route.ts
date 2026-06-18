@@ -5,12 +5,13 @@ import { NextResponse } from "next/server";
 import {
   updateObligation,
   deleteObligation,
+  OBLIGATION_TYPES,
+  IMPORTANCE,
+  OBLIGATION_STATUSES as STATUSES,
   type NewObligation,
 } from "@/lib/services/obligations";
 import { CURRENT_USER_ID } from "@/lib/auth";
-import { OBLIGATION_TYPES, IMPORTANCE } from "../route";
 
-const STATUSES = ["upcoming", "in_progress", "done", "missed", "cancelled"] as const;
 const isDate = (s: unknown): s is string =>
   typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
 

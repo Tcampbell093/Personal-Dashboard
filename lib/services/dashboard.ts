@@ -8,7 +8,15 @@
  * block below with calls to the service layer (listTasks, listObligations, ...)
  * and the financial calculation in lib/services/finances.ts. */
 
-import type { DashboardData, TaskView, ObligationView } from "@/lib/types";
+import type {
+  DashboardData,
+  TaskView,
+  ObligationView,
+  FinancialOutlook,
+  AccountView,
+  BillView,
+  IncomeView,
+} from "@/lib/types";
 import {
   mockTasks,
   mockObligations,
@@ -22,6 +30,15 @@ import { generateBriefing } from "@/lib/briefing";
 import { getCurrentUserId } from "@/lib/auth";
 import { listTasks, toTaskViews } from "@/lib/services/tasks";
 import { listObligations, toObligationViews } from "@/lib/services/obligations";
+import {
+  computeFinancialOutlook,
+  listAccounts,
+  listBills,
+  listIncome,
+  toAccountViews,
+  toBillViews,
+  toIncomeViews,
+} from "@/lib/services/finances";
 
 export async function loadDashboard(): Promise<DashboardData> {
   // Phase 2: TASKS and OBLIGATIONS are wired to the real database. The rest
@@ -35,6 +52,11 @@ export async function loadDashboard(): Promise<DashboardData> {
   let tasksLive = false;
   let obligations: ObligationView[] = mockObligations;
   let obligationsLive = false;
+  let finances: FinancialOutlook = mockFinances;
+  let accounts: AccountView[] = [];
+  let bills: BillView[] = [];
+  let income: IncomeView[] = [];
+  let financesLive = false;
 
   if (userId !== null) {
     try {
@@ -53,6 +75,17 @@ export async function loadDashboard(): Promise<DashboardData> {
         err,
       );
     }
+    try {
+      [finances, accounts, bills, income] = await Promise.all([
+        computeFinancialOutlook(userId),
+        listAccounts(userId).then(toAccountViews),
+        listBills(userId).then(toBillViews),
+        listIncome(userId).then(toIncomeViews),
+      ]);
+      financesLive = true;
+    } catch (err) {
+      console.error("loadDashboard: finance query failed, using mock finances.", err);
+    }
   }
 
   const briefing = generateBriefing({
@@ -66,7 +99,10 @@ export async function loadDashboard(): Promise<DashboardData> {
     briefing,
     tasks,
     obligations,
-    finances: mockFinances,
+    finances,
+    accounts,
+    bills,
+    income,
     signals: mockSignals,
     opportunities: mockOpportunities,
     jobs: mockJobs,
@@ -75,5 +111,6 @@ export async function loadDashboard(): Promise<DashboardData> {
     usingMockData: true,
     tasksLive,
     obligationsLive,
+    financesLive,
   };
 }
