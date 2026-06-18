@@ -1,0 +1,10 @@
+node_modules
+.next
+out
+.env
+.env.local
+.netlify
+*.log
+.DS_Store
+.drizzle
+.claude

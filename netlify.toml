@@ -1,0 +1,21 @@
+# Netlify configuration for Personal Command Center
+# The official Next.js runtime turns app/api route handlers into Functions automatically.
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# --- Scheduled functions ---------------------------------------------------
+# generate-daily-briefing is committed but its schedule is intentionally
+# DISABLED in Phase 1. To enable later, uncomment the block below.
+# Cron is in UTC. "0 11 * * *" = 11:00 UTC daily (~6-7am US Eastern).
+#
+# [functions."generate-daily-briefing"]
+#   schedule = "0 11 * * *"
+
+[functions]
+  # .mts scheduled functions live here
+  directory = "netlify/functions"

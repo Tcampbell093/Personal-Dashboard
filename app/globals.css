@@ -1,0 +1,394 @@
+/* =============================================================================
+ * Personal Command Center — design system
+ *
+ * Concept: an instrument panel, not a news feed. The page is a triage.
+ * Urgency is encoded by ONE color scale (act=warm / aware=amber / explore=cool)
+ * carried on a left edge marker. Numbers are tabular. Everything else is quiet.
+ * Fonts use system stacks so the build never fetches a remote font.
+ * ========================================================================== */
+
+:root {
+  --ink: #0e1116;
+  --panel: #161b22;
+  --panel-2: #1c232c;
+  --line: #283039;
+  --text: #e6eaf0;
+  --muted: #8b96a6;
+  --muted-dim: #5c6675;
+
+  --act: #f0654a; /* act today / critical / overdue */
+  --aware: #e0a23b; /* be aware / high / soon */
+  --explore: #5b9be3; /* explore / low urgency */
+  --good: #4fb477; /* paid / complete / positive */
+
+  --radius: 10px;
+  --gap: 16px;
+
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.45;
+}
+
+a {
+  color: inherit;
+}
+
+/* numerals everywhere read as aligned data */
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* ---------------------------------------------------------------- shell --- */
+
+.shell {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 28px 24px 80px;
+}
+
+.topbar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+
+.wordmark {
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  font-size: 15px;
+}
+.wordmark .dot {
+  color: var(--act);
+}
+
+.topbar .date {
+  color: var(--muted);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+
+/* hero: the day in one confident line */
+.hero {
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, var(--panel-2), var(--panel));
+  border-radius: var(--radius);
+  padding: 22px 24px;
+  margin-bottom: 28px;
+}
+.hero .eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 10.5px;
+  color: var(--muted-dim);
+  margin-bottom: 10px;
+}
+.hero .line {
+  font-size: 22px;
+  line-height: 1.3;
+  font-weight: 550;
+  letter-spacing: -0.01em;
+}
+.hero .meta {
+  margin-top: 14px;
+  display: flex;
+  gap: 26px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--muted);
+}
+.hero .meta b {
+  color: var(--text);
+  font-weight: 550;
+}
+.hero .warn {
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--act);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* ----------------------------------------------------------------- tier --- */
+
+.tier {
+  margin-bottom: 34px;
+}
+.tier-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.tier-tick {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+.tier-act .tier-tick {
+  background: var(--act);
+}
+.tier-aware .tier-tick {
+  background: var(--aware);
+}
+.tier-explore .tier-tick {
+  background: var(--explore);
+}
+.tier-name {
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.tier-sub {
+  font-size: 12px;
+  color: var(--muted-dim);
+}
+
+/* tiers carry weight: act is densest/brightest, explore is airy/dim */
+.tier-explore {
+  opacity: 0.92;
+}
+
+/* --------------------------------------------------------------- layout --- */
+
+.grid {
+  display: grid;
+  gap: var(--gap);
+  grid-template-columns: repeat(2, 1fr);
+}
+.grid.cols-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+.span-2 {
+  grid-column: span 2;
+}
+
+@media (max-width: 760px) {
+  .grid,
+  .grid.cols-3 {
+    grid-template-columns: 1fr;
+  }
+  .span-2 {
+    grid-column: span 1;
+  }
+}
+
+/* ----------------------------------------------------------------- card --- */
+
+.card {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px 16px 16px 18px;
+  overflow: hidden;
+}
+/* left edge urgency marker — the signature device */
+.card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--line);
+}
+.card.edge-act::before {
+  background: var(--act);
+}
+.card.edge-aware::before {
+  background: var(--aware);
+}
+.card.edge-explore::before {
+  background: var(--explore);
+}
+
+.card-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin: 0 0 12px;
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+}
+.row:first-of-type {
+  border-top: none;
+}
+.row .main {
+  font-size: 14px;
+}
+.row .sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.row .right {
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- badge --- */
+
+.badge {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.badge.act {
+  color: var(--act);
+  border-color: color-mix(in srgb, var(--act) 45%, var(--line));
+}
+.badge.aware {
+  color: var(--aware);
+  border-color: color-mix(in srgb, var(--aware) 45%, var(--line));
+}
+.badge.explore {
+  color: var(--explore);
+  border-color: color-mix(in srgb, var(--explore) 45%, var(--line));
+}
+.badge.good {
+  color: var(--good);
+  border-color: color-mix(in srgb, var(--good) 45%, var(--line));
+}
+
+.mocktag {
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  color: var(--muted-dim);
+  border: 1px dashed var(--muted-dim);
+  border-radius: 4px;
+  padding: 1px 5px;
+  text-transform: uppercase;
+}
+
+/* money figures */
+.figure {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.figure.neg {
+  color: var(--act);
+}
+.figure.pos {
+  color: var(--good);
+}
+.statline {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+.statline:first-child {
+  border-top: none;
+}
+.statline .k {
+  color: var(--muted);
+}
+
+/* next 7 days strip */
+.week {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+}
+.week .day {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 6px;
+  text-align: center;
+}
+.week .dow {
+  font-size: 10px;
+  color: var(--muted-dim);
+  text-transform: uppercase;
+}
+.week .dnum {
+  font-size: 15px;
+  font-weight: 600;
+}
+.week .dot-row {
+  margin-top: 6px;
+  height: 6px;
+  display: flex;
+  gap: 3px;
+  justify-content: center;
+}
+.week .d {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+}
+.week .d.act {
+  background: var(--act);
+}
+.week .d.aware {
+  background: var(--aware);
+}
+.week .d.explore {
+  background: var(--explore);
+}
+
+/* empty state */
+.empty {
+  color: var(--muted-dim);
+  font-size: 13px;
+  padding: 6px 0;
+}
+
+/* mock-data banner */
+.mockbanner {
+  border: 1px dashed var(--muted-dim);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-bottom: 24px;
+}
+.mockbanner b {
+  color: var(--aware);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .card {
+    transition: border-color 0.15s ease;
+  }
+  .card:hover {
+    border-color: var(--muted-dim);
+  }
+}
