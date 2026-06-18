@@ -8,6 +8,8 @@ import { AddSignalForm } from "@/components/signals";
 import { AddOpportunityForm } from "@/components/opportunities";
 import { AddJobForm } from "@/components/jobs";
 import { AddInterestForm } from "@/components/interest";
+import { LogoutButton } from "@/components/logout-button";
+import { isAuthConfigured } from "@/lib/session";
 import {
   Badge,
   Card,
@@ -61,7 +63,10 @@ export default async function DashboardPage() {
         <span className="wordmark">
           Personal Command Center<span className="dot">.</span>
         </span>
-        <span className="date num">{longDate}</span>
+        <span className="topbar-right">
+          <span className="date num">{longDate}</span>
+          {isAuthConfigured() && <LogoutButton />}
+        </span>
       </header>
 
       {(() => {

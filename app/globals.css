@@ -511,6 +511,48 @@ a {
   gap: 2px;
 }
 
+/* --------------------------------------------------------------- auth --- */
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.logout {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.logout:hover:not(:disabled) {
+  border-color: var(--muted-dim);
+  color: var(--text);
+}
+.logout:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.loginwrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.loginbox {
+  width: 100%;
+  max-width: 340px;
+  background: linear-gradient(180deg, var(--panel-2), var(--panel));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 28px 26px;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .card {
     transition: border-color 0.15s ease;
