@@ -16,6 +16,10 @@ import type {
   AccountView,
   BillView,
   IncomeView,
+  SignalView,
+  OpportunityView,
+  JobView,
+  InterestItemView,
 } from "@/lib/types";
 import {
   mockTasks,
@@ -39,6 +43,10 @@ import {
   toBillViews,
   toIncomeViews,
 } from "@/lib/services/finances";
+import { listSignals, toSignalViews } from "@/lib/services/signals";
+import { listOpportunities, toOpportunityViews } from "@/lib/services/opportunities";
+import { listJobs, toJobViews } from "@/lib/services/jobs";
+import { listInterestItems, toInterestViews } from "@/lib/services/interest";
 
 export async function loadDashboard(): Promise<DashboardData> {
   // Phase 2: TASKS and OBLIGATIONS are wired to the real database. The rest
@@ -57,6 +65,14 @@ export async function loadDashboard(): Promise<DashboardData> {
   let bills: BillView[] = [];
   let income: IncomeView[] = [];
   let financesLive = false;
+  let signals: SignalView[] = mockSignals;
+  let signalsLive = false;
+  let opportunities: OpportunityView[] = mockOpportunities;
+  let opportunitiesLive = false;
+  let jobs: JobView[] = mockJobs;
+  let jobsLive = false;
+  let interest: InterestItemView[] = mockInterest;
+  let interestLive = false;
 
   if (userId !== null) {
     try {
@@ -86,14 +102,48 @@ export async function loadDashboard(): Promise<DashboardData> {
     } catch (err) {
       console.error("loadDashboard: finance query failed, using mock finances.", err);
     }
+    try {
+      signals = toSignalViews(await listSignals(userId));
+      signalsLive = true;
+    } catch (err) {
+      console.error("loadDashboard: signal query failed, using mock signals.", err);
+    }
+    try {
+      opportunities = toOpportunityViews(await listOpportunities(userId));
+      opportunitiesLive = true;
+    } catch (err) {
+      console.error("loadDashboard: opportunity query failed, using mock.", err);
+    }
+    try {
+      jobs = toJobViews(await listJobs(userId));
+      jobsLive = true;
+    } catch (err) {
+      console.error("loadDashboard: job query failed, using mock jobs.", err);
+    }
+    try {
+      interest = toInterestViews(await listInterestItems(userId));
+      interestLive = true;
+    } catch (err) {
+      console.error("loadDashboard: interest query failed, using mock.", err);
+    }
   }
 
   const briefing = generateBriefing({
     tasks,
     obligations,
-    opportunities: mockOpportunities,
-    finances: mockFinances,
+    opportunities,
+    finances,
   });
+
+  // Banner shows whenever any vertical is still falling back to mock data.
+  const anyMock =
+    !tasksLive ||
+    !obligationsLive ||
+    !financesLive ||
+    !signalsLive ||
+    !opportunitiesLive ||
+    !jobsLive ||
+    !interestLive;
 
   return {
     briefing,
@@ -103,14 +153,17 @@ export async function loadDashboard(): Promise<DashboardData> {
     accounts,
     bills,
     income,
-    signals: mockSignals,
-    opportunities: mockOpportunities,
-    jobs: mockJobs,
-    interest: mockInterest,
-    // Remaining sections are still mock in this phase.
-    usingMockData: true,
+    signals,
+    opportunities,
+    jobs,
+    interest,
+    usingMockData: anyMock,
     tasksLive,
     obligationsLive,
     financesLive,
+    signalsLive,
+    opportunitiesLive,
+    jobsLive,
+    interestLive,
   };
 }

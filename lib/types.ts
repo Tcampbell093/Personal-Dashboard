@@ -104,6 +104,7 @@ export interface InterestItemView {
   title: string;
   source: string | null;
   relevanceScore: number | null;
+  status: string;
   isMock: boolean;
 }
 
@@ -133,4 +134,8 @@ export interface DashboardData {
   tasksLive: boolean;
   obligationsLive: boolean;
   financesLive: boolean;
+  signalsLive: boolean;
+  opportunitiesLive: boolean;
+  jobsLive: boolean;
+  interestLive: boolean;
 }

@@ -3,6 +3,11 @@ import { tierForTask, tierForOpportunity } from "@/lib/briefing";
 import { AddTaskForm, TaskActions } from "@/components/tasks";
 import { AddObligationForm, ObligationActions } from "@/components/obligations";
 import { FinanceManager } from "@/components/finances";
+import { RowActions } from "@/components/row-actions";
+import { AddSignalForm } from "@/components/signals";
+import { AddOpportunityForm } from "@/components/opportunities";
+import { AddJobForm } from "@/components/jobs";
+import { AddInterestForm } from "@/components/interest";
 import {
   Badge,
   Card,
@@ -34,8 +39,17 @@ export default async function DashboardPage() {
   const actTasks = openTasks.filter((t) => tierForTask(t) === "act_today");
   const awareTasks = openTasks.filter((t) => tierForTask(t) === "be_aware");
   const exploreTasks = openTasks.filter((t) => tierForTask(t) === "explore");
-  const actOpps = d.opportunities.filter((o) => tierForOpportunity(o) === "act_today");
-  const awareOpps = d.opportunities.filter((o) => tierForOpportunity(o) === "be_aware");
+  // Dismissed/expired items drop off the board across the read-mostly verticals.
+  const liveOpps = d.opportunities.filter(
+    (o) => !["dismissed", "expired", "unsuccessful"].includes(o.status),
+  );
+  const actOpps = liveOpps.filter((o) => tierForOpportunity(o) === "act_today");
+  const awareOpps = liveOpps.filter((o) => tierForOpportunity(o) === "be_aware");
+  const liveSignals = d.signals.filter(
+    (s) => !["dismissed", "expired"].includes(s.status),
+  );
+  const liveJobs = d.jobs.filter((j) => !["dismissed", "expired"].includes(j.status));
+  const liveInterest = d.interest.filter((i) => i.status !== "dismissed");
   // Only still-open obligations stay on the board.
   const openObligations = d.obligations.filter(
     (o) => o.status !== "done" && o.status !== "cancelled" && o.status !== "missed",
@@ -50,27 +64,40 @@ export default async function DashboardPage() {
         <span className="date num">{longDate}</span>
       </header>
 
-      {d.tasksLive || d.obligationsLive || d.financesLive ? (
-        <div className="mockbanner">
-          <b>
-            {[
-              d.tasksLive && "Tasks",
-              d.obligationsLive && "obligations",
-              d.financesLive && "finances",
-            ]
-              .filter(Boolean)
-              .join(", ")}{" "}
-            are live
-          </b>{" "}
-          from your database — add and edit below. Signals, opportunities, jobs,
-          and interests still show mock data until those verticals are wired.
-        </div>
-      ) : (
-        <div className="mockbanner">
-          Showing <b>mock data</b>. Nothing here is connected to a database, a
-          calendar, or any external source yet. Connect Neon and seed to go live.
-        </div>
-      )}
+      {(() => {
+        const live = [
+          d.tasksLive && "tasks",
+          d.obligationsLive && "obligations",
+          d.financesLive && "finances",
+          d.signalsLive && "signals",
+          d.opportunitiesLive && "opportunities",
+          d.jobsLive && "jobs",
+          d.interestLive && "interests",
+        ].filter(Boolean);
+        if (live.length === 0) {
+          return (
+            <div className="mockbanner">
+              Showing <b>mock data</b>. Nothing here is connected to a database,
+              a calendar, or any external source yet. Connect Neon and seed to go
+              live.
+            </div>
+          );
+        }
+        if (!d.usingMockData) {
+          return (
+            <div className="mockbanner">
+              <b>Every section is live</b> from your database — add, edit, and
+              dismiss items below. AI/automation stays off until you enable it.
+            </div>
+          );
+        }
+        return (
+          <div className="mockbanner">
+            <b>{live.join(", ")} are live</b> from your database. The remaining
+            sections still show mock data.
+          </div>
+        );
+      })()}
 
       {/* HERO — the day in one line */}
       <section className="hero">
@@ -125,13 +152,14 @@ export default async function DashboardPage() {
             {actOpps.map((o) => (
               <div className="row" key={o.id}>
                 <div>
-                  <div className="main">
-                    {o.title} <MockTag />
-                  </div>
+                  <div className="main">{o.title}</div>
                   <div className="sub">{o.summary}</div>
                 </div>
                 <div className="right">
                   <Badge variant="act">closes {shortDate(o.timeWindowEnd)}</Badge>
+                  {d.opportunitiesLive && (
+                    <RowActions base="/api/opportunities" id={o.id} />
+                  )}
                 </div>
               </div>
             ))}
@@ -198,7 +226,9 @@ export default async function DashboardPage() {
 
         <div className="grid" style={{ marginTop: "var(--gap)" }}>
           <Card title="Local intelligence — signals" edge="aware" className="span-2">
-            {d.signals.map((s) => (
+            {d.signalsLive && <AddSignalForm />}
+            {liveSignals.length === 0 && <Empty>No signals right now.</Empty>}
+            {liveSignals.map((s) => (
               <div className="row" key={s.id}>
                 <div>
                   <div className="main">
@@ -213,12 +243,14 @@ export default async function DashboardPage() {
                   <Badge variant={s.urgencyScore && s.urgencyScore >= 70 ? "act" : "aware"}>
                     {s.eventDate ? shortDate(s.eventDate) : label(s.status)}
                   </Badge>
+                  {d.signalsLive && <RowActions base="/api/signals" id={s.id} />}
                 </div>
               </div>
             ))}
           </Card>
 
           <Card title="This week's opportunities" edge="aware">
+            {d.opportunitiesLive && <AddOpportunityForm />}
             {awareOpps.length === 0 && <Empty>None this week.</Empty>}
             {awareOpps.map((o) => (
               <div className="row" key={o.id}>
@@ -226,8 +258,13 @@ export default async function DashboardPage() {
                   <div className="main">{o.title}</div>
                   <div className="sub">{label(o.category)}</div>
                 </div>
-                <div className="right num">
-                  {o.potentialValue ? money(o.potentialValue) : ""}
+                <div className="right">
+                  <span className="num">
+                    {o.potentialValue ? money(o.potentialValue) : ""}
+                  </span>
+                  {d.opportunitiesLive && (
+                    <RowActions base="/api/opportunities" id={o.id} />
+                  )}
                 </div>
               </div>
             ))}
@@ -277,7 +314,9 @@ export default async function DashboardPage() {
         </div>
         <div className="grid">
           <Card title="Job matches" edge="explore">
-            {d.jobs.map((j) => (
+            {d.jobsLive && <AddJobForm />}
+            {liveJobs.length === 0 && <Empty>No job matches yet.</Empty>}
+            {liveJobs.map((j) => (
               <div className="row" key={j.id}>
                 <div>
                   <div className="main">
@@ -293,13 +332,16 @@ export default async function DashboardPage() {
                   {j.matchScore != null && (
                     <Badge variant="explore">{j.matchScore}% match</Badge>
                   )}
+                  {d.jobsLive && <RowActions base="/api/jobs" id={j.id} />}
                 </div>
               </div>
             ))}
           </Card>
 
           <Card title="Interest watch" edge="explore">
-            {d.interest.map((i) => (
+            {d.interestLive && <AddInterestForm />}
+            {liveInterest.length === 0 && <Empty>Nothing on the watch list.</Empty>}
+            {liveInterest.map((i) => (
               <div className="row" key={i.id}>
                 <div>
                   <div className="main">
@@ -310,8 +352,11 @@ export default async function DashboardPage() {
                     {i.source ? ` · ${i.source}` : ""}
                   </div>
                 </div>
-                <div className="right num">
-                  {i.relevanceScore != null ? `${i.relevanceScore}` : ""}
+                <div className="right">
+                  <span className="num">
+                    {i.relevanceScore != null ? `${i.relevanceScore}` : ""}
+                  </span>
+                  {d.interestLive && <RowActions base="/api/interest" id={i.id} />}
                 </div>
               </div>
             ))}

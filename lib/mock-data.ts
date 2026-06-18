@@ -204,6 +204,7 @@ export const mockInterest: InterestItemView[] = [
     title: "New agentic coding workflows for solo builders",
     source: "Tech blog",
     relevanceScore: 75,
+    status: "new",
     isMock: true,
   },
   {
@@ -212,6 +213,7 @@ export const mockInterest: InterestItemView[] = [
     title: "Cheaper handheld scanners hitting the secondary market",
     source: "Industry newsletter",
     relevanceScore: 60,
+    status: "new",
     isMock: true,
   },
 ];
