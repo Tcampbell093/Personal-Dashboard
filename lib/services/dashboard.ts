@@ -8,7 +8,7 @@
  * block below with calls to the service layer (listTasks, listObligations, ...)
  * and the financial calculation in lib/services/finances.ts. */
 
-import type { DashboardData } from "@/lib/types";
+import type { DashboardData, TaskView } from "@/lib/types";
 import {
   mockTasks,
   mockObligations,
@@ -19,13 +19,31 @@ import {
   mockInterest,
 } from "@/lib/mock-data";
 import { generateBriefing } from "@/lib/briefing";
+import { getCurrentUserId } from "@/lib/auth";
+import { listTasks, toTaskViews } from "@/lib/services/tasks";
 
 export async function loadDashboard(): Promise<DashboardData> {
-  // --- Phase 1: mock data path ------------------------------------------
-  const usingMockData = true;
+  // Phase 2, step 1: TASKS are wired to the real database. The rest of the
+  // dashboard (obligations, finances, signals, …) is still mock until each
+  // vertical is wired the same way. Tasks go live as soon as DATABASE_URL is
+  // configured; with no DB the dashboard still renders entirely on mock data.
+  const dbConfigured = Boolean(process.env.DATABASE_URL);
+
+  let tasks: TaskView[] = mockTasks;
+  let tasksLive = false;
+  if (dbConfigured) {
+    try {
+      const userId = await getCurrentUserId();
+      tasks = toTaskViews(await listTasks(userId));
+      tasksLive = true;
+    } catch (err) {
+      // Never let a DB hiccup blank the dashboard — fall back to mock tasks.
+      console.error("loadDashboard: task query failed, using mock tasks.", err);
+    }
+  }
 
   const briefing = generateBriefing({
-    tasks: mockTasks,
+    tasks,
     obligations: mockObligations,
     opportunities: mockOpportunities,
     finances: mockFinances,
@@ -33,30 +51,15 @@ export async function loadDashboard(): Promise<DashboardData> {
 
   return {
     briefing,
-    tasks: mockTasks,
+    tasks,
     obligations: mockObligations,
     finances: mockFinances,
     signals: mockSignals,
     opportunities: mockOpportunities,
     jobs: mockJobs,
     interest: mockInterest,
-    usingMockData,
+    // Non-task sections remain mock in this phase.
+    usingMockData: true,
+    tasksLive,
   };
-
-  /* --- Future real-data path (kept here as the wiring guide) -------------
-  const userId = await getCurrentUserId();
-  const [tasks, obligations, finances, signals, opportunities, jobs, interest] =
-    await Promise.all([
-      listTasks(userId).then(toTaskViews),
-      listObligations(userId).then(toObligationViews),
-      computeFinancialOutlook(userId),
-      listActiveSignals(userId).then(toSignalViews),
-      listOpportunities(userId).then(toOpportunityViews),
-      listJobs(userId).then(toJobViews),
-      listInterestItems(userId).then(toInterestViews),
-    ]);
-  const briefing = generateBriefing({ tasks, obligations, opportunities, finances });
-  return { briefing, tasks, obligations, finances, signals, opportunities,
-           jobs, interest, usingMockData: false };
-  ------------------------------------------------------------------------- */
 }

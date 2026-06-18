@@ -6,9 +6,26 @@
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { tasks } from "@/db/schema";
+import type { TaskView } from "@/lib/types";
 
 export type NewTask = typeof tasks.$inferInsert;
 export type TaskRow = typeof tasks.$inferSelect;
+
+/* Map DB rows -> the UI view model (TaskView). Keeps the dashboard decoupled
+ * from the Drizzle row shape. The Neon HTTP driver returns `date` columns as
+ * "YYYY-MM-DD" strings and `time` columns as "HH:MM:SS"; the UI wants "HH:MM",
+ * so we trim the seconds. */
+export function toTaskViews(rows: TaskRow[]): TaskView[] {
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    dueDate: r.dueDate,
+    dueTime: r.dueTime ? r.dueTime.slice(0, 5) : null,
+    priority: r.priority,
+    status: r.status,
+    category: r.category,
+  }));
+}
 
 /** List live (non-soft-deleted) tasks for a user. */
 export async function listTasks(userId: number): Promise<TaskRow[]> {

@@ -9,9 +9,7 @@
 
 import { NextResponse } from "next/server";
 import { createTask, listTasks } from "@/lib/services/tasks";
-
-// Phase 1 single-user placeholder. Replace with real auth/session lookup.
-const CURRENT_USER_ID = 1;
+import { CURRENT_USER_ID } from "@/lib/auth";
 
 const PRIORITIES = ["low", "medium", "high", "critical"] as const;
 const STATUSES = [

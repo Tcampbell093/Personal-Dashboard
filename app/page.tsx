@@ -1,5 +1,6 @@
 import { loadDashboard } from "@/lib/services/dashboard";
 import { tierForTask, tierForOpportunity } from "@/lib/briefing";
+import { AddTaskForm, TaskActions } from "@/components/tasks";
 import {
   Badge,
   Card,
@@ -24,9 +25,13 @@ const longDate = TODAY.toLocaleDateString("en-US", {
 export default async function DashboardPage() {
   const d = await loadDashboard();
 
-  // Triage tasks into the three tiers.
-  const actTasks = d.tasks.filter((t) => tierForTask(t) === "act_today");
-  const awareTasks = d.tasks.filter((t) => tierForTask(t) === "be_aware");
+  // Only open tasks are triaged; completed/cancelled ones drop off the board.
+  const openTasks = d.tasks.filter(
+    (t) => t.status !== "completed" && t.status !== "cancelled",
+  );
+  const actTasks = openTasks.filter((t) => tierForTask(t) === "act_today");
+  const awareTasks = openTasks.filter((t) => tierForTask(t) === "be_aware");
+  const exploreTasks = openTasks.filter((t) => tierForTask(t) === "explore");
   const actOpps = d.opportunities.filter((o) => tierForOpportunity(o) === "act_today");
   const awareOpps = d.opportunities.filter((o) => tierForOpportunity(o) === "be_aware");
 
@@ -39,7 +44,13 @@ export default async function DashboardPage() {
         <span className="date num">{longDate}</span>
       </header>
 
-      {d.usingMockData && (
+      {d.tasksLive ? (
+        <div className="mockbanner">
+          <b>Tasks are live</b> from your database — add, complete, and delete
+          below. Obligations, finances, signals, and the rest still show mock
+          data until those verticals are wired.
+        </div>
+      ) : (
         <div className="mockbanner">
           Showing <b>mock data</b>. Nothing here is connected to a database, a
           calendar, or any external source yet. Connect Neon and seed to go live.
@@ -73,6 +84,7 @@ export default async function DashboardPage() {
         </div>
         <div className="grid">
           <Card title="Do today" edge="act">
+            {d.tasksLive && <AddTaskForm />}
             {actTasks.length === 0 && <Empty>Nothing is due today. Breathe.</Empty>}
             {actTasks.map((t) => (
               <div className="row" key={t.id}>
@@ -85,6 +97,7 @@ export default async function DashboardPage() {
                 </div>
                 <div className="right">
                   <Badge variant={tone(t.priority)}>{t.priority}</Badge>
+                  {d.tasksLive && <TaskActions task={t} />}
                 </div>
               </div>
             ))}
@@ -199,13 +212,27 @@ export default async function DashboardPage() {
                 </div>
               </div>
             ))}
-            {awareTasks.length > 0 && (
-              <div className="row">
-                <div className="sub">
-                  + {awareTasks.length} task(s) coming due this week
+          </Card>
+
+          <Card title="Other open tasks" edge="aware">
+            {awareTasks.length + exploreTasks.length === 0 && (
+              <Empty>No other open tasks.</Empty>
+            )}
+            {[...awareTasks, ...exploreTasks].map((t) => (
+              <div className="row" key={t.id}>
+                <div>
+                  <div className="main">{t.title}</div>
+                  <div className="sub">
+                    {t.category ?? "Uncategorized"}
+                    {t.dueDate ? ` · due ${shortDate(t.dueDate)}` : ""}
+                  </div>
+                </div>
+                <div className="right">
+                  <Badge variant={tone(t.priority)}>{t.priority}</Badge>
+                  {d.tasksLive && <TaskActions task={t} />}
                 </div>
               </div>
-            )}
+            ))}
           </Card>
         </div>
       </section>
@@ -265,7 +292,7 @@ export default async function DashboardPage() {
           <Card title="Next seven days" edge="explore" className="span-2">
             <NextSevenDays
               obligations={d.obligations}
-              tasks={d.tasks.map((t) => ({ date: t.dueDate }))}
+              tasks={openTasks.map((t) => ({ date: t.dueDate }))}
             />
           </Card>
         </div>

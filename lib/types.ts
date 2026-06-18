@@ -102,4 +102,6 @@ export interface DashboardData {
   jobs: JobView[];
   interest: InterestItemView[];
   usingMockData: boolean;
+  // True once tasks are read from the real database (the rest may still be mock).
+  tasksLive: boolean;
 }

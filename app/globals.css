@@ -384,6 +384,94 @@ a {
   color: var(--aware);
 }
 
+/* ------------------------------------------------------- task controls --- */
+
+/* quick-add form sits at the top of the "Do today" card */
+.taskadd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding-bottom: 12px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+}
+.taskadd-title {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+.taskadd-title,
+.taskadd-field {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  padding: 6px 8px;
+}
+.taskadd-field {
+  color: var(--muted);
+}
+.taskadd-title:focus,
+.taskadd-field:focus {
+  outline: none;
+  border-color: var(--explore);
+}
+.taskadd-error {
+  flex-basis: 100%;
+  color: var(--act);
+  font-size: 11.5px;
+}
+
+.btn {
+  background: var(--explore);
+  border: 1px solid var(--explore);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  font-weight: 650;
+  padding: 6px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* per-row complete / delete buttons */
+.taskactions {
+  display: inline-flex;
+  gap: 4px;
+  margin-top: 6px;
+  justify-content: flex-end;
+}
+.iconbtn {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  width: 22px;
+  height: 22px;
+  line-height: 1;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+.iconbtn:hover:not(:disabled) {
+  border-color: var(--good);
+  color: var(--good);
+}
+.iconbtn.danger:hover:not(:disabled) {
+  border-color: var(--act);
+  color: var(--act);
+}
+.iconbtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .card {
     transition: border-color 0.15s ease;
