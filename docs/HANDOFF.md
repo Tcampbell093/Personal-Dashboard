@@ -12,46 +12,91 @@
 
 ## Next approved task
 
-- **Status:** **not yet approved for implementation.** Do not begin implementation.
-- **Leading candidate for the first complete end-to-end workflow:** the
-  **Experience and Adventure Loop** (see `docs/ROADMAP.md`). This is the current front-runner
-  for the "first complete workflow" open question in `docs/PRODUCT_VISION.md`, but its scope
-  is not yet defined or approved.
-- **Next step (definition, not implementation):** review the repository architecture
-  (`docs/DESIGN_PRINCIPLES.md`) and data model (`docs/DATA_MODEL.md`), then define the
-  Experience and Adventure Loop's **exact scope and acceptance criteria** for owner approval.
-  Once approved, replace this block with the bounded task (goal, in/out of scope, acceptance
-  criteria, implementer plan) and set status to `approved`.
+### Finalize and phase the Experience and Adventure Loop v1 implementation plan
+
+- **Status:** **Awaiting final owner review. Do not begin implementation.**
+
+> **Scope of this approval.** The Experience and Adventure Loop **v1 specification is approved
+> as the target v1 product specification.** That approval is of the *specification* — **not**
+> authorization to implement the entire specification in one pass.
+> - Implementation **must be broken into smaller, separately approved build stages.**
+> - Claude Code may **not** implement schema, services, API, UI, AI, provider dependencies, or
+>   configuration **until a specific build stage is approved.**
+
+- **Approved specification:** [`docs/specs/EXPERIENCE_ADVENTURE_LOOP_V1.md`](specs/EXPERIENCE_ADVENTURE_LOOP_V1.md).
+  - The specification document is **approved as the target v1 product specification**.
+  - **Full implementation is not authorized.**
+  - **Build 1** (Manual lifecycle foundation) is the **next candidate bounded implementation task**.
+  - **Each build requires separate owner approval.**
+- **Immediate next step:** prepare the **exact Build 1 implementation task** (scope, file list,
+  acceptance criteria, plan) and present it for owner review. No code, schema, dependencies,
+  configuration, or behavior changes until Build 1 is approved.
+
+### Proposed implementation breakdown (phased)
+
+Each build is a **separate approval gate.** Do not start a build until the owner approves that
+specific build. Builds are ordered so the manual loop works end-to-end before any AI exists.
+
+**Build 1 — Manual lifecycle foundation** *(no AI, no providers)*
+- dedicated `/experiences` page
+- schema for `experience_requests` and `experiences`
+- service layer and API routes
+- manual request entry
+- manual constraint editing
+- manual plan creation
+- planned experiences
+- outcome resolution
+- private history
+- Adventure XP
+- no AI
+- no provider dependencies
+- no rule-based recommendation catalog unless absolutely needed for the manual loop
+
+**Build 2 — Rule-based fallback recommendations** *(no AI provider)*
+- local recommendation concept catalog
+- fallback recommendation generation from confirmed constraints
+- selection and plan creation from fallback recommendations
+- no AI provider yet
+
+**Build 3 — AI provider/model proposal** *(proposal only — no implementation until approved)*
+- provider
+- model
+- structured-output approach
+- cost estimates
+- environment variables
+- dependency impact
+- privacy and retention considerations
+- enforcement of the $5 monthly development ceiling
+- no implementation until approved
+
+**Build 4 — AI interpretation and AI recommendations**
+- provider-adapter implementation
+- owner-triggered interpretation
+- owner-triggered recommendation generation
+- usage logging
+- cost-limit enforcement
+- malformed-output handling
+- manual and fallback paths remain usable
 
 ---
 
 ## Latest handoff
 
-### Documentation reconciliation — 2026-06-21
+### Experience and Adventure Loop v1 — plan phased — 2026-06-21
 
 **Task Completed**
-Reconciled the `/docs` knowledge base and `CLAUDE.md` so the repository is the authoritative
-bridge between product strategy and implementation. Rewrote `PRODUCT_VISION.md` around the
-owner's approved vision, restructured `CURRENT_STATE.md` by maturity, reclassified the
-retroactive decisions, updated the root `README.md`, made `ROADMAP.md` a thin strategist-owned
-candidate backlog, removed the separate `docs/tasks/` tracker (this file is now the single
-home for the active task), and recorded the leading first-workflow candidate.
-**No application-code, schema, dependency, configuration, UI, or behavior changes.**
+Recorded that the Experience and Adventure Loop **v1 specification is approved as the target
+product spec**, while making explicit that full implementation is **not** authorized. Updated
+the active-task title to "Finalize and phase the Experience and Adventure Loop v1
+implementation plan," kept its status as awaiting review / do-not-implement, and added the
+phased Build 1–4 breakdown above. **Documentation only.**
 
 **Files Changed**
-- `README.md` — removed stale claims (e.g. "no authentication"; auth-as-next-phase); now
-  concise/technical and linked to `/docs`.
-- `docs/PRODUCT_VISION.md` — durable, owner-approved principles (incl. capture, structured
-  memory, explainable + learning AI, device-independence, VR north-star).
-- `docs/CURRENT_STATE.md` — restructured into maturity buckets; explicit auth statement;
-  "verified" scoped to behavior actually exercised this session.
-- `docs/DECISIONS.md` — every retroactive entry classified (approved / provisional /
-  constraint / observed).
-- `docs/DESIGN_PRINCIPLES.md` — trimmed to engineering conventions.
-- `docs/ROADMAP.md` — thin strategist-owned candidate backlog.
-- `docs/HANDOFF.md` — this file; single home for the active task + latest handoff + template.
-- `CLAUDE.md` — updated to the consolidated workflow.
-- **Removed:** `docs/tasks/README.md`, `docs/tasks/TEMPLATE.md` (directory deleted).
+- `docs/specs/EXPERIENCE_ADVENTURE_LOOP_V1.md` — the approved v1 specification. Now holds the
+  **authoritative final specification text supplied by the owner** (it replaced an earlier
+  in-thread-authored draft).
+- `docs/HANDOFF.md` — this file (active-task title/note → direct spec reference; phased
+  breakdown retained).
 
 **Database Changes**
 None.
@@ -60,27 +105,44 @@ None.
 Unchanged. Documentation only.
 
 **Testing Completed**
-Documentation-only change; no code paths altered, so no build/test run was required. Repo file
-inventory was verified before writing, and the docs were scanned to confirm no secret values or
-personal data are present.
+None required — no code paths altered. Repo scanned to confirm no secrets/personal data added.
 
 **Known Issues**
-None outstanding for the documentation set.
+None — the authoritative final specification text now replaces the earlier draft. Per the spec's
+§18, AI implementation additionally requires a separately approved provider/model proposal.
 
 **Decisions Needed**
-The `[DECISION NEEDED]` items in `PRODUCT_VISION.md` / `DECISIONS.md` — including confirming the
-Experience and Adventure Loop as the first workflow and approving its scope.
+Owner approval of the **Build 1** implementation task (to be prepared next).
 
 **Recommended Next Step**
-Define the Experience and Adventure Loop's scope and acceptance criteria (after reviewing
-architecture + data model) and record it as the approved task above. Do not implement before
-approval.
+Prepare the exact **Build 1 — Manual lifecycle foundation** implementation task (scope, file
+list, acceptance criteria) for owner review. No implementation until approved.
+
+### Documentation reconciliation — 2026-06-21
+
+**Task Completed**
+Reconciled the `/docs` knowledge base and `CLAUDE.md` so the repository is the authoritative
+bridge between product strategy and implementation. Rewrote `PRODUCT_VISION.md` around the
+owner's approved vision, restructured `CURRENT_STATE.md` by maturity, reclassified the
+retroactive decisions, updated the root `README.md`, made `ROADMAP.md` a thin strategist-owned
+candidate backlog, removed the separate `docs/tasks/` tracker, and recorded the leading
+first-workflow candidate. **No application-code, schema, dependency, configuration, UI, or
+behavior changes.**
+
+**Files Changed** — `README.md`; `docs/PRODUCT_VISION.md`; `docs/CURRENT_STATE.md`;
+`docs/DECISIONS.md`; `docs/DESIGN_PRINCIPLES.md` (trimmed); `docs/ROADMAP.md`;
+`docs/HANDOFF.md`; `CLAUDE.md`. Removed: `docs/tasks/` (directory deleted).
+**Database Changes** — None. **Current Behavior** — Unchanged.
+**Testing Completed** — Docs-only; repo scanned for secrets/personal data.
+**Known Issues** — None outstanding for the documentation set.
+**Decisions Needed** — The `[DECISION NEEDED]` items in `PRODUCT_VISION.md` / `DECISIONS.md`.
+**Recommended Next Step** — Define the first end-to-end workflow's scope for approval.
 
 ---
 
 ## Handoff report template
 
-> Copy this when completing the next task; replace "Latest handoff" above.
+> Copy this when completing the next task; add a new entry at the top of "Latest handoff."
 
 **Task Completed** — what was asked vs. what was done.
 **Files Changed** — created/modified/deleted, with a few words each.
