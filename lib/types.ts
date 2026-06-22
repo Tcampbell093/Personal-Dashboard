@@ -108,6 +108,62 @@ export interface InterestItemView {
   isMock: boolean;
 }
 
+/* --- Experience and Adventure Loop v1 (Build 1, manual) ------------------- */
+
+export type ExperienceRequestStatus = "draft" | "planned";
+export type ExperienceStatus =
+  | "planned"
+  | "completed"
+  | "cancelled"
+  | "not_completed";
+export type EnergyLevel = "low" | "medium" | "high";
+export type PhysicalDifficulty = "easy" | "moderate" | "challenging";
+
+export interface ExperienceRequestView {
+  id: number;
+  requestText: string;
+  availableDate: string | null;
+  availableTimeText: string | null;
+  budgetMax: number | null;
+  startingLocation: string | null;
+  maxTravelMiles: number | null;
+  maxTravelMinutes: number | null;
+  energyLevel: EnergyLevel | null;
+  desiredFeeling: string | null;
+  maxPhysicalDifficulty: PhysicalDifficulty | null;
+  interests: string[];
+  exclusions: string[];
+  status: ExperienceRequestStatus;
+}
+
+export interface ExperienceView {
+  id: number;
+  requestId: number;
+  title: string;
+  description: string | null;
+  plannedDate: string | null;
+  plannedTimeText: string | null;
+  locationText: string | null;
+  expectedCost: number | null;
+  actualCost: number | null;
+  expectedDurationMinutes: number | null;
+  physicalDifficulty: PhysicalDifficulty | null;
+  desiredFeeling: string | null;
+  notes: string | null;
+  status: ExperienceStatus;
+  nonCompletionReason: string | null;
+  rating: number | null;
+  reflection: string | null;
+  meaningfulExperience: boolean;
+  adventureXp: number;
+  resolvedAt: string | null;
+}
+
+export interface ExperienceXpSummary {
+  total: number;
+  completedCount: number;
+}
+
 export interface Briefing {
   date: string;
   summary: string;

@@ -19,7 +19,9 @@
 
 `task_status`, `priority`, `recurrence`, `obligation_type`, `obligation_status`,
 `importance`, `bill_status`, `signal_type`, `signal_status`, `opportunity_category`,
-`opportunity_status`, `feedback_kind`, `job_status`, `interest_status`, `run_status`.
+`opportunity_status`, `feedback_kind`, `job_status`, `interest_status`, `run_status`,
+`experience_request_status`, `experience_status`, `experience_energy_level`,
+`experience_physical_difficulty`.
 
 ## Tables
 
@@ -68,6 +70,31 @@
 - **`interest_items`** — `topicId` (FK), `title`, `summary`, `source`, `publishedDate`,
   `whyItMatters`, `relevanceScore`, `status`, `isMock`.
 
+### Experience and Adventure Loop (Build 1 — manual)
+Two durable entities; **no separate recommendations table** (deferred). AI/recommendation
+columns (provider/model provenance, recommendations JSON, `selectedRecommendationId`) and the
+`experience_interpretation_source` enum are **intentionally deferred** to later builds.
+- **`experience_requests`** — the desired experience + constraints: `requestText`,
+  `availableDate`, `availableTimeText`, `budgetMax`, `startingLocation` (prefilled from
+  `user_preferences.homeArea` but request-specific/editable — never written back),
+  `maxTravelMiles` + `maxTravelMinutes` (independent; never converted), `energyLevel`,
+  `desiredFeeling`, `maxPhysicalDifficulty`, `interests`/`exclusions` (jsonb string[]),
+  `status` (`draft` → `planned`).
+- **`experiences`** — a planned/resolved experience: required `requestId` FK, `title`,
+  `description`, `plannedDate`, `plannedTimeText`, `locationText`, `expectedCost`,
+  `actualCost`, `expectedDurationMinutes`, `physicalDifficulty`, `desiredFeeling`, `notes`,
+  `status` (`planned` → `completed`/`cancelled`/`not_completed`, one-way), `completedAt`,
+  `resolvedAt`, `nonCompletionReason`, `rating` (1–5), `reflection`, `meaningfulExperience`
+  (owner-controlled bool), `adventureXp` (server-computed: 10 / 15 / 0). A partial unique
+  index on `request_id` (where `deleted_at is null`) enforces one live experience per request.
+
+**Request lifecycle transitions (Build 1):**
+- `draft → planned` when a plan (experience) is created from the request.
+- `planned → draft` when its live **planned** experience is soft-deleted (recovery, so the
+  request is re-plannable). All constraint data is preserved.
+- Soft-deleting an **already-resolved** experience does **not** reopen the request (stays
+  `planned`). See `docs/DECISIONS.md` ADR-010.
+
 ### Intelligence / operations (reserved; no UI/logic yet)
 - **`intelligence_settings`** — one row per user; `aiAutomationEnabled`, `killSwitch`,
   daily/monthly call & search limits, monthly cost limit, `lastSuccessfulRun`. This is
@@ -82,4 +109,5 @@
 The UI never depends on Drizzle row types. View models live in `lib/types.ts`
 (`TaskView`, `ObligationView`, `FinancialOutlook`, `AccountView`, `BillView`,
 `IncomeView`, `SignalView`, `OpportunityView`, `JobView`, `InterestItemView`,
-`Briefing`, `DashboardData`). Service-layer `to*Views()` functions map rows → view models.
+`ExperienceRequestView`, `ExperienceView`, `ExperienceXpSummary`, `Briefing`,
+`DashboardData`). Service-layer `to*Views()` functions map rows → view models.

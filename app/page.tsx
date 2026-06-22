@@ -64,6 +64,7 @@ export default async function DashboardPage() {
           Personal Command Center<span className="dot">.</span>
         </span>
         <span className="topbar-right">
+          <a className="navlink" href="/experiences">Experiences</a>
           <span className="date num">{longDate}</span>
           {isAuthConfigured() && <LogoutButton />}
         </span>

@@ -183,6 +183,33 @@ export const interestStatus = pgEnum("interest_status", [
 
 export const runStatus = pgEnum("run_status", ["success", "failure", "skipped"]);
 
+/* Experience and Adventure Loop v1 — Build 1 (manual lifecycle) enums.
+ * AI/recommendation enums (e.g. experience_interpretation_source) are deliberately
+ * deferred to the build that implements those behaviors. */
+export const experienceRequestStatus = pgEnum("experience_request_status", [
+  "draft",
+  "planned",
+]);
+
+export const experienceStatus = pgEnum("experience_status", [
+  "planned",
+  "completed",
+  "cancelled",
+  "not_completed",
+]);
+
+export const experienceEnergyLevel = pgEnum("experience_energy_level", [
+  "low",
+  "medium",
+  "high",
+]);
+
+export const experiencePhysicalDifficulty = pgEnum("experience_physical_difficulty", [
+  "easy",
+  "moderate",
+  "challenging",
+]);
+
 /* ---------------------------------------------------------------- users --- */
 
 export const users = pgTable("users", {
@@ -627,6 +654,77 @@ export const scheduledRunLogs = pgTable(
     finishedAt: timestamp("finished_at", { withTimezone: true }),
   },
   (t) => [index("run_logs_job_idx").on(t.jobName, t.startedAt)],
+);
+
+/* ----------------------------------------- experience & adventure loop --- */
+/* Build 1: manual lifecycle only. Two durable entities. AI/recommendation
+ * columns (provider/model provenance, recommendations JSON,
+ * selectedRecommendationId) are intentionally deferred to later builds. */
+
+export const experienceRequests = pgTable(
+  "experience_requests",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    requestText: text("request_text").notNull(),
+    availableDate: date("available_date"),
+    availableTimeText: varchar("available_time_text", { length: 120 }),
+    budgetMax: numeric("budget_max", { precision: 12, scale: 2 }),
+    // Prefilled from user_preferences.homeArea, but request-specific and editable.
+    startingLocation: text("starting_location"),
+    maxTravelMiles: integer("max_travel_miles"),
+    maxTravelMinutes: integer("max_travel_minutes"),
+    energyLevel: experienceEnergyLevel("energy_level"),
+    desiredFeeling: text("desired_feeling"),
+    maxPhysicalDifficulty: experiencePhysicalDifficulty("max_physical_difficulty"),
+    interests: jsonb("interests").$type<string[]>().default([]),
+    exclusions: jsonb("exclusions").$type<string[]>().default([]),
+    status: experienceRequestStatus("status").notNull().default("draft"),
+    ...timestamps,
+  },
+  (t) => [index("experience_requests_user_status_idx").on(t.userId, t.status)],
+);
+
+export const experiences = pgTable(
+  "experiences",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    requestId: integer("request_id")
+      .notNull()
+      .references(() => experienceRequests.id, { onDelete: "cascade" }),
+    title: varchar("title", { length: 280 }).notNull(),
+    description: text("description"),
+    plannedDate: date("planned_date"),
+    plannedTimeText: varchar("planned_time_text", { length: 120 }),
+    locationText: text("location_text"),
+    expectedCost: numeric("expected_cost", { precision: 12, scale: 2 }),
+    actualCost: numeric("actual_cost", { precision: 12, scale: 2 }),
+    expectedDurationMinutes: integer("expected_duration_minutes"),
+    physicalDifficulty: experiencePhysicalDifficulty("physical_difficulty"),
+    desiredFeeling: text("desired_feeling"),
+    notes: text("notes"),
+    status: experienceStatus("status").notNull().default("planned"),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    nonCompletionReason: text("non_completion_reason"),
+    rating: integer("rating"),
+    reflection: text("reflection"),
+    meaningfulExperience: boolean("meaningful_experience").notNull().default(false),
+    adventureXp: integer("adventure_xp").notNull().default(0),
+    ...timestamps,
+  },
+  (t) => [
+    index("experiences_user_status_idx").on(t.userId, t.status),
+    // At most one live experience per request — DB-level duplicate-plan guard.
+    uniqueIndex("experiences_request_live_uq")
+      .on(t.requestId)
+      .where(sql`${t.deletedAt} is null`),
+  ],
 );
 
 /* --------------------------------------------------------------- helper --- */

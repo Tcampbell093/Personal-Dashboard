@@ -76,6 +76,27 @@
   *rule* that AI must not auto-publish/spend/contact/expose is an **owner-approved principle**
   recorded in `docs/PRODUCT_VISION.md`, not an inferred code choice.
 
+### ADR-009 — Duplicate-plan guard: service check + partial unique index
+- **Classification:** Provisional implementation choice
+- **Detail:** Build 1 prevents two live experiences per request both at the service layer
+  (reject when the request is already `planned`) and with a Postgres partial unique index on
+  `experiences.request_id` where `deleted_at is null`. The request advances to `planned` only
+  after the experience write succeeds.
+- **Evidence/rationale:** The approved plan called for "duplicate-safe" plan creation; the
+  partial unique index was added as a DB-level backstop against races. Reversible.
+
+### ADR-010 — Experience request recovery on planned-experience deletion
+- **Classification:** Provisional implementation choice
+- **Detail:** When a **planned** experience is soft-deleted, its request is returned to
+  `draft` so it is usable (re-plannable) again. Deleting an **already-resolved** experience
+  does **not** reactivate the request (its status stays `planned`) — removing a history
+  record must not produce a misleading active draft. Ownership-scoped.
+- **Evidence/rationale:** Owner-requested lifecycle-integrity fix. The owner's preferred
+  richer recovery (return to `recommendations_ready` when valid recommendations exist, else
+  `interpreted`) is **deferred** because those lifecycle states and the recommendations
+  column do not exist in Build 1; `draft` is the only consistent in-scope target. Revisit
+  when those states/columns are introduced (Build 2/4).
+
 ---
 
 ## Open decisions — `[DECISION NEEDED]`

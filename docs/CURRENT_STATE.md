@@ -38,7 +38,28 @@ rendered page**. No browser-driven UI clicks and no automated tests were run.
 - **Password gate** end-to-end: unauthenticated page → 307 redirect to `/login`;
   unauthenticated API → 401; correct password sets a session cookie; logout clears it.
 - **Dashboard renders** (HTTP 200) with live data and the expected add-forms present.
-- **`npm run typecheck`** passes on the current code.
+- **Experience and Adventure Loop — Build 1 (manual)**, exercised via API (25/25 checks)
+  against real Neon and verified at the DB level: request create/edit/validation;
+  home-area prefill **isolation** (editing a request's location leaves
+  `user_preferences.homeArea` unchanged — DB-confirmed); duplicate-plan protection (409);
+  manual plan creation; edit-while-planned; one-way resolution to
+  completed/cancelled/not_completed; **post-resolution outcome correction**; server-side XP
+  (completed 10, completed+meaningful 15, cancelled/not_completed 0) including recalculation
+  when `meaningful` toggles 10↔15; resolved status cannot return to `planned` or change to
+  another resolved status; invalid rating / negative amounts rejected; client `userId` and
+  `adventureXp` ignored (DB-confirmed `userId === 1`); non-owned ids → 404; `/experiences`
+  renders (HTTP 200) with all five sections and **no mock fallback**.
+- **Experience delete-and-recovery + empty-enum handling** — soft-deleting a **planned**
+  experience returns its request to `draft` (re-plannable); deleting a **resolved** one leaves
+  it `planned`; optional enum selects left at "—" (empty string) normalize to `null` with no
+  DB `500` (valid values accepted, invalid non-empty → 400, omitted PATCH fields unchanged).
+- **Experience workflow — full browser click-through (20-step pass)** completed via the
+  preview browser: nav link → request → prefill (and home-area isolation, DB-confirmed
+  unchanged) → constraints saved with selects left at "—" → plan created with difficulty "—"
+  → refresh persistence → edit → complete (XP 10) → meaningful 10↔15 → cancel/not-completed
+  (XP 0) → planned-delete recovery → resolved status not editable in UI → mobile layout → no
+  mock data.
+- **`npm run typecheck` and `npm run build`** pass on the current code.
 
 ## 🟡 Partially implemented
 
@@ -54,14 +75,16 @@ rendered page**. No browser-driven UI clicks and no automated tests were run.
 
 ## ◻️ Implemented but unverified this session
 
-- **`npm run build`** — last run green during earlier work, but **not re-run** after the most
-  recent feature and auth changes, so it is not verified on the current tree. (`typecheck`
-  was re-run and passes.)
+- **`/experiences` DB-failure error state** — enforced by construction (the page's
+  try/catch renders an explicit error and never falls back to mock experiences), but this
+  failure path was **not runtime-simulated** this session.
+- **Browser UI mutation flows for the original seven verticals** (tasks, obligations,
+  finances, signals, opportunities, jobs, interest) — buttons call verified API paths and
+  pages render, but their click-throughs were not driven in a real browser. (The
+  `/experiences` workflow **was** browser-verified — see above.)
 - **Triage drop-off** — completed/cancelled tasks, done obligations, and dismissed/expired
   signals/opportunities/jobs/interest items are filtered out in code, but this drop-off was
   **not visually exercised** with populated data this session.
-- **Browser UI mutation flows** — the add/complete/dismiss/delete **buttons** call API paths
-  that are verified, but the button click-throughs themselves were not driven in a browser.
 
 ## ⚪ Mock / placeholder
 
