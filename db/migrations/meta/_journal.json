@@ -15,6 +15,13 @@
       "when": 1782060685623,
       "tag": "0001_sour_kate_bishop",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782137448007,
+      "tag": "0002_chief_natasha_romanoff",
+      "breakpoints": true
     }
   ]
 }

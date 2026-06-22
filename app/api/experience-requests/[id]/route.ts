@@ -10,6 +10,7 @@ import {
   toRequestView,
   ENERGY_LEVELS,
   PHYSICAL_DIFFICULTIES,
+  INTERPRETED_CONSTRAINT_FIELDS,
   type NewExperienceRequest,
 } from "@/lib/services/experience-requests";
 import { CURRENT_USER_ID } from "@/lib/auth";
@@ -116,6 +117,26 @@ export async function PATCH(request: Request, { params }: Ctx) {
 
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
+  }
+
+  // Provenance (Build 2A): editing ANY interpreted constraint on an AI-derived
+  // request means the values are no longer purely AI — reset source to manual
+  // and clear provider/model. Editing requestText alone changes nothing here,
+  // and never reruns AI. A never-interpreted request keeps Build 1 behavior.
+  const touchesConstraint = Object.keys(patch).some((k) =>
+    (INTERPRETED_CONSTRAINT_FIELDS as readonly string[]).includes(k),
+  );
+  let current;
+  try {
+    current = await getRequest(CURRENT_USER_ID, id);
+  } catch (err) {
+    return NextResponse.json({ error: "Could not load request.", detail: String(err) }, { status: 500 });
+  }
+  if (!current) return NextResponse.json({ error: "Request not found." }, { status: 404 });
+  if (touchesConstraint && current.interpretationSource === "ai") {
+    patch.interpretationSource = "manual";
+    patch.interpretationProvider = null;
+    patch.interpretationModel = null;
   }
 
   try {

@@ -112,8 +112,8 @@ export function PlanForm({
         <button className="btn" type="submit" disabled={pending || !f.title.trim()}>
           {pending ? "…" : "Save planned experience"}
         </button>
-        <button className="iconbtn" type="button" onClick={() => setOpen(false)} disabled={pending} title="Cancel">
-          ✕
+        <button className="btn-secondary" type="button" onClick={() => setOpen(false)} disabled={pending}>
+          Cancel
         </button>
       </div>
       {error && <div className="taskadd-error">{error}</div>}

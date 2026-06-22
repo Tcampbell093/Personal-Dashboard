@@ -110,7 +110,8 @@ export interface InterestItemView {
 
 /* --- Experience and Adventure Loop v1 (Build 1, manual) ------------------- */
 
-export type ExperienceRequestStatus = "draft" | "planned";
+export type ExperienceRequestStatus = "draft" | "interpreted" | "planned";
+export type ExperienceInterpretationSource = "manual" | "ai";
 export type ExperienceStatus =
   | "planned"
   | "completed"
@@ -134,6 +135,7 @@ export interface ExperienceRequestView {
   interests: string[];
   exclusions: string[];
   status: ExperienceRequestStatus;
+  interpretationSource: ExperienceInterpretationSource;
 }
 
 export interface ExperienceView {

@@ -81,8 +81,8 @@ function PlannedItem({ e }: { e: ExperienceView }) {
         <div className="right">
           <span className="badge act">planned</span>
           <div className="taskactions">
-            <button className="iconbtn" type="button" onClick={() => setEditing((v) => !v)} disabled={pending} title="Edit plan">✎</button>
-            <button className="iconbtn danger" type="button" onClick={remove} disabled={pending} title="Delete">✕</button>
+            <button className="btn-secondary" type="button" onClick={() => setEditing((v) => !v)} disabled={pending}>Edit</button>
+            <button className="btn-secondary danger" type="button" onClick={remove} disabled={pending}>Delete</button>
           </div>
         </div>
       </div>
@@ -101,7 +101,7 @@ function PlannedItem({ e }: { e: ExperienceView }) {
             <textarea className="taskadd-field" rows={2} value={f.notes} onChange={on("notes")} disabled={pending} /></label>
           <div className="exp-field exp-actions exp-span">
             <button className="btn" type="submit" disabled={pending || !f.title.trim()}>{pending ? "…" : "Save plan"}</button>
-            <button className="iconbtn" type="button" onClick={() => setEditing(false)} disabled={pending} title="Cancel">✕</button>
+            <button className="btn-secondary" type="button" onClick={() => setEditing(false)} disabled={pending}>Cancel</button>
           </div>
         </form>
       )}

@@ -440,6 +440,31 @@ a {
   cursor: not-allowed;
 }
 
+/* Secondary / labeled actions (Cancel, manual fallback, edit/delete). */
+.btn-secondary {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.btn-secondary:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--muted);
+}
+.btn-secondary.danger {
+  color: var(--act);
+  border-color: color-mix(in srgb, var(--act) 40%, var(--line));
+}
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* per-row complete / delete buttons */
 .taskactions {
   display: inline-flex;
@@ -604,10 +629,57 @@ textarea.taskadd-field:focus {
   border-color: var(--explore);
 }
 
+.exp-textarea-primary {
+  font-size: 14px;
+  min-height: 64px;
+}
+
 .exp-reqtext {
   font-size: 14px;
   margin-bottom: 12px;
   color: var(--text);
+}
+
+/* Interpretation summary + provenance, between the request text and details. */
+.exp-interp {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.exp-interp-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* "Review details" disclosure wrapping the manual constraint editor. */
+.exp-disclosure {
+  border-top: 1px dashed var(--line);
+  padding-top: 8px;
+  margin-top: 4px;
+}
+.exp-disclosure > summary {
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  list-style: none;
+  user-select: none;
+}
+.exp-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.exp-disclosure > summary::before {
+  content: "▸ ";
+}
+.exp-disclosure[open] > summary::before {
+  content: "▾ ";
+}
+.exp-disclosure[open] > summary:hover,
+.exp-disclosure > summary:hover {
+  color: var(--ink);
 }
 
 .exp-formrow {

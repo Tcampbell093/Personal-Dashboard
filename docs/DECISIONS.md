@@ -97,6 +97,45 @@
   column do not exist in Build 1; `draft` is the only consistent in-scope target. Revisit
   when those states/columns are introduced (Build 2/4).
 
+### ADR-011 — First AI-assist capability: owner-triggered Experience interpretation (Build 2A)
+- **Classification:** Owner-approved decision
+- **Detail:** The first AI feature is interpretation only: turning an Experience request's
+  free text into structured constraints, on explicit owner action ("Help me plan this"),
+  using Anthropic Haiku (`claude-haiku-4-5` by default). It never publishes, spends, contacts
+  anyone, or runs on a schedule; the manual path always remains usable, and AI is **off by
+  default** behind three independent gates (env `AI_AUTOMATION_ENABLED`, an `ANTHROPIC_API_KEY`,
+  and `intelligence_settings.aiAutomationEnabled`/`killSwitch`).
+- **Data minimization (owner-specified):** interpretation sends only the request text, the
+  general home area, and the current date — never finances, obligations, jobs, reflections,
+  non-completion reasons, credentials, the full profile, or other experience history. Prompts,
+  request text, and raw responses are **never logged**; only bounded metadata is.
+- **Evidence:** The owner authorized the Build 2A scope in `HANDOFF.md` and supplied the
+  privacy/data-boundary, default-off, and "do not make a live call / do not request my key"
+  constraints verbatim. Implemented and **deterministically verified without a live key**;
+  no live Anthropic invocation has been made in this environment.
+
+### ADR-012 — Injectable provider boundary; deterministic fake is non-production
+- **Classification:** Provisional implementation choice
+- **Detail:** AI access goes through an `ExperienceAiProvider` interface. The only production
+  resolver (`resolveProvider()`) reads the server env and returns the Anthropic adapter, or
+  throws `ai_unavailable` when unconfigured. A deterministic `FakeProvider` exists for tests
+  and is reachable **only** by server-side argument injection from the verification harness —
+  never via any client-supplied request body, query, header, or cookie, and never from the
+  factory. The adapter is the sole file importing the Anthropic SDK.
+- **Evidence/rationale:** Lets the full gate/validation logic be verified offline (26/26
+  deterministic checks) while satisfying the owner's hard isolation requirement that the fake
+  must not be selectable in production by any client input. Reversible.
+
+### ADR-013 — AI cost ceiling: $5/mo dev constant + per-op caps, reusing existing tables
+- **Classification:** Provisional implementation choice
+- **Detail:** Cost is bounded before any call by a per-operation cap (interpret $0.02) and a
+  monthly ceiling = min($5 dev constant, configured `monthly_cost_limit`). Spend is summed
+  from the existing `api_usage_logs` and gated via `intelligence_settings` — **no parallel
+  cost store**. Breaches return `per_op_limit` (422) or `budget_exceeded` (429); the manual
+  path still works.
+- **Evidence/rationale:** The approved plan called for a hard, conservative ceiling reusing
+  existing infrastructure. The specific dollar values are implementer-chosen and reversible.
+
 ---
 
 ## Open decisions — `[DECISION NEEDED]`
@@ -105,6 +144,8 @@ Mirror of the open questions in `PRODUCT_VISION.md`; record answers here when ma
 
 - `[DECISION NEEDED]` Definition of success / metrics.
 - `[DECISION NEEDED]` First complete end-to-end workflow to build.
-- `[DECISION NEEDED]` First AI-assist capability and its cost ceiling.
+- ~~`[DECISION NEEDED]` First AI-assist capability and its cost ceiling.~~ **Answered** —
+  owner-triggered Experience interpretation with a $5/mo dev ceiling + per-op caps
+  (ADR-011, ADR-013).
 - `[DECISION NEEDED]` Shape of the public-identity surface.
 - `[DECISION NEEDED]` If/when to adopt an automated test framework, and which.

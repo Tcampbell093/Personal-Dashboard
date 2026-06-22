@@ -188,7 +188,15 @@ export const runStatus = pgEnum("run_status", ["success", "failure", "skipped"])
  * deferred to the build that implements those behaviors. */
 export const experienceRequestStatus = pgEnum("experience_request_status", [
   "draft",
+  "interpreted",
   "planned",
+]);
+
+// Build 2A: how the request's current constraints were produced.
+// `fallback` is deliberately omitted until an automated fallback actually exists.
+export const experienceInterpretationSource = pgEnum("experience_interpretation_source", [
+  "manual",
+  "ai",
 ]);
 
 export const experienceStatus = pgEnum("experience_status", [
@@ -682,6 +690,15 @@ export const experienceRequests = pgTable(
     interests: jsonb("interests").$type<string[]>().default([]),
     exclusions: jsonb("exclusions").$type<string[]>().default([]),
     status: experienceRequestStatus("status").notNull().default("draft"),
+    // Build 2A: provenance of the current constraints. `ai` only after a
+    // successful AI interpretation; reset to `manual` (provider/model null) when
+    // the owner edits any interpreted constraint. Provider/model are bounded
+    // text for audit only — never prompts, secrets, or raw responses.
+    interpretationSource: experienceInterpretationSource("interpretation_source")
+      .notNull()
+      .default("manual"),
+    interpretationProvider: varchar("interpretation_provider", { length: 60 }),
+    interpretationModel: varchar("interpretation_model", { length: 120 }),
     ...timestamps,
   },
   (t) => [index("experience_requests_user_status_idx").on(t.userId, t.status)],

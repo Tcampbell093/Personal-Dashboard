@@ -3,6 +3,7 @@ import {
   getHomeArea,
   listRequests,
   toRequestViews,
+  interpretationSummary,
 } from "@/lib/services/experience-requests";
 import {
   listPlanned,
@@ -11,6 +12,7 @@ import {
   toExperienceViews,
 } from "@/lib/services/experiences";
 import { RequestForm } from "@/components/experiences/request-form";
+import { InterpretationSummary } from "@/components/experiences/interpretation-summary";
 import { ConstraintEditor } from "@/components/experiences/constraint-editor";
 import { PlanForm } from "@/components/experiences/plan-form";
 import { PlannedList } from "@/components/experiences/planned-list";
@@ -79,15 +81,22 @@ export default async function ExperiencesPage() {
     );
   }
 
-  const drafts = requests.filter((r) => r.status === "draft");
+  // Requests still being shaped into a plan (draft or AI-interpreted). Once a
+  // plan exists the request is `planned` and lives under Planned experiences.
+  const openRequests = requests.filter((r) => r.status !== "planned");
+
+  // UI hint only — the server enforces the full enablement + cost gate at call
+  // time. AI stays off unless deliberately configured (no key, no auto-enable).
+  const aiAvailable =
+    !!process.env.ANTHROPIC_API_KEY && process.env.AI_AUTOMATION_ENABLED === "true";
 
   return (
     <div className="shell">
       <Header />
 
       <div className="mockbanner">
-        Your private experiences. Nothing here is shared or published. AI is not
-        used in this view.
+        Your private experiences. Nothing here is shared or published. AI assists
+        only when you ask it to — it never decides, publishes, or spends for you.
       </div>
 
       {/* 1 — New experience request */}
@@ -97,22 +106,32 @@ export default async function ExperiencesPage() {
           <span className="tier-name">New experience request</span>
         </div>
         <div className="card edge-explore">
-          <RequestForm homeArea={homeArea} />
+          <RequestForm homeArea={homeArea} aiAvailable={aiAvailable} />
         </div>
       </section>
 
-      {/* 2 — Editable constraints + manual plan creation */}
+      {/* 2 — Interpreted details + manual plan creation */}
       <section className="tier">
         <div className="tier-head">
           <span className="tier-tick" style={{ background: "var(--aware)" }} />
-          <span className="tier-name">Constraints &amp; plan creation</span>
-          <span className="tier-sub">drafts awaiting a plan</span>
+          <span className="tier-name">Plan a request</span>
+          <span className="tier-sub">in progress — not yet planned</span>
         </div>
-        {drafts.length === 0 && <div className="empty">No draft requests. Start one above.</div>}
-        {drafts.map((r) => (
+        {openRequests.length === 0 && (
+          <div className="empty">No requests in progress. Start one above.</div>
+        )}
+        {openRequests.map((r) => (
           <div className="card edge-aware" key={r.id} style={{ marginBottom: "var(--gap)" }}>
             <div className="exp-reqtext">“{r.requestText}”</div>
-            <ConstraintEditor request={r} />
+            <InterpretationSummary
+              request={r}
+              summary={interpretationSummary(r)}
+              aiAvailable={aiAvailable}
+            />
+            <details className="exp-disclosure">
+              <summary>Review details</summary>
+              <ConstraintEditor request={r} />
+            </details>
             <PlanForm requestId={r.id} defaultLocation={r.startingLocation} />
           </div>
         ))}

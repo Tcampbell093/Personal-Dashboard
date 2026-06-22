@@ -21,7 +21,7 @@
 `importance`, `bill_status`, `signal_type`, `signal_status`, `opportunity_category`,
 `opportunity_status`, `feedback_kind`, `job_status`, `interest_status`, `run_status`,
 `experience_request_status`, `experience_status`, `experience_energy_level`,
-`experience_physical_difficulty`.
+`experience_physical_difficulty`, `experience_interpretation_source`.
 
 ## Tables
 
@@ -70,16 +70,20 @@
 - **`interest_items`** — `topicId` (FK), `title`, `summary`, `source`, `publishedDate`,
   `whyItMatters`, `relevanceScore`, `status`, `isMock`.
 
-### Experience and Adventure Loop (Build 1 — manual)
-Two durable entities; **no separate recommendations table** (deferred). AI/recommendation
-columns (provider/model provenance, recommendations JSON, `selectedRecommendationId`) and the
-`experience_interpretation_source` enum are **intentionally deferred** to later builds.
+### Experience and Adventure Loop (Build 1 manual + Build 2A interpretation)
+Two durable entities; **no separate recommendations table** (deferred). Recommendation columns
+(recommendations JSON, `selectedRecommendationId`) remain **deferred to Build 2B**. Build 2A
+added AI interpretation **provenance** to `experience_requests` (see below).
 - **`experience_requests`** — the desired experience + constraints: `requestText`,
   `availableDate`, `availableTimeText`, `budgetMax`, `startingLocation` (prefilled from
   `user_preferences.homeArea` but request-specific/editable — never written back),
   `maxTravelMiles` + `maxTravelMinutes` (independent; never converted), `energyLevel`,
   `desiredFeeling`, `maxPhysicalDifficulty`, `interests`/`exclusions` (jsonb string[]),
-  `status` (`draft` → `planned`).
+  `status` (`draft` → `interpreted` → `planned`), and **Build 2A provenance**:
+  `interpretationSource` (`experience_interpretation_source`: `manual` | `ai`, default
+  `manual`), `interpretationProvider` (e.g. `anthropic`), `interpretationModel` (the exact
+  model id used). Editing any AI-filled constraint resets `interpretationSource` to `manual`
+  and clears provider/model; editing only `requestText` does not.
 - **`experiences`** — a planned/resolved experience: required `requestId` FK, `title`,
   `description`, `plannedDate`, `plannedTimeText`, `locationText`, `expectedCost`,
   `actualCost`, `expectedDurationMinutes`, `physicalDifficulty`, `desiredFeeling`, `notes`,
@@ -88,18 +92,26 @@ columns (provider/model provenance, recommendations JSON, `selectedRecommendatio
   (owner-controlled bool), `adventureXp` (server-computed: 10 / 15 / 0). A partial unique
   index on `request_id` (where `deleted_at is null`) enforces one live experience per request.
 
-**Request lifecycle transitions (Build 1):**
-- `draft → planned` when a plan (experience) is created from the request.
+**Request lifecycle transitions:**
+- `draft → interpreted` when owner-triggered AI interpretation succeeds and writes
+  constraints (Build 2A). A re-interpretation of an `interpreted` request stays `interpreted`.
+- `draft`/`interpreted → planned` when a plan (experience) is created from the request.
 - `planned → draft` when its live **planned** experience is soft-deleted (recovery, so the
-  request is re-plannable). All constraint data is preserved.
+  request is re-plannable). All constraint data is preserved. (Recovery returns to `draft`,
+  not `interpreted`, even if it had been AI-interpreted — provenance fields are retained.)
 - Soft-deleting an **already-resolved** experience does **not** reopen the request (stays
   `planned`). See `docs/DECISIONS.md` ADR-010.
 
 ### Intelligence / operations (reserved; no UI/logic yet)
 - **`intelligence_settings`** — one row per user; `aiAutomationEnabled`, `killSwitch`,
-  daily/monthly call & search limits, monthly cost limit, `lastSuccessfulRun`. This is
-  the master gate for any future AI/automation.
-- **`api_usage_logs`** — provider/operation/token/cost ledger.
+  daily/monthly call & search limits, monthly cost limit, `lastSuccessfulRun`. The master
+  gate for AI/automation — **now read by the Build 2A interpretation orchestration**
+  (`lib/services/ai-experience.ts`) alongside the `AI_AUTOMATION_ENABLED` env flag and an
+  `ANTHROPIC_API_KEY`. No settings UI yet (edited directly in the DB).
+- **`api_usage_logs`** — provider/operation/token/cost ledger. Build 2A **writes** one bounded
+  row per interpretation attempt (success or failure): provider, operation, token counts,
+  estimated cost, success flag, and an error *category* — never prompts, request text, or raw
+  responses. `monthToDateSpend()` sums this ledger to enforce the monthly ceiling.
 - **`scheduled_run_logs`** — scheduled-job run history.
 - **`daily_briefings`** — one row per user per date (unique). Table exists; the app
   currently recomputes briefings per request and does **not** write here.

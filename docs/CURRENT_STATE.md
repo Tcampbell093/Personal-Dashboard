@@ -4,7 +4,7 @@
 > after every substantive change (see `CLAUDE.md`). For the durable product vision, see
 > `docs/PRODUCT_VISION.md`.
 
-**Last updated:** 2026-06-21 · **Reflects branch:** `main`
+**Last updated:** 2026-06-22 · **Reflects branch:** `main`
 
 ## Status legend
 
@@ -59,7 +59,35 @@ rendered page**. No browser-driven UI clicks and no automated tests were run.
   → refresh persistence → edit → complete (XP 10) → meaningful 10↔15 → cancel/not-completed
   (XP 0) → planned-delete recovery → resolved status not editable in UI → mobile layout → no
   mock data.
-- **`npm run typecheck` and `npm run build`** pass on the current code.
+- **Experience interpretation — Build 2A (AI-assisted, owner-triggered)**, verified
+  **deterministically without a live key** (`scripts/verify-build2a.ts`, **125/125**: 26 pure
+  unit + **99 database-backed**) and via the **browser** (both AI-off and a fake-seeded
+  AI-interpreted state). The unit layer covers output validation (shape/enum/range/date →
+  `invalid_ai_output`), pricing/cost math, the budget gate (`per_op_limit` 422,
+  `budget_exceeded` 429, configured-limit-wins), the fake provider's four scenarios, and the
+  production factory (no key → `ai_unavailable`; with key → `AnthropicProvider`; **never**
+  returns the fake). The **DB-backed layer drives the real orchestration + real PATCH route
+  against Neon with the fake provider** (no Anthropic call): success persists
+  constraints/provenance/`interpreted` status + one bounded success log with matching
+  token/cost; manual edit of an interpreted constraint flips provenance to `manual`
+  (provider/model null) while a `requestText`-only edit leaves it and writes no AI log; provider
+  failure / malformed / invalid output leave the request unchanged with one bounded failure log
+  (no retry, no raw content); and all six pre-invocation blocks (env gate, DB gate, kill switch,
+  missing key, per-op cap, monthly ceiling) reject before any provider call with a zero-cost
+  bounded failure row. **Cleanup is strictly ID-scoped** (only the ids the run created) and a
+  **sentinel safety check** proves unrelated owner records — a live interpreted request, a
+  soft-deleted request, and a real `anthropic` usage log — survive a run untouched;
+  `intelligence_settings` are restored exactly (independently confirmed afterward: 0 requests,
+  0 usage logs). **Browser:** with AI off, the disabled "Help me plan this" + off-note, "Start
+  manually" fallback, and `POST …/interpret` → **503 `ai_unavailable`**; with a fake-seeded
+  interpreted request, the "Interpreted by AI" badge + deterministic summary + populated
+  constraints under "Review details" (no Recommendations section), and editing a constraint in
+  the real UI flips the badge to "Manually adjusted" with provider/model cleared and **no new
+  usage-log row** (desktop + 375px). Build 1 regression re-exercised. **No live Anthropic
+  invocation was made** — the adapter is implemented and deterministically verified; live
+  invocation is pending owner configuration.
+- **`npm run typecheck` and `npm run build`** pass on the current code (the build includes the
+  new `/api/experience-requests/[id]/interpret` route).
 
 ## 🟡 Partially implemented
 
@@ -96,14 +124,23 @@ rendered page**. No browser-driven UI clicks and no automated tests were run.
 
 - **Recurring bills/income generation** — `recurring_bills` and recurrence fields exist; no
   instance materialization.
-- **AI / automation** — disabled. The scheduled function
-  `netlify/functions/generate-daily-briefing.mts` does not run and makes no external/AI
-  calls; intelligence settings default the kill switch on.
+- **AI / automation** — **off by default.** One AI feature now exists in code: owner-triggered
+  **Experience interpretation** (Build 2A) turning a request's free text into structured
+  constraints via Anthropic Haiku. It is gated behind three independent switches — env
+  `AI_AUTOMATION_ENABLED="true"`, a configured `ANTHROPIC_API_KEY`, **and**
+  `intelligence_settings.aiAutomationEnabled` (with a `killSwitch`) — and is enforced before
+  any call by a per-op cap and a monthly ceiling (min of the $5 dev constant and the
+  configured limit). It never publishes, spends, contacts anyone, or auto-runs; the manual
+  path always remains usable. No live call has been made in this environment. Everything
+  else AI/automation remains unbuilt: the scheduled function
+  `netlify/functions/generate-daily-briefing.mts` does not run and makes no external/AI calls;
+  Build 2B (recommendations) is designed only.
 - **External integrations** — none (calendar, weather, news, job boards, local events).
 - **The "public identity" surface** from `PRODUCT_VISION.md` — not started.
-- **Schema with no UI/logic yet:** `user_preferences`, `intelligence_settings`,
-  `api_usage_logs`, `scheduled_run_logs`, `signal_sources`, `opportunity_signals`,
-  `opportunity_feedback`, `daily_briefings`.
+- **Schema with no UI/logic yet:** `scheduled_run_logs`, `signal_sources`,
+  `opportunity_signals`, `opportunity_feedback`, `daily_briefings`. (`intelligence_settings`
+  and `api_usage_logs` are now **read/written** by the Build 2A AI orchestration — enablement
+  gates, cost ceiling, and bounded usage logging — but still have no settings UI.)
 
 ## Authentication (explicit)
 
@@ -127,7 +164,8 @@ reset, and **all data belongs to one hard-coded owner** (`CURRENT_USER_ID = 1` i
 ## Environment variables (names only — see `.env.example`)
 
 `DATABASE_URL`, `DEFAULT_USER_EMAIL`, `APP_PASSWORD`, `AUTH_SECRET`,
-`AI_AUTOMATION_ENABLED`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`.
+`AI_AUTOMATION_ENABLED`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+`EXPERIENCE_INTERPRET_MODEL` (optional), `EXPERIENCE_RECOMMEND_MODEL` (optional).
 
 ## How to run
 

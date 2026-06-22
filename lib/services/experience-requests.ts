@@ -6,6 +6,22 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { experienceRequests, userPreferences } from "@/db/schema";
 import type { ExperienceRequestView } from "@/lib/types";
+import type { InterpretationResult, AiUsage } from "@/lib/ai/provider";
+
+// Constraint fields the AI interprets — editing any of these clears AI provenance.
+export const INTERPRETED_CONSTRAINT_FIELDS = [
+  "availableDate",
+  "availableTimeText",
+  "budgetMax",
+  "startingLocation",
+  "maxTravelMiles",
+  "maxTravelMinutes",
+  "energyLevel",
+  "desiredFeeling",
+  "maxPhysicalDifficulty",
+  "interests",
+  "exclusions",
+] as const;
 
 export type NewExperienceRequest = typeof experienceRequests.$inferInsert;
 export type ExperienceRequestRow = typeof experienceRequests.$inferSelect;
@@ -31,6 +47,7 @@ export function toRequestView(r: ExperienceRequestRow): ExperienceRequestView {
     interests: r.interests ?? [],
     exclusions: r.exclusions ?? [],
     status: r.status,
+    interpretationSource: r.interpretationSource,
   };
 }
 
@@ -106,4 +123,53 @@ export async function deleteRequest(userId: number, id: number) {
   return updateRequest(userId, id, {
     deletedAt: new Date(),
   } as Partial<NewExperienceRequest>);
+}
+
+/* --- AI interpretation (Build 2A) ---------------------------------------- */
+
+/** Persist a validated AI interpretation onto the request: overwrite the
+ * constraint columns, record provenance (source=ai + provider + exact model),
+ * and set status `interpreted`. */
+export async function applyInterpretation(
+  userId: number,
+  id: number,
+  result: InterpretationResult,
+  usage: AiUsage,
+): Promise<ExperienceRequestRow | null> {
+  return updateRequest(userId, id, {
+    availableDate: result.availableDate,
+    availableTimeText: result.availableTimeText,
+    budgetMax: result.budgetMax == null ? null : String(result.budgetMax),
+    startingLocation: result.startingLocation,
+    maxTravelMiles: result.maxTravelMiles,
+    maxTravelMinutes: result.maxTravelMinutes,
+    energyLevel: result.energyLevel as never,
+    desiredFeeling: result.desiredFeeling,
+    maxPhysicalDifficulty: result.maxPhysicalDifficulty as never,
+    interests: result.interests,
+    exclusions: result.exclusions,
+    interpretationSource: "ai",
+    interpretationProvider: usage.provider,
+    interpretationModel: usage.model,
+    status: "interpreted",
+  } as Partial<NewExperienceRequest>);
+}
+
+/** Deterministic, human-readable summary of the current constraints (no AI). */
+export function interpretationSummary(r: ExperienceRequestView): string {
+  const parts: string[] = [];
+  if (r.availableTimeText) parts.push(r.availableTimeText);
+  else if (r.availableDate) parts.push(r.availableDate);
+  if (r.budgetMax != null) parts.push(`within $${r.budgetMax}`);
+  if (r.maxTravelMinutes != null) parts.push(`≤ ${r.maxTravelMinutes} min`);
+  if (r.maxTravelMiles != null) parts.push(`≤ ${r.maxTravelMiles} mi`);
+  if (r.energyLevel) parts.push(`${r.energyLevel} energy`);
+  if (r.maxPhysicalDifficulty) parts.push(`≤ ${r.maxPhysicalDifficulty} difficulty`);
+  if (r.desiredFeeling) parts.push(`feel ${r.desiredFeeling}`);
+  if (r.startingLocation) parts.push(`from ${r.startingLocation}`);
+  if (r.interests.length) parts.push(`interests: ${r.interests.join(", ")}`);
+  if (r.exclusions.length) parts.push(`avoid: ${r.exclusions.join(", ")}`);
+  return parts.length
+    ? parts.join(" · ")
+    : "No specific constraints understood — add details under Review details.";
 }

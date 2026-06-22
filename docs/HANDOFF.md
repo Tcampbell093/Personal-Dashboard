@@ -12,62 +12,18 @@
 
 ## Next approved task
 
-### Build 1 — Manual Lifecycle Foundation (Experience and Adventure Loop v1)
+**None.** Build 2A is implemented and awaiting owner review (see the latest handoff below).
+No further implementation is authorized until the owner reviews Build 2A.
 
-- **Status:** **IMPLEMENTED — awaiting owner review of the implementation report.** Not
-  committed/pushed. Implements the manual slice of
-  [`docs/specs/EXPERIENCE_ADVENTURE_LOOP_V1.md`](specs/EXPERIENCE_ADVENTURE_LOOP_V1.md);
-  Builds 2–4 (fallback, AI proposal, AI) remain separately gated. See the latest handoff
-  report below for files changed, migration, and verification.
+After Build 2A is reviewed/approved, the next bounded task to prepare is **Build 2B — Sonnet
+recommendations + one-action plan creation**, which remains **separately gated** and must not
+be started without explicit approval. Build 2A deliberately stops at interpretation and does
+**not** yet generate a plan; Build 2B completes the primary workflow.
 
-**In scope:** `/experiences` page with exactly five sections (new request; editable
-constraints + manual plan creation; planned experiences; resolved history; Adventure XP
-summary — **no recommendations section**); `experience_requests` + `experiences` tables with
-**manual fields only**; four enums (`experience_request_status`, `experience_status`,
-`experience_energy_level`, `experience_physical_difficulty`); manual NL request capture;
-manual structured constraint editing; home-area prefill (read-only copy, never written back);
-manual plan creation; planned list; one-way resolution to `completed`/`cancelled`/
-`not_completed`; post-resolution correction of actual cost, rating, reflection,
-non-completion reason, meaningful checkbox; server-calculated Adventure XP (10 / 15 / 0) with
-recalculation when `meaningful` changes on a completed record; private resolved history; total
-XP; one minimal `/experiences` nav link in the dashboard top bar; ownership enforcement;
-validation; soft deletion; explicit DB-error behavior (no fabricated experiences); manual
-API + browser verification; doc updates.
+> **Status note (verbatim, required while no live key is configured):** "Anthropic adapter
+> implemented and deterministically verified; live Anthropic invocation pending owner
+> configuration."
 
-**Out of scope:** AI, provider deps/adapter, interpretation/recommendation provenance,
-recommendation JSON, rule-based catalog, recommendation UI, web search, maps, weather,
-calendars, reminders, notifications, voice, photos, public identity, automatic learning,
-seed/demo experiences, dashboard redesign, adventure summary card, unrelated refactors,
-dependency upgrades. **Deferred to later builds** (later migration acceptable):
-`experience_interpretation_source` enum, interpretation/recommendation provider+model fields,
-`recommendations` JSON, AI provenance, `selectedRecommendationId`, request statuses
-`interpreted`/`recommendations_ready`/`closed`.
-
-**File list (approved):**
-- `db/schema.ts` (modified: 4 enums + 2 tables) + generated migration `db/migrations/0001_*.sql`
-  + `db/migrations/meta/*`.
-- `lib/services/experience-requests.ts`, `lib/services/experiences.ts` (new); `lib/types.ts` (modified).
-- `app/api/experience-requests/route.ts`, `app/api/experience-requests/[id]/route.ts`,
-  `app/api/experiences/route.ts`, `app/api/experiences/[id]/route.ts`,
-  `app/api/experiences/[id]/resolve/route.ts`, `app/api/experiences/[id]/outcome/route.ts` (new).
-- `app/experiences/page.tsx` (new, server); `components/experiences/{request-form,constraint-editor,plan-form,planned-list,outcome-form}.tsx` (new, client).
-- `app/page.tsx` (modified: one nav link in `.topbar-right`); `app/globals.css` (modified: scoped styles + `.navlink`).
-- Docs at end: `docs/CURRENT_STATE.md`, `docs/DATA_MODEL.md`, `docs/HANDOFF.md`.
-
-**Implementation plan:** (1) schema enums + tables; (2) generate + apply migration `0001`;
-(3) `lib/types.ts` view models; (4) services (CRUD, `getHomeArea`, duplicate-safe plan
-creation, `resolveExperience`, `correctOutcomeDetails`, `computeXp`, `xpTotal`); (5) six API
-routes (server-resolved `userId`, validation, one-way transitions, reject client XP/userId);
-(6) `/experiences` page (explicit DB-error, no mock); (7) five client islands; (8) nav link +
-scoped CSS; (9) `typecheck`/`build` + manual API/browser tests; (10) update docs.
-
-**Acceptance criteria (must pass):** home-area prefill isolation; manual request + plan
-creation; refresh persistence; duplicate-plan protection; completion with empty optionals;
-completed XP=10; meaningful completed XP=15; meaningful false→true ⇒ 10→15; true→false ⇒
-15→10; cancelled/not_completed XP=0; post-resolution detail correction; resolved cannot return
-to `planned`; resolved status cannot change to another resolved status; invalid rating /
-negative amounts rejected; client `userId`/XP rejected; non-owned ⇒ safe not-found; DB failure
-⇒ explicit error and no mock experiences; `typecheck` + `build` pass.
 
 ### Proposed implementation breakdown (phased)
 
@@ -118,6 +74,135 @@ specific build. Builds are ordered so the manual loop works end-to-end before an
 ---
 
 ## Latest handoff
+
+### Build 2A — AI infrastructure + Haiku interpretation — implemented — 2026-06-22
+
+**Task Completed**
+Implemented Build 2A exactly to the approved scope: an application-owned AI provider boundary +
+owner-triggered Anthropic Haiku interpretation of an Experience request's free text into
+structured constraints, with cost/privacy gates and a low-friction UX. AI is **off by default**;
+no live Anthropic call was made. Not committed — awaiting owner review.
+
+> **Anthropic adapter implemented and deterministically verified; live Anthropic invocation
+> pending owner configuration.**
+
+**Files Changed**
+- AI layer (new): `lib/ai/models.ts` (model ids + pricing), `lib/ai/provider.ts` (interface,
+  `AiError`, usage/result types), `lib/ai/interpretation-schema.ts` (json-schema + validator),
+  `lib/ai/cost.ts` (per-op caps + monthly ceiling + spend sum), `lib/ai/anthropic-adapter.ts`
+  (the only SDK importer), `lib/ai/fake-provider.ts` (verification-only), `lib/ai/provider-factory.ts`
+  (server-only resolver; never returns the fake).
+- Orchestration (new): `lib/services/ai-experience.ts` (gates → cost → provider → persist →
+  bounded usage log; sole provider caller; provider injectable only for tests).
+- Service: `lib/services/experience-requests.ts` (+`applyInterpretation`, `interpretationSummary`,
+  `INTERPRETED_CONSTRAINT_FIELDS`; `toRequestView` now carries `interpretationSource`).
+- API: `app/api/experience-requests/[id]/interpret/route.ts` (new POST); `[id]/route.ts` PATCH
+  now clears AI provenance when an interpreted constraint is edited.
+- Schema/migration: `db/schema.ts` (`experience_interpretation_source` enum, `interpreted`
+  status value, three provenance columns); migration `0002_chief_natasha_romanoff.sql`
+  (+ snapshot/journal), additive.
+- Types: `lib/types.ts` (`ExperienceRequestStatus` + `interpreted`, `ExperienceInterpretationSource`,
+  `ExperienceRequestView.interpretationSource`).
+- UI: `app/experiences/page.tsx` (reorganized — "Plan a request" area, server-side `aiAvailable`
+  hint, "Review details" disclosure, privacy banner); `components/experiences/request-form.tsx`
+  (primary "Help me plan this" + "Start manually" fallback); `components/experiences/interpretation-summary.tsx`
+  (new — provenance badge + summary + interpret/re-interpret); labeled "Cancel"/"Edit"/"Delete"
+  in `plan-form.tsx`, `outcome-form.tsx`, `planned-list.tsx`; `app/globals.css` (`.btn-secondary`,
+  `.exp-interp`, `.exp-disclosure`, primary textarea).
+- Config/scripts: `.env.example` (model-name overrides + enablement note, names only);
+  `scripts/verify-build2a.ts` (deterministic harness, committed).
+- Dependency: `@anthropic-ai/sdk`.
+- Docs: `docs/CURRENT_STATE.md`, `docs/DATA_MODEL.md`, `docs/DECISIONS.md` (ADR-011/012/013),
+  this file.
+
+**Database Changes**
+Migration `0002_chief_natasha_romanoff` applied to Neon: added the
+`experience_interpretation_source` enum, the `interpreted` value to
+`experience_request_status`, and `interpretation_source` (not null, default `manual`),
+`interpretation_provider`, `interpretation_model` columns on `experience_requests`. Additive
+only; no existing columns altered or dropped.
+
+**Current Behavior**
+On `/experiences`, the natural-language request is the primary action. "Help me plan this"
+creates the request and, **only when AI is fully enabled**, interprets it into constraints
+(status → `interpreted`) with an AI/manual provenance badge and a deterministic summary;
+"Start manually" creates a draft with no AI. Editing any interpreted constraint reverts
+provenance to `manual`; editing only the request text does not. Constraints live under a
+"Review details" disclosure; the Build 1 manual loop (plan, planned list, resolve, correct,
+history, XP, planned-delete recovery) is unchanged. **AI is gated behind three switches**
+(`AI_AUTOMATION_ENABLED`, `ANTHROPIC_API_KEY`, `intelligence_settings.aiAutomationEnabled` +
+kill switch) and a cost ceiling (≤$0.02/interpret, ≤ min($5, configured) per UTC month); any
+failure leaves manual planning fully usable.
+
+**Testing Completed**
+`npm run typecheck` ✓; `npm run build` ✓ (includes the new interpret route).
+**Deterministic suite** `npx tsx --env-file=.env scripts/verify-build2a.ts` — **125/125 pass**
+(**26 pure unit + 99 database-backed**), no live key, no Anthropic call. **Cleanup is strictly
+ID-scoped** — the harness tracks every request id and usage-log id it creates (plus the seeded
+budget row) and deletes only those by id; it issues no owner-/provider-/operation-/table-wide
+delete, and restores `intelligence_settings` to the exact prior row. A **sentinel safety check**
+seeds three unrelated owner records (a live interpreted request, a soft-deleted request, and a
+real `anthropic` interpret usage log) and asserts all three survive a full run unchanged before
+removing only those sentinels. (A safety-review pass found and fixed one untracked
+Scenario-2 interpret log; the run now reports 12/12 usage-log ids created/deleted and an
+independent re-query shows 0 requests / 0 usage logs / settings `ai=false,kill=false,limit=10.00`.)
+- *Unit (no DB):* output validation (shape/enum/range/date → `invalid_ai_output`), pricing/cost
+  math, budget gate (`per_op_limit`, `budget_exceeded`, configured-limit-wins), the fake
+  provider's four scenarios, and the factory (no key → `ai_unavailable`; with key →
+  `AnthropicProvider`; never the fake).
+- *Database-backed (real orchestration + real PATCH route, fake provider, Neon):* **(1)**
+  success persists constraints + status `interpreted` + source `ai`/provider/model, returns the
+  deterministic summary, and writes exactly one success usage row whose tokens/cost match the
+  fake and contains no request text/raw output; **(2)** editing an interpreted constraint via
+  the real route flips source→`manual` (provider/model null, status stays `interpreted`, no AI
+  log), while a `requestText`-only edit leaves provenance intact and writes no AI log; **(3)**
+  provider failure leaves the request unchanged, one bounded `provider_unavailable` failure row,
+  provider called once (no retry); **(4)** malformed and validation-failing output each leave
+  the request unchanged with a bounded `invalid_ai_output` row that records the incurred fake
+  token usage and no raw output; **(5)** all six pre-invocation blocks (env gate, DB gate, kill
+  switch, missing key, per-op cap, monthly ceiling — the last seeded with $5 of `anthropic`
+  spend) reject **before any provider call** (`provider NOT called`) with a zero-cost,
+  null-token bounded failure row. **(6) Cleanup:** 11 temp requests hard-deleted, 13 interpret
+  usage rows removed (incl. the seed + a stray earlier browser-test row), `intelligence_settings`
+  restored to its prior row exactly. Independently re-queried afterward: **0 live requests, 0
+  total request rows, 0 usage-log rows** for the owner; settings back to `ai=false`,
+  `kill=false`, `monthly_cost_limit=10.00`. **No request text or raw provider output appeared in
+  any log** (asserted per row).
+**Browser (AI off)** via preview, desktop + mobile (375px): disabled "Help me plan this" +
+off-note, "Start manually" creates a draft into "Plan a request", "Review details" expands the
+full constraint editor, and `POST …/interpret` returns **503 `ai_unavailable`** with the request
+left `draft`/`manual` — no provider call.
+**Browser (fake-seeded interpreted state)** — one request was interpreted server-side via the
+fake provider (settings temporarily enabled then restored; no Anthropic call), then viewed at
+desktop + 375px: the NL request, the **"Interpreted by AI"** badge, the deterministic summary,
+and the populated constraints under **Review details** all render, with the manual "Create a
+plan" path and **no Recommendations section**. Editing the budget constraint through the real
+browser UI persisted the new value, flipped the badge to **"Manually adjusted"**, cleared
+`interpretation_provider`/`model` to null (DB-confirmed), kept status `interpreted`, and created
+**no new usage-log row** — proving provenance-clearing with no AI call. `requestText`-only
+editing is **not exposed** in the current UI (the request text is shown read-only); that path's
+provenance-preservation is proven by the DB-backed Scenario 2a instead. The temporary request +
+its fake interpret log were removed by id afterward. **Build 1 regression** re-exercised via API.
+**`npm run lint` not run** — `next lint` only offers interactive ESLint setup (unconfigured in
+this repo), as in prior builds. **No live Anthropic call was made** (per owner instruction).
+
+**Known Issues / Not Tested**
+- The only unverified behavior is a **live Anthropic call** — the adapter's actual network
+  request/response against the real model. Everything downstream of the provider boundary
+  (interpretation → validation → persistence → provenance `ai` → bounded logging, and the
+  `ai → manual` provenance flip on a real AI-sourced DB row) **is** exercised end-to-end against
+  Neon using the deterministic fake provider. A live smoke test runs only when the owner
+  intentionally configures a key and flips the enablement gates.
+- `/experiences` DB-failure error state remains enforced-by-construction, not runtime-simulated.
+
+**Decisions Needed**
+Owner review/approval of Build 2A before commit, and a separate decision to authorize **Build
+2B** (recommendations + plan creation). See `DECISIONS.md` ADR-011/012/013.
+
+**Recommended Next Step**
+Owner reviews Build 2A and, if approved, authorizes the commit; then the Build 2B bounded task
+can be prepared. Live interpretation can be smoke-tested whenever the owner intentionally
+provides a key and flips the enablement gates.
 
 ### Build 1 — Manual Lifecycle Foundation — implemented — 2026-06-21
 
