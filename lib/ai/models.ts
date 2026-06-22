@@ -18,9 +18,13 @@ const PRICING: Record<string, ModelPricing> = {
 export const INTERPRET_MODEL =
   process.env.EXPERIENCE_INTERPRET_MODEL?.trim() || "claude-haiku-4-5";
 
-// Used by Build 2B (recommendations). Documented here for a single source; unused in 2A.
+// Used by Build 2B.1 (recommendations).
 export const RECOMMEND_MODEL =
   process.env.EXPERIENCE_RECOMMEND_MODEL?.trim() || "claude-sonnet-4-6";
+
+// Output bound for recommendation generation. The pre-call cost gate uses this
+// to enforce the $0.05 per-op cap; do not raise it to fit a prompt.
+export const RECOMMEND_MAX_TOKENS = 2048;
 
 /** Pricing for a model; for an unknown configured id, fall back to the priciest
  * known tier so cost estimates never under-count. */

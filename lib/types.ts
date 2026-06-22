@@ -110,8 +110,31 @@ export interface InterestItemView {
 
 /* --- Experience and Adventure Loop v1 (Build 1, manual) ------------------- */
 
-export type ExperienceRequestStatus = "draft" | "interpreted" | "planned";
+export type ExperienceRequestStatus =
+  | "draft"
+  | "interpreted"
+  | "recommendations_ready"
+  | "planned";
 export type ExperienceInterpretationSource = "manual" | "ai";
+
+/* Build 2B.1: an application-owned, validated experience recommendation. The
+ * `id` is assigned by the application after the whole batch passes validation
+ * (the model never controls ids). These are concepts, not verified facts. */
+export interface ExperienceRecommendation {
+  id: string; // app-assigned opaque id, e.g. "rec_<uuid>"
+  title: string;
+  description: string;
+  whyItFits: string;
+  estimatedCostMin: number | null;
+  estimatedCostMax: number | null;
+  estimatedDurationMinutes: number | null;
+  locationText: string | null;
+  travelAssumption: string | null;
+  physicalDifficulty: PhysicalDifficulty | null;
+  intendedFeeling: string | null;
+  assumptions: string[];
+  preparationNotes: string[];
+}
 export type ExperienceStatus =
   | "planned"
   | "completed"
@@ -136,6 +159,10 @@ export interface ExperienceRequestView {
   exclusions: string[];
   status: ExperienceRequestStatus;
   interpretationSource: ExperienceInterpretationSource;
+  // Build 2B.1: validated recommendation batch + how it was produced (`ai` or
+  // null). Empty array when none generated or after a clear-on-edit.
+  recommendations: ExperienceRecommendation[];
+  recommendationSource: ExperienceInterpretationSource | null;
 }
 
 export interface ExperienceView {

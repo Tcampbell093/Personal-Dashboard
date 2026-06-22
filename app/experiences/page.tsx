@@ -13,6 +13,7 @@ import {
 } from "@/lib/services/experiences";
 import { RequestForm } from "@/components/experiences/request-form";
 import { InterpretationSummary } from "@/components/experiences/interpretation-summary";
+import { RecommendationList } from "@/components/experiences/recommendation-list";
 import { ConstraintEditor } from "@/components/experiences/constraint-editor";
 import { PlanForm } from "@/components/experiences/plan-form";
 import { PlannedList } from "@/components/experiences/planned-list";
@@ -128,6 +129,7 @@ export default async function ExperiencesPage() {
               summary={interpretationSummary(r)}
               aiAvailable={aiAvailable}
             />
+            <RecommendationList request={r} aiAvailable={aiAvailable} />
             <details className="exp-disclosure">
               <summary>Review details</summary>
               <ConstraintEditor request={r} />

@@ -5,8 +5,11 @@
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { experienceRequests, userPreferences } from "@/db/schema";
-import type { ExperienceRequestView } from "@/lib/types";
+import type { ExperienceRecommendation, ExperienceRequestView } from "@/lib/types";
 import type { InterpretationResult, AiUsage } from "@/lib/ai/provider";
+
+// Request statuses from which owner-triggered recommendation generation is allowed.
+export const RECOMMENDABLE_STATUSES = ["draft", "interpreted", "recommendations_ready"] as const;
 
 // Constraint fields the AI interprets — editing any of these clears AI provenance.
 export const INTERPRETED_CONSTRAINT_FIELDS = [
@@ -48,6 +51,8 @@ export function toRequestView(r: ExperienceRequestRow): ExperienceRequestView {
     exclusions: r.exclusions ?? [],
     status: r.status,
     interpretationSource: r.interpretationSource,
+    recommendations: r.recommendations ?? [],
+    recommendationSource: r.recommendationSource,
   };
 }
 
@@ -151,6 +156,42 @@ export async function applyInterpretation(
     interpretationSource: "ai",
     interpretationProvider: usage.provider,
     interpretationModel: usage.model,
+    status: "interpreted",
+  } as Partial<NewExperienceRequest>);
+}
+
+/* --- AI recommendations (Build 2B.1) ------------------------------------- */
+
+/** Persist a validated recommendation batch: overwrite the recommendations
+ * column, record provenance, and set status `recommendations_ready`. Replaces
+ * any prior batch wholesale (regeneration). */
+export async function applyRecommendations(
+  userId: number,
+  id: number,
+  batch: ExperienceRecommendation[],
+  usage: AiUsage,
+): Promise<ExperienceRequestRow | null> {
+  return updateRequest(userId, id, {
+    recommendations: batch,
+    recommendationSource: "ai",
+    recommendationProvider: usage.provider,
+    recommendationModel: usage.model,
+    status: "recommendations_ready",
+  } as Partial<NewExperienceRequest>);
+}
+
+/** Clear a stored recommendation batch + its provenance and return the request
+ * to `interpreted` (constraints remain). Used by clear-on-edit when request text
+ * or any interpreted constraint changes. Never calls AI. */
+export async function clearRecommendations(
+  userId: number,
+  id: number,
+): Promise<ExperienceRequestRow | null> {
+  return updateRequest(userId, id, {
+    recommendations: [],
+    recommendationSource: null,
+    recommendationProvider: null,
+    recommendationModel: null,
     status: "interpreted",
   } as Partial<NewExperienceRequest>);
 }

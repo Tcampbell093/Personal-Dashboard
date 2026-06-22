@@ -4,7 +4,7 @@
 > after every substantive change (see `CLAUDE.md`). For the durable product vision, see
 > `docs/PRODUCT_VISION.md`.
 
-**Last updated:** 2026-06-22 · **Reflects branch:** `main`
+**Last updated:** 2026-06-22 · **Reflects branch:** `main` (Build 2B.1 implemented, uncommitted)
 
 ## Status legend
 
@@ -86,8 +86,31 @@ rendered page**. No browser-driven UI clicks and no automated tests were run.
   usage-log row** (desktop + 375px). Build 1 regression re-exercised. **No live Anthropic
   invocation was made** — the adapter is implemented and deterministically verified; live
   invocation is pending owner configuration.
+- **Experience recommendations — Build 2B.1 (AI generation, owner-triggered)**, verified
+  **deterministically without a live key** (`scripts/verify-build2b1.ts`, **113/113**
+  database-backed) and via the **browser**. The orchestration (`generateRecommendations`) +
+  validation + persistence are driven against Neon with the fake provider (no Anthropic call):
+  a successful **"Find experiences"** persists exactly **three** validated concepts with
+  **app-assigned `rec_<uuid>` ids**, status `recommendations_ready`, provenance, and one bounded
+  success log (tokens/cost match, no private content); **"Find new options"** replaces the batch
+  with **entirely new ids** (prior ids absent from storage); each invalid scenario (malformed /
+  wrong-length / bad-costs / invalid-difficulty / bad-array) and provider failure leave the
+  request unchanged with a bounded failure log and **no partial persistence**; oversized fields
+  are **capped** (not rejected); all six pre-invocation gates (env, DB, kill switch, missing key,
+  per-op $0.05 cap, monthly ceiling) reject **before any provider call**; **clear-on-edit**
+  (editing the request text **or** a constraint) clears the batch + provenance and reverts to
+  `interpreted` with no AI call; manual planning, owner scoping, and fake-provider isolation hold;
+  ID-scoped cleanup + sentinel survival + exact `intelligence_settings` restore confirmed
+  (independently re-queried: 0 requests / 0 usage logs). **Browser (AI off):** no recommendation
+  cards before generation; "Find experiences" disabled with the off-note; a fake-seeded batch
+  renders **three Experiences-identity (cyan→violet) cards** showing title, description,
+  why-it-fits, cost range, duration, difficulty, location, assumptions, and a verification
+  warning, with **no selection control / no "Choose this"**; editing a constraint in the UI clears
+  the cards and reverts to `interpreted`; desktop + 375px single-column. Build 1 lifecycle
+  (plan/resolve/XP/history/delete-recovery) and Build 2A (125/125) regress green. **No live
+  Anthropic invocation was made.**
 - **`npm run typecheck` and `npm run build`** pass on the current code (the build includes the
-  new `/api/experience-requests/[id]/interpret` route).
+  new `/api/experience-requests/[id]/interpret` and `/recommend` routes).
 
 ## 🟡 Partially implemented
 
@@ -124,17 +147,17 @@ rendered page**. No browser-driven UI clicks and no automated tests were run.
 
 - **Recurring bills/income generation** — `recurring_bills` and recurrence fields exist; no
   instance materialization.
-- **AI / automation** — **off by default.** One AI feature now exists in code: owner-triggered
-  **Experience interpretation** (Build 2A) turning a request's free text into structured
-  constraints via Anthropic Haiku. It is gated behind three independent switches — env
-  `AI_AUTOMATION_ENABLED="true"`, a configured `ANTHROPIC_API_KEY`, **and**
-  `intelligence_settings.aiAutomationEnabled` (with a `killSwitch`) — and is enforced before
-  any call by a per-op cap and a monthly ceiling (min of the $5 dev constant and the
-  configured limit). It never publishes, spends, contacts anyone, or auto-runs; the manual
-  path always remains usable. No live call has been made in this environment. Everything
-  else AI/automation remains unbuilt: the scheduled function
-  `netlify/functions/generate-daily-briefing.mts` does not run and makes no external/AI calls;
-  Build 2B (recommendations) is designed only.
+- **AI / automation** — **off by default.** Two owner-triggered AI features now exist in code:
+  **Experience interpretation** (Build 2A, Anthropic Haiku → structured constraints) and
+  **Experience recommendations** (Build 2B.1, Anthropic Sonnet → exactly three validated concept
+  cards). Both are gated behind three independent switches — env `AI_AUTOMATION_ENABLED="true"`,
+  a configured `ANTHROPIC_API_KEY`, **and** `intelligence_settings.aiAutomationEnabled` (with a
+  `killSwitch`) — and enforced before any call by a per-op cap (interpret $0.02 / recommend
+  $0.05) and a monthly ceiling (min of the $5 dev constant and the configured limit). Neither
+  publishes, spends, contacts anyone, or auto-runs; the manual path always remains usable. No
+  live call has been made in this environment. Still unbuilt: **Build 2B.2** (recommendation
+  selection / one-action plan creation) is designed only; the scheduled function
+  `netlify/functions/generate-daily-briefing.mts` does not run and makes no external/AI calls.
 - **External integrations** — none (calendar, weather, news, job boards, local events).
 - **The "public identity" surface** from `PRODUCT_VISION.md` — not started.
 - **Schema with no UI/logic yet:** `scheduled_run_logs`, `signal_sources`,

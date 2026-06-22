@@ -682,6 +682,111 @@ textarea.taskadd-field:focus {
   color: var(--ink);
 }
 
+/* ---------------------------------- recommendations (Build 2B.1) --- */
+/* Experiences identity: a restrained cyan->violet exploration accent on dark
+ * layered surfaces. One dominant area color; AI output framed as suggestion. */
+.exp-recs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.exp-rec-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.exp-rec-loading {
+  color: var(--muted);
+}
+.exp-rec-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+@media (max-width: 760px) {
+  .exp-rec-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.exp-rec-card {
+  position: relative;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 12px 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+/* the single dominant area accent: cyan -> violet edge */
+.exp-rec-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 3px 0 0 3px;
+  background: linear-gradient(180deg, #36d4e0, #9b6cf0);
+}
+.exp-rec-title {
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.exp-rec-desc {
+  font-size: 12.5px;
+  color: var(--text);
+}
+.exp-rec-why {
+  font-size: 12px;
+  color: var(--muted);
+  border-left: 2px solid color-mix(in srgb, #9b6cf0 50%, var(--line));
+  padding-left: 8px;
+}
+.exp-rec-why-label {
+  display: block;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: color-mix(in srgb, #9b6cf0 70%, var(--muted));
+  margin-bottom: 2px;
+}
+.exp-rec-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.exp-rec-chip {
+  font-size: 11.5px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px 7px;
+}
+.exp-rec-sub {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.exp-rec-assumptions {
+  margin: 2px 0 0;
+  padding-left: 16px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.exp-rec-verify {
+  font-size: 11px;
+  color: var(--aware);
+  border-top: 1px dashed var(--line);
+  padding-top: 7px;
+  margin-top: 2px;
+}
+
 .exp-formrow {
   display: flex;
   align-items: center;

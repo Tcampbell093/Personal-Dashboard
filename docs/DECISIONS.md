@@ -158,6 +158,35 @@
 - **Relation to principles:** Serves PRODUCT_VISION 13a/13b; constrained by privacy cues
   (AI-vs-owner provenance must stay legible) and accessibility (WCAG AA).
 
+### ADR-015 — AI recommendations (Build 2B.1): owner-triggered, whole-batch, clear-on-edit
+- **Classification:** Owner-approved decision
+- **Detail:** The second AI feature generates exactly **three** differentiated experience
+  *concepts* via Anthropic Sonnet (`claude-sonnet-4-6`, env-configurable), on explicit owner
+  action ("Find experiences" / regenerate "Find new options"). The batch is validated as a whole
+  (`lib/ai/recommendation-schema.ts`) — any violation rejects the entire batch with no partial
+  persistence — and stored on `experience_requests.recommendations` with provenance and status
+  `recommendations_ready`. Regeneration **replaces** the batch (no history/versioning). Editing
+  the request text **or** any interpreted constraint **clears** the batch and reverts to
+  `interpreted` (no AI call), since the prior batch no longer matches. Recommendations are
+  concepts, not verified facts: the model is instructed not to assert live hours/pricing/
+  availability/weather/travel, and each card shows a verification note. Cost is gated before any
+  call by a $0.05 per-op cap and the shared monthly ceiling; bounded usage metadata only is
+  logged. **Build 2B.1 stops before selection** — "Choose this", Experience creation, and
+  `selected_recommendation_id` are deferred to the separately-gated Build 2B.2.
+- **Evidence:** Owner authorized the Build 2B.1 scope and decisions in `HANDOFF.md`. Implemented
+  and **deterministically verified without a live key** (`scripts/verify-build2b1.ts`, 113/113);
+  no live Anthropic invocation has been made.
+
+### ADR-016 — Application-assigned opaque recommendation ids
+- **Classification:** Provisional implementation choice (owner-directed)
+- **Detail:** The model never provides or controls recommendation ids. After the whole batch
+  passes validation, the application assigns each item a globally-unique opaque id `rec_<uuid>`
+  (`crypto.randomUUID`). Ids are unique within and across batches; regeneration mints new ids;
+  ids from a replaced/cleared batch no longer exist in storage and are therefore not selectable.
+  (Selection-time resolution against the current stored batch is implemented in Build 2B.2.)
+- **Evidence/rationale:** Owner-directed (replaces model-supplied-id trust + duplicate-id
+  validation). Prevents a stale or model-chosen id from being trusted. Reversible.
+
 ---
 
 ## Open decisions — `[DECISION NEEDED]`

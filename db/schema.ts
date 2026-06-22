@@ -14,6 +14,7 @@ import {
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import type { ExperienceRecommendation } from "@/lib/types";
 
 /* ===========================================================================
  * Personal Command Center — database schema
@@ -189,6 +190,7 @@ export const runStatus = pgEnum("run_status", ["success", "failure", "skipped"])
 export const experienceRequestStatus = pgEnum("experience_request_status", [
   "draft",
   "interpreted",
+  "recommendations_ready",
   "planned",
 ]);
 
@@ -699,6 +701,16 @@ export const experienceRequests = pgTable(
       .default("manual"),
     interpretationProvider: varchar("interpretation_provider", { length: 60 }),
     interpretationModel: varchar("interpretation_model", { length: 120 }),
+    // Build 2B.1: validated recommendation batch (app-owned contract; never raw
+    // model output) + provenance. Replaced wholesale on regeneration; cleared
+    // when request text or any interpreted constraint changes.
+    recommendations: jsonb("recommendations")
+      .$type<ExperienceRecommendation[]>()
+      .notNull()
+      .default([]),
+    recommendationSource: experienceInterpretationSource("recommendation_source"),
+    recommendationProvider: varchar("recommendation_provider", { length: 60 }),
+    recommendationModel: varchar("recommendation_model", { length: 120 }),
     ...timestamps,
   },
   (t) => [index("experience_requests_user_status_idx").on(t.userId, t.status)],

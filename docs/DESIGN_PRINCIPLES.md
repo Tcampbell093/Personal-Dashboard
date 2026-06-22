@@ -40,6 +40,33 @@ anti-clutter rules, life-area identities, and initial design tokens. Direction i
 7. **Minimal dependencies, hand-written CSS.** No UI component library; system fonts; no
    remote fonts.
 
+## Test-data & cleanup safety (durable rule — non-negotiable)
+
+Applies to **all** development and verification work against a real database — committed
+harnesses (`scripts/verify-*.ts`) **and** any one-off script, equally. This rule exists because a
+broad owner-wide delete in a throwaway cleanup script once removed a real owner draft.
+
+1. **Capture exact IDs at creation.** Every temporary record a run creates must have its primary
+   key recorded (or be tagged) at creation time.
+2. **Delete only those exact IDs.** Cleanup deletes/updates strictly by the primary keys the run
+   itself created.
+3. **Never use a broad predicate** to delete or restore — not by `user_id`/owner, `provider`,
+   `operation`, `status`, date range, or any table-wide condition. Restores target the unique
+   row by its `id`.
+4. **List target IDs before deleting.** A cleanup step must print the exact target IDs before
+   issuing any delete.
+5. **Fail closed on uncertainty.** If a created ID was not captured, or a record's provenance is
+   uncertain, **stop and leave it untouched** — prefer leaving an orphan for review over deleting
+   an uncertain owner record.
+6. **Sentinels must survive.** Verification runs seed unrelated sentinel records and assert they
+   are present and unchanged after cleanup.
+7. **No unreviewed one-off scripts in the tree.** A temporary script may remain committed only if
+   it is reviewed, reusable, and strictly ID-scoped per this rule; otherwise delete it after use.
+
+> This governs *development/verification* cleanup. Legitimate owner-requested product deletion
+> (e.g. soft-delete of a record the owner chose to delete) is separate and lives in the service
+> layer — but must itself stay owner-scoped and never use an unbounded predicate.
+
 ## The "vertical wiring" pattern
 
 A new data-backed feature is added the same way every existing vertical was:

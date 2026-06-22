@@ -4,7 +4,13 @@
  * never on @anthropic-ai/sdk directly. Build 2A defines only `interpret`;
  * Build 2B will add recommendation generation. */
 
-import type { EnergyLevel, PhysicalDifficulty } from "@/lib/types";
+import type {
+  EnergyLevel,
+  ExperienceRecommendation,
+  PhysicalDifficulty,
+} from "@/lib/types";
+
+export type { ExperienceRecommendation };
 
 export type AiErrorCategory =
   | "ai_unavailable"
@@ -59,8 +65,36 @@ export interface InterpretationResult {
   exclusions: string[];
 }
 
+/** Owner-confirmed constraints sent for recommendation generation. Mirrors the
+ * stored constraint columns; missing values stay null (no invented defaults). */
+export interface RecommendationConstraints {
+  availableDate: string | null;
+  availableTimeText: string | null;
+  budgetMax: number | null;
+  startingLocation: string | null;
+  maxTravelMiles: number | null;
+  maxTravelMinutes: number | null;
+  energyLevel: EnergyLevel | null;
+  desiredFeeling: string | null;
+  maxPhysicalDifficulty: PhysicalDifficulty | null;
+  interests: string[];
+  exclusions: string[];
+}
+
+export interface RecommendationInput {
+  requestText: string;
+  constraints: RecommendationConstraints;
+  homeArea: string | null;
+  today: string; // YYYY-MM-DD
+}
+
 export interface ExperienceAiProvider {
   interpret(
     input: InterpretationInput,
   ): Promise<{ result: InterpretationResult; usage: AiUsage }>;
+  /** Build 2B.1: generate exactly three validated experience concepts. The
+   * returned recommendations already carry application-assigned ids. */
+  recommend(
+    input: RecommendationInput,
+  ): Promise<{ result: ExperienceRecommendation[]; usage: AiUsage }>;
 }

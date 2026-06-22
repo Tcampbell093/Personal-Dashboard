@@ -79,11 +79,17 @@ added AI interpretation **provenance** to `experience_requests` (see below).
   `user_preferences.homeArea` but request-specific/editable — never written back),
   `maxTravelMiles` + `maxTravelMinutes` (independent; never converted), `energyLevel`,
   `desiredFeeling`, `maxPhysicalDifficulty`, `interests`/`exclusions` (jsonb string[]),
-  `status` (`draft` → `interpreted` → `planned`), and **Build 2A provenance**:
-  `interpretationSource` (`experience_interpretation_source`: `manual` | `ai`, default
-  `manual`), `interpretationProvider` (e.g. `anthropic`), `interpretationModel` (the exact
-  model id used). Editing any AI-filled constraint resets `interpretationSource` to `manual`
-  and clears provider/model; editing only `requestText` does not.
+  `status` (`draft` → `interpreted` → `recommendations_ready` → `planned`), and **Build 2A
+  provenance**: `interpretationSource` (`experience_interpretation_source`: `manual` | `ai`,
+  default `manual`), `interpretationProvider` (e.g. `anthropic`), `interpretationModel` (the
+  exact model id used). Editing any AI-filled constraint resets `interpretationSource` to
+  `manual` and clears provider/model; editing only `requestText` does not.
+  **Build 2B.1 recommendations:** `recommendations` (jsonb, `not null default []`, a validated
+  `ExperienceRecommendation[]` — never raw model output), `recommendationSource`
+  (nullable `experience_interpretation_source`, `ai` when generated), `recommendationProvider`,
+  `recommendationModel` (bounded text). The batch is **replaced wholesale** on regeneration and
+  **cleared** (with provenance, reverting status to `interpreted`) when the request text or any
+  interpreted constraint changes.
 - **`experiences`** — a planned/resolved experience: required `requestId` FK, `title`,
   `description`, `plannedDate`, `plannedTimeText`, `locationText`, `expectedCost`,
   `actualCost`, `expectedDurationMinutes`, `physicalDifficulty`, `desiredFeeling`, `notes`,
@@ -95,12 +101,26 @@ added AI interpretation **provenance** to `experience_requests` (see below).
 **Request lifecycle transitions:**
 - `draft → interpreted` when owner-triggered AI interpretation succeeds and writes
   constraints (Build 2A). A re-interpretation of an `interpreted` request stays `interpreted`.
-- `draft`/`interpreted → planned` when a plan (experience) is created from the request.
+- `draft`/`interpreted`/`recommendations_ready → recommendations_ready` when owner-triggered
+  recommendation generation succeeds (Build 2B.1). Regeneration replaces the batch with new ids.
+- `recommendations_ready → interpreted` (clear-on-edit) when the request text or any interpreted
+  constraint changes — the stored batch + recommendation provenance are cleared, no AI call.
+- `draft`/`interpreted`/`recommendations_ready → planned` when a plan (experience) is created
+  from the request. (Selecting a recommendation to create the plan is **Build 2B.2**; the
+  `experiences.selected_recommendation_id` column and `experience_request_status = closed` are
+  intentionally **not** added until their build implements them.)
 - `planned → draft` when its live **planned** experience is soft-deleted (recovery, so the
   request is re-plannable). All constraint data is preserved. (Recovery returns to `draft`,
   not `interpreted`, even if it had been AI-interpreted — provenance fields are retained.)
 - Soft-deleting an **already-resolved** experience does **not** reopen the request (stays
   `planned`). See `docs/DECISIONS.md` ADR-010.
+
+**Recommendation contract (`ExperienceRecommendation`, in `lib/types.ts`):** `id` (app-assigned
+`rec_<uuid>` — the model never controls ids), `title`, `description`, `whyItFits`,
+`estimatedCostMin`/`estimatedCostMax`, `estimatedDurationMinutes`, `locationText`,
+`travelAssumption`, `physicalDifficulty`, `intendedFeeling`, `assumptions[]`, `preparationNotes[]`.
+Validated as a whole batch of exactly three (`lib/ai/recommendation-schema.ts`); any violation
+rejects the entire batch with no partial persistence. These are concepts, not verified facts.
 
 ### Intelligence / operations (reserved; no UI/logic yet)
 - **`intelligence_settings`** — one row per user; `aiAutomationEnabled`, `killSwitch`,
@@ -108,10 +128,11 @@ added AI interpretation **provenance** to `experience_requests` (see below).
   gate for AI/automation — **now read by the Build 2A interpretation orchestration**
   (`lib/services/ai-experience.ts`) alongside the `AI_AUTOMATION_ENABLED` env flag and an
   `ANTHROPIC_API_KEY`. No settings UI yet (edited directly in the DB).
-- **`api_usage_logs`** — provider/operation/token/cost ledger. Build 2A **writes** one bounded
-  row per interpretation attempt (success or failure): provider, operation, token counts,
-  estimated cost, success flag, and an error *category* — never prompts, request text, or raw
-  responses. `monthToDateSpend()` sums this ledger to enforce the monthly ceiling.
+- **`api_usage_logs`** — provider/operation/token/cost ledger. Builds 2A and 2B.1 **write** one
+  bounded row per AI attempt (success or failure): provider, operation (`experience_interpret` /
+  `experience_recommend`), token counts, estimated cost, success flag, and an error *category* —
+  never prompts, request text, or raw responses. `monthToDateSpend()` sums this ledger (anthropic
+  rows) to enforce the monthly ceiling.
 - **`scheduled_run_logs`** — scheduled-job run history.
 - **`daily_briefings`** — one row per user per date (unique). Table exists; the app
   currently recomputes briefings per request and does **not** write here.

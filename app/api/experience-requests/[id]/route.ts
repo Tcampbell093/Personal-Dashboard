@@ -121,11 +121,12 @@ export async function PATCH(request: Request, { params }: Ctx) {
 
   // Provenance (Build 2A): editing ANY interpreted constraint on an AI-derived
   // request means the values are no longer purely AI — reset source to manual
-  // and clear provider/model. Editing requestText alone changes nothing here,
-  // and never reruns AI. A never-interpreted request keeps Build 1 behavior.
+  // and clear provider/model. Editing requestText alone leaves interpretation
+  // provenance unchanged, and never reruns AI.
   const touchesConstraint = Object.keys(patch).some((k) =>
     (INTERPRETED_CONSTRAINT_FIELDS as readonly string[]).includes(k),
   );
+  const touchesRequestText = "requestText" in patch;
   let current;
   try {
     current = await getRequest(CURRENT_USER_ID, id);
@@ -137,6 +138,18 @@ export async function PATCH(request: Request, { params }: Ctx) {
     patch.interpretationSource = "manual";
     patch.interpretationProvider = null;
     patch.interpretationModel = null;
+  }
+  // Clear-on-edit (Build 2B.1): editing the request text OR any interpreted
+  // constraint invalidates a stored recommendation batch (it was based on the
+  // previous text/constraints). Clear it, drop recommendation provenance, and
+  // revert to `interpreted`. Never reruns AI — a new batch needs a deliberate
+  // "Find experiences" action.
+  if ((touchesConstraint || touchesRequestText) && current.status === "recommendations_ready") {
+    patch.recommendations = [];
+    patch.recommendationSource = null;
+    patch.recommendationProvider = null;
+    patch.recommendationModel = null;
+    patch.status = "interpreted";
   }
 
   try {

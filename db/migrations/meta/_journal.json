@@ -22,6 +22,13 @@
       "when": 1782137448007,
       "tag": "0002_chief_natasha_romanoff",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1782143924383,
+      "tag": "0003_naive_exiles",
+      "breakpoints": true
     }
   ]
 }

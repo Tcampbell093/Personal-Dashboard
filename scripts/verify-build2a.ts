@@ -289,7 +289,9 @@ async function dbSuite() {
     .from(intelligenceSettings)
     .where(eq(intelligenceSettings.userId, U))
     .limit(1);
-  let createdSettings = false;
+  // Capture the exact id of any settings row WE create, so cleanup deletes by id
+  // (never by user-id predicate). origSettings is restored by id, never deleted.
+  let createdSettingsId: number | null = null;
 
   async function setSettings(vals: {
     aiAutomationEnabled: boolean;
@@ -305,10 +307,10 @@ async function dbSuite() {
       await db
         .update(intelligenceSettings)
         .set(vals)
-        .where(eq(intelligenceSettings.userId, U));
+        .where(eq(intelligenceSettings.id, cur.id));
     } else {
-      await db.insert(intelligenceSettings).values({ userId: U, ...vals });
-      createdSettings = true;
+      const [row] = await db.insert(intelligenceSettings).values({ userId: U, ...vals }).returning();
+      createdSettingsId = row.id;
     }
   }
 
@@ -607,21 +609,23 @@ async function dbSuite() {
     if (savedKey === undefined) delete process.env.ANTHROPIC_API_KEY;
     else process.env.ANTHROPIC_API_KEY = savedKey;
 
-    // Delete ONLY the exact request ids the harness created.
-    for (const id of acct.tempRequestIds) {
-      await db.delete(experienceRequests).where(eq(experienceRequests.id, id));
-    }
-    // Delete ONLY the exact usage-log ids the harness created (orchestration
-    // rows + the seeded budget row). No operation/provider/owner-wide delete.
+    // Delete ONLY the exact ids the harness created (orchestration rows + the
+    // seeded budget row). No operation/provider/owner-wide delete.
     const logIdsToDelete = Array.from(
       new Set([...acct.createdLogIds, ...(seededBudgetId != null ? [seededBudgetId] : [])]),
     );
+    // Safety: list the EXACT target ids before any deletion (never broad predicates).
+    console.log(`  cleanup targets — requests:[${acct.tempRequestIds.join(",")}] logs:[${logIdsToDelete.join(",")}] sentinels:[req ${sentinelReqLive.id},${sentinelReqDeleted.id} log ${sentinelLog.id}] settingsRow:${createdSettingsId ?? origSettings?.id ?? "none"}`);
+
+    for (const id of acct.tempRequestIds) {
+      await db.delete(experienceRequests).where(eq(experienceRequests.id, id));
+    }
     for (const id of logIdsToDelete) {
       await db.delete(apiUsageLogs).where(eq(apiUsageLogs.id, id));
     }
     acct.usageRowsDeleted = logIdsToDelete.length;
 
-    // Restore intelligence_settings exactly (or delete the row we created).
+    // Restore intelligence_settings exactly by id (or delete the row we created, by id).
     if (origSettings) {
       await db
         .update(intelligenceSettings)
@@ -630,11 +634,11 @@ async function dbSuite() {
           killSwitch: origSettings.killSwitch,
           monthlyCostLimit: origSettings.monthlyCostLimit,
         })
-        .where(eq(intelligenceSettings.userId, U));
-      acct.settingsRestored = "restored prior row exactly";
-    } else if (createdSettings) {
-      await db.delete(intelligenceSettings).where(eq(intelligenceSettings.userId, U));
-      acct.settingsRestored = "removed row created by harness (none existed before)";
+        .where(eq(intelligenceSettings.id, origSettings.id));
+      acct.settingsRestored = "restored prior row exactly (by id)";
+    } else if (createdSettingsId != null) {
+      await db.delete(intelligenceSettings).where(eq(intelligenceSettings.id, createdSettingsId));
+      acct.settingsRestored = "removed harness-created row (by id)";
     }
 
     // Sentinel survival: the unrelated records must be present and UNCHANGED.

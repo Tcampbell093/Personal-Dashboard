@@ -13,6 +13,24 @@
 - **Implementation authorization:** **Not yet granted.** Claude must not modify code, schema,
   dependencies, configuration, or UI until the owner approves this final specification.
 
+> **Implementation status (updated 2026-06-22).** The original authorization line above is
+> historical. The owner has since approved and gated the work in phases; current reality lives in
+> `docs/CURRENT_STATE.md` and `docs/HANDOFF.md`. Implemented so far:
+> - **Build 1** (manual lifecycle: request → constraints → manual plan → resolve → XP → history →
+>   delete-recovery) — committed `5b17ec5`.
+> - **Build 2A** (AI interpretation of the request into structured constraints, Haiku;
+>   `interpreted` status + provenance) — committed `1409c37`.
+> - **Build 2B.1** (AI recommendation **generation**: Stage C below, Sonnet; exactly three
+>   validated concepts on `experience_requests.recommendations`; `recommendations_ready` status;
+>   `recommendationSource/Provider/Model`) — implemented, awaiting review.
+>
+> Still **not** implemented: recommendation **selection** + one-action plan creation
+> (`experiences.selected_recommendation_id`) — **Build 2B.2**, separately gated. The
+> `experience_request_status = closed` value and `experience_interpretation_source = fallback`
+> value defined below are **deferred** until a build implements close/archive and fallback
+> behavior respectively (no static fallback catalog exists). Each build remains a separate
+> approval gate; AI stays off by default.
+
 ## 1. Goal
 
 Build the smallest useful private workflow that lets the owner:
