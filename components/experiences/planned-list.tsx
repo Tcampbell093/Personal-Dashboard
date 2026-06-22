@@ -79,6 +79,11 @@ function PlannedItem({ e }: { e: ExperienceView }) {
           {e.description && <div className="sub">{e.description}</div>}
         </div>
         <div className="right">
+          {e.selectedRecommendationId && (
+            <span className="badge exp-rec-from" title="Created from an AI recommendation">
+              From AI suggestion
+            </span>
+          )}
           <span className="badge act">planned</span>
           <div className="taskactions">
             <button className="btn-secondary" type="button" onClick={() => setEditing((v) => !v)} disabled={pending}>Edit</button>

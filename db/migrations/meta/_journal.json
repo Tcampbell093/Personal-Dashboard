@@ -29,6 +29,13 @@
       "when": 1782143924383,
       "tag": "0003_naive_exiles",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1782154658376,
+      "tag": "0004_outstanding_kronos",
+      "breakpoints": true
     }
   ]
 }

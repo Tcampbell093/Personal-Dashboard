@@ -786,6 +786,18 @@ textarea.taskadd-field:focus {
   padding-top: 7px;
   margin-top: 2px;
 }
+/* the one primary action per card (Build 2B.2) */
+.exp-rec-choose {
+  margin-top: 4px;
+  width: 100%;
+}
+/* subtle traceability badge on a recommendation-created planned experience */
+.badge.exp-rec-from {
+  background: color-mix(in srgb, #9b6cf0 16%, transparent);
+  border: 1px solid color-mix(in srgb, #9b6cf0 40%, var(--line));
+  color: color-mix(in srgb, #9b6cf0 75%, var(--text));
+  font-weight: 600;
+}
 
 .exp-formrow {
   display: flex;

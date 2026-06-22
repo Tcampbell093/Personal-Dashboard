@@ -745,6 +745,9 @@ export const experiences = pgTable(
     reflection: text("reflection"),
     meaningfulExperience: boolean("meaningful_experience").notNull().default(false),
     adventureXp: integer("adventure_xp").notNull().default(0),
+    // Build 2B.2: the app-assigned recommendation id this plan was created from
+    // (null for manual plans). Opaque text, for traceability + deletion recovery.
+    selectedRecommendationId: varchar("selected_recommendation_id", { length: 64 }),
     ...timestamps,
   },
   (t) => [

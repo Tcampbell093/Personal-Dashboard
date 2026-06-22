@@ -12,52 +12,18 @@
 
 ## Next approved task
 
-### Build 2B.1 — AI recommendation generation, validation & persistence (Experience loop)
+### Build 2B.2 — Recommendation selection + one-action plan creation (Experience loop)
 
 - **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** See the latest handoff
-  report below. First half of the 2B split; **Build 2B.2** (selection + one-action plan
-  creation) is separately gated and is the next bounded task to prepare after 2B.1 review.
-  (Build 2A committed: `1409c37`; design system: `974dbe5`.)
-- **Model:** recommend = `claude-sonnet-4-6` (env `EXPERIENCE_RECOMMEND_MODEL`, non-secret
-  default in `lib/ai/models.ts`). Owner-triggered only; no retries; no extended thinking; no
-  provider switching. `max_tokens ≈ 2048`, but the pre-call bounded cost must stay within the
-  **$0.05** per-op cap — reject before invocation if exceeded; never weaken the cap.
-
-- **In scope:** provider `recommend` (+ Anthropic adapter + fake scenarios); structured
-  recommendation JSON schema; **whole-batch** application validation; **app-assigned globally
-  unique `rec_<uuid>` IDs** (model never controls IDs); owner-triggered generation
-  ("Find experiences") from `draft`/`interpreted`/`recommendations_ready` and regeneration
-  ("Find new options") that **replaces** the batch with fresh IDs; persistence to
-  `experience_requests.recommendations` + provenance + status `recommendations_ready`;
-  clear-on-edit (request-text **or** constraint change clears the batch, reverts to
-  `interpreted`, no AI call); three Experiences-identity cards (**no selection control**) with a
-  concise truthfulness/verification note; disabled/loading/provider-error/invalid-output/
-  budget-reached states; full manual fallback; cost ($0.05/op, ≤ min($5, configured)/UTC-month)
-  + privacy + bounded logging reused from 2A; deterministic harness + browser pass.
-- **Provider input:** request text + **stored current constraint values only** (missing
-  constraints stay missing — no application-invented defaults) + general home area (if still
-  needed) + today.
-- **Schema (additive, migration 0003):** status value `recommendations_ready`; `recommendations`
-  jsonb + `recommendation_source/provider/model` on `experience_requests`. **No**
-  `selected_recommendation_id`, `closed`, or `fallback`.
-- **Prompt-context allow-list:** as above. Never finances/obligations/jobs/reflections/
-  credentials/profile/other history/raw ids. Logs store bounded metadata only — never prompts,
-  request text, or raw output.
-- **Security:** fake provider server-internal only (injectable arg + harness); never selectable
-  via client input/UI/factory. AI off by default behind the three gates + kill switch + cost
-  ceiling. Verification harness is separate: `scripts/verify-build2b1.ts` (do not merge into the
-  2A harness); strictly ID-scoped cleanup + sentinels + exact `intelligence_settings` restore.
-- **Out of scope (2B.1):** selection / "Choose this" / Experience creation / `selected_recommendation_id`
-  (all 2B.2); `closed`; `fallback`; static catalog; Build 2B.2 controls or teasers; live
-  web/maps/weather/events/pricing; booking/purchase/contacting; calendar/notifications;
-  preference learning; background/scheduled AI; recommendation versioning; redesign; artwork;
-  unrelated refactors. Cards show **no** selection control and **no** "coming soon" hint.
-- **Verification:** deterministic (fake provider) is sufficient for implementation-complete; a
-  live Sonnet smoke test runs only after the owner deliberately enables a key. While
-  unconfigured, reports state verbatim: "Anthropic adapter implemented and deterministically
-  verified; live Anthropic invocation pending owner configuration."
-- **Authorization:** implement Build 2B.1 only. Build 2B.2 requires separate approval after
-  2B.1 review.
+  report below. This completes the core Experience workflow
+  `request → interpretation → recommendations → choice → planned experience`. (Build 2A
+  committed `1409c37`; design system `974dbe5`; Build 2B.1 committed `5977b9b`.)
+- **No further Experience-loop build is currently authorized.** Possible future directions (each
+  separately gated): a settings UI for `intelligence_settings`; a close/archive workflow (would
+  introduce `experience_request_status = closed`); rule-based fallback recommendations (would
+  introduce the `fallback` source value + a catalog); the application-wide visual redesign
+  (`docs/DESIGN_SYSTEM.md`); a live Sonnet/Haiku smoke test once the owner deliberately enables a
+  key. None of these may begin without explicit approval.
 
 > **Status note (verbatim, required while no live key is configured):** "Anthropic adapter
 > implemented and deterministically verified; live Anthropic invocation pending owner
@@ -134,6 +100,93 @@ specific build. Builds are ordered so the manual loop works end-to-end before an
 ---
 
 ## Latest handoff
+
+### Build 2B.2 — Recommendation selection + one-action plan creation — implemented — 2026-06-22
+
+**Task Completed**
+Implemented Build 2B.2 exactly to the approved scope + owner decisions: a **"Choose this"** action
+that turns one stored recommendation into exactly one planned experience via a **single atomic
+writable-CTE statement**, accepting only `{recommendationId}` and resolving all values server-side
+from the request's current batch. Completes the core workflow
+`request → interpretation → recommendations → choice → planned experience`. Not committed —
+awaiting owner review.
+
+> **Anthropic adapter implemented and deterministically verified; live Anthropic invocation
+> pending owner configuration.**
+
+**Files Changed**
+- New: `app/api/experience-requests/[id]/select-recommendation/route.ts`;
+  `db/migrations/0004_outstanding_kronos.sql` (+ `meta/0004_snapshot.json`);
+  `scripts/verify-build2b2.ts`.
+- Modified: `db/schema.ts` (+`selected_recommendation_id`); `lib/types.ts`
+  (`ExperienceView.selectedRecommendationId`); `lib/services/experiences.ts` (`selectRecommendation`
+  atomic create + composed notes + `toExperienceView` field + refined `deleteExperience` recovery);
+  `components/experiences/recommendation-card.tsx` (→ client, "Choose this" + submitting/error
+  states); `components/experiences/recommendation-list.tsx` (pass `requestId`);
+  `components/experiences/planned-list.tsx` ("From AI suggestion" badge); `app/globals.css`
+  (button + badge); `db/migrations/meta/_journal.json`; docs.
+- Dependency: none.
+
+**Database Changes**
+Migration `0004_outstanding_kronos` applied to Neon (additive only):
+`ALTER TABLE "experiences" ADD COLUMN "selected_recommendation_id" varchar(64);`. Nothing else
+(no `closed`/`fallback`/history/booking/live-data fields).
+
+**Current Behavior**
+Each recommendation card has one primary **Choose this**. Selecting sends only `{recommendationId}`;
+the server resolves every value from the current stored batch and runs one atomic writable-CTE
+(`UPDATE experience_requests … RETURNING` → `INSERT INTO experiences … SELECT … FROM that`) that
+enforces owner scoping, not-deleted, status `recommendations_ready`, and id-in-current-batch, sets
+the request to `planned`, and inserts the experience both-or-neither (partial unique index as
+backstop). Mapping: `title/description/locationText/physicalDifficulty` ← rec;
+`expectedCost ← max ?? min`; `expectedDurationMinutes ← rec`; `desiredFeeling ← intendedFeeling`;
+`notes ←` labeled Preparation/Assumptions/Travel; `plannedDate/plannedTimeText ←` the owner's
+stored availability only (no invented dates); `selectedRecommendationId ← recId`. The batch is
+retained; the planned experience shows a subtle **From AI suggestion** badge. Deleting that planned
+experience returns the request to `recommendations_ready` (id still in batch) or `draft` (manual /
+absent id); resolved deletion never reactivates. Manual `Create a plan` is unchanged
+(`selected_recommendation_id = null`). No AI call is made by selection.
+
+**Testing Completed**
+`npm run typecheck` ✓; `npm run build` ✓ (includes `/select-recommendation`). **Neon HTTP
+compatibility of the writable CTE confirmed** by a focused probe before the full suite.
+**`scripts/verify-build2b2.ts` — 60/60** (DB-backed, fake-seeded, no Anthropic): valid selection +
+full mapping + date/time-from-owner-availability + labeled notes + id persisted + `planned` + batch
+retained + **no usage-log row from selection**; manual plan null id; **strict body** (extra fields
+→ 422, full object → 422, valid → 200 with server-resolved title); stale id → 404, unknown
+well-formed → 404, fabricated → 422; owner scoping → 404; not-ready → 409; double-click &
+different-rec → exactly one plan (409 losers); **unique-index conflict → 409 with atomic rollback
+(request still `recommendations_ready`, one experience)**; **real wall-clock concurrency**
+(`Promise.allSettled` racing two live selection calls against Neon) for same-rec and different-rec
+each → exactly one success + one 409, exactly one live experience, stored id matches the
+(non-deterministic) winner, batch retained, no usage log; deletion recovery →
+`recommendations_ready` (batch retained) and → `draft` (manual / id absent); resolved-deletion no
+reactivation; ID-scoped cleanup, sentinels survive, settings restored by id, target IDs printed.
+**Build 2A 125/125; Build 2B.1 113/113; Build 1 lifecycle 6/6.** **Browser** (desktop + 375px):
+three cards with Choose this → choose → planned experience appears with the From AI suggestion
+badge and correct mapped details (date/time/location/cost), **no re-entry**; refresh persists; cards
+disappear after success; delete → cards return (`recommendations_ready`); manual fallback works;
+mobile single-column with full-width button. Browser-test records cleaned by exact recorded id
+(request 270, experience 42, log 234) — the owner's draft (id 222) was left untouched.
+**`npm run lint` not run** — `next lint` only offers interactive ESLint setup (unconfigured), as in
+prior builds. **No live Anthropic call was made.**
+
+**Known Issues / Not Tested**
+- The only unverified behavior is a **live Anthropic call** (recommendation generation); selection
+  itself makes no AI call and is fully verified.
+- **True wall-clock concurrency** is now verified by racing two live selection calls with
+  `Promise.allSettled` against Neon (same-rec and different-rec); exactly one wins, the other gets
+  409, and exactly one live experience results — the invariant holds with no simulation.
+- A transient dev-server CSS-load glitch appeared once during the browser pass (fixed by a server
+  restart); the production build compiles CSS correctly.
+
+**Decisions Needed**
+Owner review/approval of Build 2B.2 before commit. No further Experience-loop build is authorized;
+future directions are listed under "Next approved task".
+
+**Recommended Next Step**
+Owner reviews Build 2B.2 and, if approved, authorizes the commit. The core Experience workflow is
+then complete end to end.
 
 ### Build 2B.1 — AI recommendation generation, validation & persistence — implemented — 2026-06-22
 

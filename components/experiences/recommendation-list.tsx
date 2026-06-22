@@ -66,7 +66,7 @@ export function RecommendationList({
       {hasBatch && (
         <div className="exp-rec-grid">
           {recs.map((rec) => (
-            <RecommendationCard key={rec.id} rec={rec} />
+            <RecommendationCard key={rec.id} rec={rec} requestId={request.id} />
           ))}
         </div>
       )}

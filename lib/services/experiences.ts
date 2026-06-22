@@ -2,10 +2,11 @@
  * Owns server-side XP calculation, status-transition rules, and the
  * duplicate-safe creation of a planned experience from a request. */
 
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { experiences, experienceRequests } from "@/db/schema";
 import type {
+  ExperienceRecommendation,
   ExperienceView,
   ExperienceXpSummary,
   ExperienceStatus,
@@ -60,6 +61,7 @@ export function toExperienceView(r: ExperienceRow): ExperienceView {
     meaningfulExperience: r.meaningfulExperience,
     adventureXp: r.adventureXp,
     resolvedAt: r.resolvedAt ? r.resolvedAt.toISOString() : null,
+    selectedRecommendationId: r.selectedRecommendationId,
   };
 }
 
@@ -198,6 +200,126 @@ export async function createPlannedExperience(
   return row;
 }
 
+/* --- Build 2B.2: one-action plan creation from a recommendation ----------- */
+
+/** Compose the owner-visible notes from a recommendation's context. */
+function composeRecommendationNotes(rec: ExperienceRecommendation): string | null {
+  const sections: string[] = [];
+  if (rec.preparationNotes?.length) {
+    sections.push("Preparation:\n" + rec.preparationNotes.map((n) => `- ${n}`).join("\n"));
+  }
+  if (rec.assumptions?.length) {
+    sections.push("Assumptions:\n" + rec.assumptions.map((a) => `- ${a}`).join("\n"));
+  }
+  if (rec.travelAssumption) {
+    sections.push("Travel:\n" + rec.travelAssumption);
+  }
+  return sections.length ? sections.join("\n\n") : null;
+}
+
+/**
+ * Create exactly one planned experience from a recommendation the owner chose.
+ *
+ * Trusts ONLY the recommendation id: every authoritative value is resolved from
+ * the request's CURRENT stored batch. The request transition (-> planned) and the
+ * experience insert happen in ONE atomic writable-CTE statement that independently
+ * re-checks owner scoping, not-deleted, status `recommendations_ready`, and that
+ * the id is still in the current batch (guards against regeneration / clear-on-edit
+ * between this read and the write). The partial unique index is the duplicate
+ * backstop. Both writes persist together or neither does.
+ */
+export async function selectRecommendation(
+  userId: number,
+  requestId: number,
+  recommendationId: string,
+): Promise<ExperienceRow> {
+  // Pre-read (owner-scoped) for mapped values + early bounded errors.
+  const [request] = await db
+    .select()
+    .from(experienceRequests)
+    .where(
+      and(
+        eq(experienceRequests.id, requestId),
+        eq(experienceRequests.userId, userId),
+        isNull(experienceRequests.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!request) throw new ExperienceError(404, "Experience request not found.");
+  if (request.status !== "recommendations_ready") {
+    throw new ExperienceError(409, "These recommendations are no longer current.");
+  }
+  const rec = (request.recommendations ?? []).find((r) => r.id === recommendationId);
+  if (!rec) throw new ExperienceError(404, "That recommendation is no longer available.");
+
+  const expectedCost = rec.estimatedCostMax ?? rec.estimatedCostMin;
+  const notes = composeRecommendationNotes(rec);
+  const probe = JSON.stringify([{ id: recommendationId }]);
+
+  let insertedId: number | null = null;
+  try {
+    const res = await db.execute(sql`
+      WITH sel AS (
+        UPDATE experience_requests
+           SET status = 'planned', updated_at = now()
+         WHERE id = ${requestId}
+           AND user_id = ${userId}
+           AND deleted_at IS NULL
+           AND status = 'recommendations_ready'
+           AND recommendations @> ${probe}::jsonb
+        RETURNING id
+      )
+      INSERT INTO experiences
+        (user_id, request_id, status, title, description, location_text, expected_cost,
+         expected_duration_minutes, physical_difficulty, desired_feeling, notes,
+         planned_date, planned_time_text, selected_recommendation_id, created_at, updated_at)
+      SELECT ${userId}, sel.id, 'planned', ${rec.title}, ${rec.description}, ${rec.locationText},
+             ${expectedCost === null ? null : String(expectedCost)}::numeric,
+             ${rec.estimatedDurationMinutes}, ${rec.physicalDifficulty}::experience_physical_difficulty,
+             ${rec.intendedFeeling}, ${notes},
+             ${request.availableDate}::date, ${request.availableTimeText}, ${recommendationId},
+             now(), now()
+        FROM sel
+      RETURNING id
+    `);
+    const rows = (res.rows ?? []) as Array<{ id: unknown }>;
+    insertedId = rows.length ? Number(rows[0].id) : null;
+  } catch (err) {
+    // Concurrent live experience already exists for this request.
+    if (String(err).includes("experiences_request_live_uq")) {
+      throw new ExperienceError(409, "A plan already exists for this request.");
+    }
+    throw err;
+  }
+
+  if (insertedId == null) {
+    // Zero rows: a change occurred between pre-read and write. Disambiguate via a
+    // follow-up read (404 stale/unknown vs 409 status changed).
+    const [cur] = await db
+      .select()
+      .from(experienceRequests)
+      .where(
+        and(
+          eq(experienceRequests.id, requestId),
+          eq(experienceRequests.userId, userId),
+          isNull(experienceRequests.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!cur) throw new ExperienceError(404, "Experience request not found.");
+    const stillHas = (cur.recommendations ?? []).some((r) => r.id === recommendationId);
+    if (!stillHas) throw new ExperienceError(404, "That recommendation is no longer available.");
+    throw new ExperienceError(409, "A plan was already created for this request.");
+  }
+
+  const [row] = await db
+    .select()
+    .from(experiences)
+    .where(and(eq(experiences.id, insertedId), eq(experiences.userId, userId)))
+    .limit(1);
+  return row;
+}
+
 /** Edit plan fields — only while the experience is still `planned`. */
 export async function updatePlannedExperience(
   userId: number,
@@ -323,9 +445,33 @@ export async function deleteExperience(userId: number, id: number) {
     .returning();
 
   if (current.status === "planned") {
+    // Recovery target (Build 2B.2 refinement of ADR-010): if this plan was created
+    // from a recommendation whose id is STILL in the request's current batch, the
+    // request returns to `recommendations_ready` (re-choosable). Otherwise — a manual
+    // plan, or a batch that has since changed — it returns to `draft` (Build 1
+    // behavior). The batch is never cleared; no AI call; no auto-replan. A resolved
+    // experience deletion does not enter this branch (request stays unchanged).
+    let target: "recommendations_ready" | "draft" = "draft";
+    if (current.selectedRecommendationId) {
+      const [req] = await db
+        .select({ recommendations: experienceRequests.recommendations })
+        .from(experienceRequests)
+        .where(
+          and(
+            eq(experienceRequests.id, current.requestId),
+            eq(experienceRequests.userId, userId),
+            isNull(experienceRequests.deletedAt),
+          ),
+        )
+        .limit(1);
+      const stillHas = (req?.recommendations ?? []).some(
+        (r) => r.id === current.selectedRecommendationId,
+      );
+      if (stillHas) target = "recommendations_ready";
+    }
     await db
       .update(experienceRequests)
-      .set({ status: "draft", updatedAt: now })
+      .set({ status: target, updatedAt: now })
       .where(
         and(
           eq(experienceRequests.id, current.requestId),

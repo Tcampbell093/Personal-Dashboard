@@ -1,0 +1,1 @@
+ALTER TABLE "experiences" ADD COLUMN "selected_recommendation_id" varchar(64);

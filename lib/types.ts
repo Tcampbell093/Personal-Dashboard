@@ -186,6 +186,8 @@ export interface ExperienceView {
   meaningfulExperience: boolean;
   adventureXp: number;
   resolvedAt: string | null;
+  // Build 2B.2: the recommendation this plan was created from (null for manual plans).
+  selectedRecommendationId: string | null;
 }
 
 export interface ExperienceXpSummary {

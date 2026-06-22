@@ -187,6 +187,33 @@
 - **Evidence/rationale:** Owner-directed (replaces model-supplied-id trust + duplicate-id
   validation). Prevents a stale or model-chosen id from being trusted. Reversible.
 
+### ADR-017 — One-action plan creation via a single atomic writable-CTE
+- **Classification:** Owner-approved decision
+- **Detail:** Choosing a recommendation (Build 2B.2) creates the planned experience in **one**
+  SQL statement — a writable CTE (`UPDATE experience_requests … RETURNING` feeding
+  `INSERT INTO experiences … SELECT … FROM that`) executed via the Neon HTTP driver. The single
+  statement is implicitly atomic, so the request transition and the experience insert persist
+  **both or neither**. The `UPDATE … WHERE` enforces, in one boundary, owner scoping, not-deleted,
+  status `recommendations_ready`, and that the recommendation id is still present in the **current**
+  stored batch (`recommendations @> [{"id":…}]::jsonb`) — guarding against regeneration/clear-on-edit
+  between the pre-read and the write. The partial unique index `experiences_request_live_uq` remains
+  the duplicate backstop; a unique violation maps to 409, a zero-row result is disambiguated (404
+  stale/unknown vs 409 status-changed) via a follow-up read. The request body accepts **only**
+  `{recommendationId}` (extra fields → 422); every authoritative value is resolved server-side from
+  the stored batch. Verified compatible on the actual Neon HTTP driver.
+- **Evidence:** Owner directed the atomic single-statement approach (with a "stop and report"
+  guard against silently using a non-atomic fallback). Compatibility confirmed; no fallback used.
+
+### ADR-018 — Planned-experience deletion recovery (supersedes ADR-010's deferral)
+- **Classification:** Owner-approved decision
+- **Detail:** Soft-deleting a `planned` experience returns its request to `recommendations_ready`
+  when the deleted plan's `selected_recommendation_id` is still in the request's current batch;
+  otherwise (manual plan / batch since changed) to `draft` (the Build 1 behavior preserved as the
+  fallback). The batch is never cleared, no AI call is made, no plan is auto-created, and a
+  resolved experience's deletion never reactivates the request. This implements the richer recovery
+  ADR-010 explicitly deferred until the recommendation states/columns existed.
+- **Evidence:** Owner-specified in the Build 2B.2 authorization.
+
 ---
 
 ## Open decisions — `[DECISION NEEDED]`

@@ -95,8 +95,11 @@ added AI interpretation **provenance** to `experience_requests` (see below).
   `actualCost`, `expectedDurationMinutes`, `physicalDifficulty`, `desiredFeeling`, `notes`,
   `status` (`planned` → `completed`/`cancelled`/`not_completed`, one-way), `completedAt`,
   `resolvedAt`, `nonCompletionReason`, `rating` (1–5), `reflection`, `meaningfulExperience`
-  (owner-controlled bool), `adventureXp` (server-computed: 10 / 15 / 0). A partial unique
-  index on `request_id` (where `deleted_at is null`) enforces one live experience per request.
+  (owner-controlled bool), `adventureXp` (server-computed: 10 / 15 / 0), and **Build 2B.2**
+  `selectedRecommendationId` (`varchar(64)`, nullable — the app-assigned recommendation id this
+  plan was created from, or null for a manual plan; drives the "From AI suggestion" badge and
+  deletion-recovery routing). A partial unique index on `request_id` (where `deleted_at is null`)
+  enforces one live experience per request and backstops the atomic selection write.
 
 **Request lifecycle transitions:**
 - `draft → interpreted` when owner-triggered AI interpretation succeeds and writes
@@ -106,9 +109,17 @@ added AI interpretation **provenance** to `experience_requests` (see below).
 - `recommendations_ready → interpreted` (clear-on-edit) when the request text or any interpreted
   constraint changes — the stored batch + recommendation provenance are cleared, no AI call.
 - `draft`/`interpreted`/`recommendations_ready → planned` when a plan (experience) is created
-  from the request. (Selecting a recommendation to create the plan is **Build 2B.2**; the
-  `experiences.selected_recommendation_id` column and `experience_request_status = closed` are
-  intentionally **not** added until their build implements them.)
+  from the request — either manually (Build 1, `selected_recommendation_id = null`) or by
+  **choosing a recommendation** (Build 2B.2). The recommendation path is a **single atomic
+  writable-CTE statement** that re-checks owner/not-deleted/`recommendations_ready`/id-in-current-
+  batch, transitions the request to `planned`, and inserts the experience both-or-neither; the
+  recommendation **batch is retained** for traceability. (`experience_request_status = closed` is
+  still intentionally **not** added until a close/archive workflow exists.)
+- **Planned-experience deletion recovery (Build 2B.2 refinement of ADR-010):** soft-deleting a
+  `planned` experience returns its request to `recommendations_ready` **if** its
+  `selected_recommendation_id` is still in the request's current batch; otherwise (a manual plan,
+  or a batch that has since changed) to `draft`. The batch is never cleared, no AI call is made,
+  and a **resolved** experience's deletion never reactivates the request.
 - `planned → draft` when its live **planned** experience is soft-deleted (recovery, so the
   request is re-plannable). All constraint data is preserved. (Recovery returns to `draft`,
   not `interpreted`, even if it had been AI-interpreted — provenance fields are retained.)

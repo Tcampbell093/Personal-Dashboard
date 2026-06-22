@@ -22,14 +22,16 @@
 >   `interpreted` status + provenance) — committed `1409c37`.
 > - **Build 2B.1** (AI recommendation **generation**: Stage C below, Sonnet; exactly three
 >   validated concepts on `experience_requests.recommendations`; `recommendations_ready` status;
->   `recommendationSource/Provider/Model`) — implemented, awaiting review.
+>   `recommendationSource/Provider/Model`) — committed `5977b9b`.
+> - **Build 2B.2** (recommendation **selection** + one-action plan creation: Stage D / save below;
+>   `experiences.selected_recommendation_id`; atomic writable-CTE request-transition + experience
+>   insert; refined planned-deletion recovery) — implemented, awaiting review. This completes the
+>   core workflow `request → interpretation → recommendations → choice → planned experience`.
 >
-> Still **not** implemented: recommendation **selection** + one-action plan creation
-> (`experiences.selected_recommendation_id`) — **Build 2B.2**, separately gated. The
-> `experience_request_status = closed` value and `experience_interpretation_source = fallback`
-> value defined below are **deferred** until a build implements close/archive and fallback
-> behavior respectively (no static fallback catalog exists). Each build remains a separate
-> approval gate; AI stays off by default.
+> Still **deferred**: the `experience_request_status = closed` value and
+> `experience_interpretation_source = fallback` value defined below await a build that implements
+> close/archive and fallback behavior respectively (no static fallback catalog exists). Each build
+> remains a separate approval gate; AI stays off by default.
 
 ## 1. Goal
 

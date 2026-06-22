@@ -4,7 +4,7 @@
 > after every substantive change (see `CLAUDE.md`). For the durable product vision, see
 > `docs/PRODUCT_VISION.md`.
 
-**Last updated:** 2026-06-22 · **Reflects branch:** `main` (Build 2B.1 implemented, uncommitted)
+**Last updated:** 2026-06-22 · **Reflects branch:** `main` (Build 2B.2 implemented, uncommitted)
 
 ## Status legend
 
@@ -109,8 +109,33 @@ rendered page**. No browser-driven UI clicks and no automated tests were run.
   the cards and reverts to `interpreted`; desktop + 375px single-column. Build 1 lifecycle
   (plan/resolve/XP/history/delete-recovery) and Build 2A (125/125) regress green. **No live
   Anthropic invocation was made.**
+- **Experience selection + one-action plan — Build 2B.2 (completes the core workflow)**, verified
+  **deterministically** (`scripts/verify-build2b2.ts`, **60/60**, incl. real `Promise.allSettled`
+  concurrency races) and via the **browser**. A
+  **"Choose this"** action on a recommendation card sends only `{recommendationId}`; the server
+  resolves every value from the request's **current stored batch** and creates exactly one planned
+  `experiences` row in a **single atomic writable-CTE statement** (confirmed compatible on the Neon
+  HTTP driver) that re-checks owner scoping, not-deleted, status `recommendations_ready`, and
+  id-in-current-batch, transitions the request to `planned`, and inserts the experience
+  both-or-neither (partial unique index as backstop). Verified: full field mapping
+  (`expectedCost = max ?? min`; `plannedDate`/`plannedTimeText` copied only from the owner's stored
+  availability; labeled notes; `selectedRecommendationId` stored); batch retained; **no AI call /
+  no usage-log row from selection**; manual plans carry a null id; **strict body** (extra fields or
+  a full recommendation object → 422; only `recommendationId` honored, server-resolved title);
+  stale/unknown id → 404, fabricated → 422, owner scoping → 404, not-ready → 409; double-click /
+  different-rec → exactly one plan (409 on the loser); **unique-index conflict → 409 with the
+  request still `recommendations_ready`** (atomic rollback); **real concurrent races**
+  (two live calls via `Promise.allSettled`, same-rec and different-rec) each yield exactly one
+  success + one 409 and one live experience matching the non-deterministic winner; planned-deletion
+  recovery →
+  `recommendations_ready` (batch retained) or `draft` (manual/absent id); resolved-deletion never
+  reactivates. **Browser:** three cards each with "Choose this" → choose → planned experience
+  appears with a subtle **"From AI suggestion"** badge and correct mapped details, **no re-entry**;
+  refresh persists; cards disappear after success; delete → cards return; manual fallback intact;
+  desktop + 375px. Build 1 / 2A (125/125) / 2B.1 (113/113) regress green. **No live Anthropic call
+  was made.**
 - **`npm run typecheck` and `npm run build`** pass on the current code (the build includes the
-  new `/api/experience-requests/[id]/interpret` and `/recommend` routes).
+  `/interpret`, `/recommend`, and `/select-recommendation` routes).
 
 ## 🟡 Partially implemented
 
@@ -155,8 +180,10 @@ rendered page**. No browser-driven UI clicks and no automated tests were run.
   `killSwitch`) — and enforced before any call by a per-op cap (interpret $0.02 / recommend
   $0.05) and a monthly ceiling (min of the $5 dev constant and the configured limit). Neither
   publishes, spends, contacts anyone, or auto-runs; the manual path always remains usable. No
-  live call has been made in this environment. Still unbuilt: **Build 2B.2** (recommendation
-  selection / one-action plan creation) is designed only; the scheduled function
+  live call has been made in this environment. **Build 2B.2** (recommendation selection +
+  one-action plan creation) is now implemented — the selection itself makes **no** AI call — so
+  the core Experience workflow `request → interpretation → recommendations → choice → planned
+  experience` is complete end to end. Still unbuilt: the scheduled function
   `netlify/functions/generate-daily-briefing.mts` does not run and makes no external/AI calls.
 - **External integrations** — none (calendar, weather, news, job boards, local events).
 - **The "public identity" surface** from `PRODUCT_VISION.md` — not started.
