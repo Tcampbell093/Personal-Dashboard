@@ -53,6 +53,15 @@ an afterthought.
     one device; each interface should suit the device it runs on.
 13. **VR/immersive is a north star, not current scope.** Immersive and VR interfaces are a
     future north-star experience, not current implementation scope.
+13a. **Visual identity is part of the product, not decoration.** The private system should feel
+    like a dark, immersive personal command center — calm, futuristic, emotionally engaging, and
+    subtly gamified — that reads as the owner's private world rather than a corporate dashboard.
+    The visual north star is "Life OS Dashboard" *in feel only*: we create an **original** design
+    system and never copy its branding, artwork, written content, or layouts. The detailed system
+    lives in `docs/DESIGN_SYSTEM.md`.
+13b. **Emotion supports function.** Atmosphere, progress, and achievement cues exist to help the
+    owner orient and stay engaged — never at the expense of clarity, accessibility, privacy/
+    provenance cues, or low-friction capture.
 
 ### Collaboration & source of truth
 14. **Roles.**

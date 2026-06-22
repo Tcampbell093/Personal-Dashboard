@@ -24,6 +24,18 @@ be started without explicit approval. Build 2A deliberately stops at interpretat
 > implemented and deterministically verified; live Anthropic invocation pending owner
 > configuration."
 
+### Standing design direction (preserve across builds)
+
+The visual north star and design language are defined in
+[`docs/DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md), with the durable principle in
+`docs/DESIGN_PRINCIPLES.md` (Visual design) and `docs/PRODUCT_VISION.md` (13a/13b), and the
+decision recorded in `docs/DECISIONS.md` ADR-014. **All future UI work — including Build 2B — must
+be built to that language using existing CSS primitives** (cards, the "Review details" disclosure,
+`.btn`/`.btn-secondary`, provenance badges, AI-state conventions). Do **not** perform an app-wide
+re-skin, add artwork/banners, change fonts, roll out per-area theming, or overhaul navigation
+outside a separately approved "application-wide visual redesign" task. Build 2B may use the defined
+tokens and patterns; it must not trigger the redesign.
+
 
 ### Proposed implementation breakdown (phased)
 

@@ -136,6 +136,28 @@
 - **Evidence/rationale:** The approved plan called for a hard, conservative ceiling reusing
   existing infrastructure. The specific dollar values are implementer-chosen and reversible.
 
+### ADR-014 — Visual design direction: dark immersive "personal command center"
+- **Classification:** Owner-approved decision (direction); specific token values, per-area hues,
+  and artwork are **provisional** pending ratification or a dedicated visual-redesign task.
+- **Detail:** The Personal Life OS adopts a dark, immersive, subtly gamified,
+  personal-not-corporate visual language, inspired in *feel* by "Life OS Dashboard" but built as
+  an **original** system (no copied branding, artwork, copy, or layouts). Two accent layers
+  coexist: cross-cutting **urgency semantics** (act/aware/explore/good) and per-**life-area
+  identity** hues, governed by a color-discipline rule (one dominant identity color per page; no
+  rainbow-dashboard effect). Experiences uses a restrained cyan→violet exploration palette,
+  distinct from the urgency colors. System fonts are retained (no remote fonts); a custom display
+  face is deferred. Permitted artwork media are original pixel art, atmospheric illustration,
+  abstract environmental artwork, and future subtle animated scenes — unified by coherent mood/
+  palette, originality, performance, and accessibility. Full artwork/banners, navigation overhaul,
+  motion-system implementation, and re-skinning **existing application areas and workflows** are
+  deferred to a **separate application-wide visual redesign**. The full system is documented in
+  `docs/DESIGN_SYSTEM.md`.
+- **Evidence:** Owner explicitly set this direction as the visual north star ahead of Build 2B, as
+  a documentation/design-system planning task (this entry), with implementation deferred. The
+  current navigation structure is explicitly **not** treated as permanently fixed.
+- **Relation to principles:** Serves PRODUCT_VISION 13a/13b; constrained by privacy cues
+  (AI-vs-owner provenance must stay legible) and accessibility (WCAG AA).
+
 ---
 
 ## Open decisions — `[DECISION NEEDED]`

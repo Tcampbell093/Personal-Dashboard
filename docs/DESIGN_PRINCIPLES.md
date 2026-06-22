@@ -1,10 +1,26 @@
-# Engineering Conventions
+# Engineering & Visual Conventions
 
-> **Implementation conventions only** — how the code is structured. Product principles
-> (privacy, AI limits, publishing, build philosophy) live in `docs/PRODUCT_VISION.md` and
-> are not repeated here. These conventions are **observed patterns** in the current code (see
-> `docs/DECISIONS.md`), not separately-approved mandates — but follow them for consistency
+> **Implementation conventions only** — how the code is structured and how the app should look.
+> Product principles (privacy, AI limits, publishing, build philosophy, visual identity) live in
+> `docs/PRODUCT_VISION.md` and are not repeated here. The engineering conventions below are
+> **observed patterns** in the current code (see `docs/DECISIONS.md`); follow them for consistency
 > unless a task explicitly changes them.
+
+## Visual design (durable principle)
+
+The Personal Life OS has **one application-wide visual language**: a dark, immersive personal
+command center — calm, futuristic, subtly gamified, personal-not-corporate — built as an
+**original** system inspired in *feel* only by "Life OS Dashboard" (never copying its branding,
+artwork, copy, or layouts). Emotion supports function; it never compromises clarity, accessibility,
+privacy/provenance cues, or low-friction capture. Build all UI to this language using existing CSS
+primitives — do not re-skin existing application areas and workflows outside a separately approved
+application-wide visual redesign.
+
+**The full, detailed visual system lives in [`docs/DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md)** —
+surfaces, accent roles (urgency vs life-area identity + color discipline), typography, cards,
+navigation, AI-state styling, progress/XP, controls/forms, imagery, motion, accessibility, mobile,
+anti-clutter rules, life-area identities, and initial design tokens. Direction is owner-approved
+(ADR-014); token values and artwork are provisional until ratified.
 
 ## Conventions (verifiable in the code)
 
