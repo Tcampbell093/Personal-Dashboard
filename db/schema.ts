@@ -86,6 +86,14 @@ export const billStatus = pgEnum("bill_status", [
   "skipped",
 ]);
 
+// Finance 1A.1: provider-neutral source of an account's balance. `manual` =
+// owner-entered (the only kind today). `linked` is reserved for a future,
+// read-only bank connection (Finance 1B) and is unused for now. Connection
+// health (provider id, sync status, errors) deliberately lives in a separate
+// `financial_connections` model later — NOT on the account row — because one
+// connection may back several accounts.
+export const balanceSource = pgEnum("balance_source", ["manual", "linked"]);
+
 export const signalType = pgEnum("signal_type", [
   "weather",
   "local_event",
@@ -325,9 +333,29 @@ export const financialAccounts = pgTable("financial_accounts", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   name: varchar("name", { length: 120 }).notNull(),
+  // Account classification. Kept as a server-validated varchar (not a pgEnum) so
+  // the owner can grow the vocabulary later without a type migration. Validated
+  // against ACCOUNT_TYPES in the service/route layer. checking|savings|cash|credit|other.
   type: varchar("type", { length: 60 }).default("checking"),
-  // Manually entered balance — no bank connection in Phase 1.
+  // Finance 1A.1: who the account is with (optional, display only).
+  institution: varchar("institution", { length: 120 }),
+  // What the account is for. Server-validated varchar (same rationale as `type`):
+  // spending|bills|savings|emergency|cash|other. Existing rows default to
+  // 'other' (unspecified) — never guessed.
+  purpose: varchar("purpose", { length: 40 }).notNull().default("other"),
+  // Manually entered actual balance. For credit accounts this is the amount OWED
+  // (a liability, positive = you owe) and is NEVER counted as cash. No bank
+  // connection in Finance 1A.1 (balanceSource is always 'manual').
   currentBalance: numeric("current_balance", { precision: 14, scale: 2 }).default("0"),
+  // Where the balance comes from. 'manual' for every account today; 'linked' is
+  // reserved for a future read-only bank connection and is unused now.
+  balanceSource: balanceSource("balance_source").notNull().default("manual"),
+  // Whether this account's (positive cash) balance contributes to spendable cash.
+  // Cash-type accounts count toward total actual cash regardless; this flag only
+  // narrows the spendable subset (e.g. exclude savings/emergency).
+  includeInSpendable: boolean("include_in_spendable").notNull().default(true),
+  // Inactive accounts are retained but excluded from every cash/liability total.
+  active: boolean("active").notNull().default(true),
   balanceUpdatedAt: timestamp("balance_updated_at", { withTimezone: true }),
   notes: text("notes"),
   ...timestamps,
@@ -362,6 +390,13 @@ export const financialEntries = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     // If this entry came from a recurring template, link it.
     recurringBillId: integer("recurring_bill_id").references(() => recurringBills.id),
+    // Finance 1A.1: the account this bill is normally paid FROM (nullable — an
+    // existing/unassigned bill stays valid and is shown as "Payment account not
+    // assigned"; never auto-guessed or back-filled). `paidAccountId` records the
+    // account actually used when the bill is marked paid. Neither mutates any
+    // account balance in 1A.1 (the recorded-movements ledger arrives in 1A.3).
+    sourceAccountId: integer("source_account_id").references(() => financialAccounts.id),
+    paidAccountId: integer("paid_account_id").references(() => financialAccounts.id),
     name: varchar("name", { length: 160 }).notNull(),
     kind: varchar("kind", { length: 20 }).notNull().default("bill"), // bill | income
     dueDate: date("due_date"),

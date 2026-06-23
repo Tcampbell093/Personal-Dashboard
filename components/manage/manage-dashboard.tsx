@@ -14,6 +14,7 @@ import { localDaysUntil } from "@/lib/time";
 import { AddTaskForm, TaskActions, ReopenTask } from "@/components/tasks";
 import { AddObligationForm, ObligationActions } from "@/components/obligations";
 import { FinanceManager } from "@/components/finances";
+import { computeCashSummary } from "@/lib/services/finances";
 import { RowActions } from "@/components/row-actions";
 import { AddSignalForm } from "@/components/signals";
 import { AddOpportunityForm } from "@/components/opportunities";
@@ -96,6 +97,8 @@ export async function ManageDashboard() {
   const openObligations = d.obligations.filter(
     (o) => o.status !== "done" && o.status !== "cancelled" && o.status !== "missed",
   );
+  // Truthful cash/liability rollups from manually entered balances (credit excluded).
+  const cash = computeCashSummary(d.accounts);
 
   return (
     <div className="shell">
@@ -189,41 +192,60 @@ export async function ManageDashboard() {
         </div>
       </section>
 
-      {/* ===== 3. MONEY ===== */}
+      {/* ===== 3. MONEY — compact summary; full workspace lives at /finances ===== */}
       <section className="tier tier-aware">
         <div className="tier-head">
           <span className="tier-tick" style={{ background: "var(--good)" }} />
           <span className="tier-name">Money</span>
-          <span className="tier-sub">outlook and bills</span>
+          <span className="tier-sub">manually entered actual balances — full workspace at /finances</span>
         </div>
         <div className="grid cols-3">
-          <Card title="Financial outlook" edge="aware">
-            <div className="figure num">{money(d.finances.estimatedRemaining)}</div>
-            <div className="sub" style={{ marginBottom: 10 }}>
-              estimated remaining from manually entered balances
+          <Card title="Money summary" edge="aware">
+            <div className="statline num">
+              <span className="k">Total actual cash</span>
+              <span className="good">{money(cash.totalActualCash)}</span>
             </div>
             <div className="statline num">
-              <span className="k">Accounts total</span>
-              <span>{money(d.finances.accountsTotal)}</span>
+              <span className="k">Spendable cash</span>
+              <span>{money(cash.spendableActualCash)}</span>
             </div>
+            {cash.creditAccountCount > 0 && (
+              <div className="statline num">
+                <span className="k">Credit owed (liability)</span>
+                <span style={{ color: "var(--act)" }}>{money(cash.creditLiabilities)}</span>
+              </div>
+            )}
             <div className="statline num">
               <span className="k">Bills before payday</span>
               <span>{money(d.finances.billsDueBeforePayday)}</span>
             </div>
             <div className="statline num">
-              <span className="k">Due in 30 days</span>
-              <span>{money(d.finances.due30)}</span>
-            </div>
-            <div className="statline num">
-              <span className="k">Overdue</span>
+              <span className="k">Overdue bills</span>
               <span style={{ color: d.finances.overdueCount ? "var(--act)" : undefined }}>
                 {d.finances.overdueCount}
               </span>
             </div>
+            <div className="sub" style={{ marginTop: 8 }}>
+              Legacy estimate (replaced by account-aware projection in a later build):{" "}
+              <span className="num">{money(d.finances.estimatedRemaining)}</span> estimated
+              remaining from manually entered balances.
+            </div>
+            <div style={{ marginTop: 10 }}>
+              <a className="navlink" href="/finances">Manage accounts &amp; bills at /finances →</a>
+            </div>
           </Card>
           {d.financesLive && (
-            <Card title="Manage money" edge="aware" className="span-2">
-              <FinanceManager accounts={d.accounts} bills={d.bills} income={d.income} />
+            <Card title="Income" edge="aware" className="span-2">
+              <div className="sub" style={{ marginBottom: 8 }}>
+                Income records (kept here for now; account-aware income arrives in a
+                later finance build).
+              </div>
+              <FinanceManager
+                accounts={d.accounts}
+                bills={d.bills}
+                income={d.income}
+                sections={["income"]}
+              />
             </Card>
           )}
         </div>

@@ -43,8 +43,29 @@ export interface FinancialOutlook {
 export interface AccountView {
   id: number;
   name: string;
-  type: string;
-  currentBalance: number;
+  type: string; // checking | savings | cash | credit | other
+  institution: string | null;
+  purpose: string; // spending | bills | savings | emergency | cash | other
+  currentBalance: number; // manually entered actual balance (credit = amount owed)
+  balanceSource: string; // manual | linked (always "manual" in 1A.1)
+  includeInSpendable: boolean;
+  active: boolean;
+  // True for checking/savings/cash; false for credit (a liability) and other.
+  isCash: boolean;
+  isLiability: boolean; // true for credit accounts
+}
+
+/** Finance 1A.1 cash/liability rollups. Every figure is from manually entered
+ * actual balances — never a projection, never "safe to spend". Credit balances
+ * are liabilities and are NEVER added to any cash total. */
+export interface CashSummary {
+  totalActualCash: number; // active cash-type accounts (assets)
+  spendableActualCash: number; // active cash-type accounts with includeInSpendable
+  savingsEmergency: number; // active accounts whose purpose is savings/emergency
+  creditLiabilities: number; // active credit accounts (amount owed, positive)
+  netPosition: number; // totalActualCash − creditLiabilities (informational)
+  cashAccountCount: number;
+  creditAccountCount: number;
 }
 
 export interface BillView {
@@ -53,6 +74,8 @@ export interface BillView {
   expectedAmount: number;
   dueDate: string | null;
   status: string;
+  sourceAccountId: number | null; // account normally paid from (null = unassigned)
+  paidAccountId: number | null; // account actually used when marked paid
 }
 
 export interface IncomeView {

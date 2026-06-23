@@ -12,19 +12,26 @@
 
 ## Next approved task
 
-### Manage clarity + task-completion history (bounded)
+### Finance 1A.1 — account-aware manual finance (accounts + bills)
 
-- **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** See the latest handoff
-  report below. Clarifies `/manage` (Act Today vs Upcoming Commitments) and makes task completion
-  non-destructive + recoverable (confirmation/Undo, Recently-completed history, Reopen). No AI, no
-  schema change. (Home 1A committed `405fd45`; Build 2B.2 `ef08dd2`; design system `974dbe5`.)
-- **No further build is currently authorized.** Separately-gated future directions:
-  **Home 1B** (owner-triggered AI daily brief — reuses the provider boundary + cost/privacy/
-  logging controls; deterministic Home is its fallback); a settings UI for
+- **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** See the latest handoff report
+  below. Adds richer accounts (institution, validated type + purpose, `balanceSource`,
+  `includeInSpendable`, `active`), account-linked bills (`sourceAccountId`, `paidAccountId`), a
+  dedicated **`/finances`** page with truthful cash/spendable/savings/credit-liability rollups, and a
+  reduced `/manage` Money summary that links to `/finances` (income management preserved on
+  `/manage`). **Marking a bill paid records metadata only and never changes an account balance.**
+  Additive migration `0005` (reviewed, applied). (Manage clarity committed `1ca6fab`; Home 1A
+  `405fd45`; Build 2B.2 `ef08dd2`.)
+- **No further build is currently authorized.** The next finance gates, each requiring explicit
+  approval, are **Finance 1A.2** (account-linked & split income — fixed → percent-of-remaining →
+  remainder; and transfers, scheduled + completed) and **Finance 1A.3** (recorded movements ledger
+  so pay/receive/transfer update actual balances; reconciliation + audit adjustment; account-aware
+  projection replacing the legacy `estimatedRemaining`). A future **Finance 1B** adds a separate
+  read-only bank-connection model (`financial_connections`; `balanceSource = linked`). Other
+  separately-gated directions remain: **Home 1B** (owner-triggered AI daily brief); a settings UI for
   `intelligence_settings`; a close/archive workflow (`experience_request_status = closed`);
-  rule-based fallback recommendations (`fallback` source + catalog); the application-wide visual
-  redesign; a live Sonnet/Haiku smoke test once the owner deliberately enables a key. None may
-  begin without explicit approval.
+  rule-based fallback recommendations; the application-wide visual redesign; a live Sonnet/Haiku
+  smoke test once the owner deliberately enables a key. None may begin without explicit approval.
 
 > **Status note (verbatim, required while no live key is configured):** "Anthropic adapter
 > implemented and deterministically verified; live Anthropic invocation pending owner
@@ -101,6 +108,133 @@ specific build. Builds are ordered so the manual loop works end-to-end before an
 ---
 
 ## Latest handoff
+
+### Finance 1A.1 — account-aware manual finance (accounts + bills) — implemented — 2026-06-23
+
+**Task Completed**
+Implemented Finance 1A.1 exactly to the approved scope + owner decisions: upgraded finance from a
+single combined "balance minus bills" view into an account-aware **manual** model — multiple
+accounts with truthful cash/spendable/savings/credit-liability totals, and bills linked to the
+account that pays them — on a dedicated `/finances` page. **No** 1A.2/1A.3/Plaid/AI/forecasting/
+income-splits/transfers/reconciliation/automatic balance mutation. Not committed — awaiting owner
+review.
+
+**Owner decisions honored**
+No balance mutation on pay (records status + `paidAt` + `paidAccountId` only); credit is a liability
+(positive = owed) and never counted as cash (`netPosition = cash − credit`); cash defns (total =
+active cash-type incl. savings; spendable = `includeInSpendable` subset, savings/emergency default
+excluded); provider scope correction (only `balanceSource = manual|linked`; **no** `providerAccountId`/
+`syncStatus`/`connectionError`/`lastSyncedAt`); reconciliation scope correction (**no**
+`lastReconciledAt`, no reconcile workflow); manual spending deferred; legacy `estimatedRemaining`
+kept as temporary compatibility (wording unchanged) but corrected to exclude credit + inactive.
+Future decisions recorded in docs (movements in 1A.3; fixed→percent-of-remaining→remainder income
+splits in 1A.2; transfers in 1A.2; separate bank-connection model in 1B; `estimatedRemaining`
+replacement in 1A.3).
+
+**Enum vs validated-string decision**
+`balance_source` is a **pgEnum** (`manual|linked`) — a closed, behavior-gating binary that warrants
+DB enforcement and won't need owner customization. `type` and `purpose` are **validated varchars**
+(server-enforced against fixed lists: types checking/savings/cash/credit/other; purposes
+spending/bills/savings/emergency/cash/other) so the owner can extend the vocabularies later without a
+type migration. `type` also reuses the pre-existing `financial_accounts.type` column (no destructive
+change).
+
+**Credit sign convention**
+A credit account's `currentBalance` is the amount **owed**, stored **positive**. It is shown
+separately as a liability and excluded from every cash total; `netPosition = totalActualCash −
+creditLiabilities`. Verified in the harness and browser.
+
+**Credit-never-spendable invariant (POST + PATCH)**
+Enforced server-side on **both** the account POST and PATCH routes: whenever the resulting stored
+type is `credit`, `includeInSpendable` is persisted `false` and any client attempt to set it true is
+overridden; switching a credit account to a non-credit type never auto-enables spendable (the
+existing value is preserved unless the owner explicitly sets it in the same request). A stored credit
+account can therefore never have `includeInSpendable=true`, independent of the UI. (`computeCashSummary`
+additionally excludes credit from cash + spendable at the calculation layer as defence in depth.)
+
+**Files changed**
+- `db/schema.ts` — `balance_source` pgEnum; `financial_accounts` +`institution`,`purpose`,
+  `balanceSource`,`includeInSpendable`,`active`; `financial_entries` +`sourceAccountId`,`paidAccountId`.
+- `db/migrations/0005_concerned_colossus.sql` (+ `meta/0005_snapshot.json`, `_journal.json`) — additive.
+- `lib/types.ts` — `AccountView` (+institution/purpose/balanceSource/includeInSpendable/active/isCash/
+  isLiability), new `CashSummary`, `BillView` (+sourceAccountId/paidAccountId).
+- `lib/services/finances.ts` — `ACCOUNT_TYPES`/`ACCOUNT_PURPOSES`/`BALANCE_SOURCES`/`CASH_TYPES`,
+  `isCashType`/`isLiabilityType`, `accountExists`, richer `toAccountViews`/`toBillViews`, pure
+  `computeCashSummary`, `payBill(…, paidAccountId?)`, `getAccount`, legacy `accountsTotal` corrected
+  (excludes credit + inactive).
+- `app/api/finances/accounts/route.ts` + `[id]/route.ts` — validate type/purpose/balanceSource,
+  accept institution/includeInSpendable/active; **credit forced not-spendable on both POST and
+  PATCH** (PATCH reads the existing row via `getAccount` to resolve the final type); savings/emergency
+  default excluded.
+- `app/api/finances/bills/route.ts` + `[id]/route.ts` — accept + validate `sourceAccountId` (owner-
+  scoped, null = unassigned) and `paidAccountId` on pay.
+- New `app/finances/page.tsx`; `components/finances/account-manager.tsx`; `components/finances/bill-manager.tsx`.
+- `components/finances.tsx` — `FinanceManager` gains a `sections` prop (so `/manage` shows income only).
+- `components/manage/manage-dashboard.tsx` — Money reduced to a compact summary (uses `computeCashSummary`)
+  + link to `/finances`; income preserved (`sections={["income"]}`).
+- `components/home/sections.tsx` — Money card link → `/finances` (wording unchanged).
+- `app/globals.css` — `/finances` styles (summary, account cards, tags, forms, bill groups, mobile).
+- New `scripts/verify-finance1a.ts`. Updated `scripts/verify-home1a.ts` (stale "no migration beyond
+  0004" proxy relaxed — see Known Issues). Docs updated.
+
+**Database changes**
+Migration `0005_concerned_colossus` applied to Neon — **additive only**: `CREATE TYPE balance_source`;
+`ADD COLUMN` ×5 on `financial_accounts` (NOT-NULL ones carry safe defaults: `purpose='other'`,
+`balance_source='manual'`, `include_in_spendable=true`, `active=true`); `ADD COLUMN` ×2 nullable on
+`financial_entries`; two FK `ADD CONSTRAINT` (`ON DELETE no action`). Reviewed for destructive ops
+before applying — none. Owner's existing accounts (Chase $2,000 live; a prior soft-deleted account)
+and bills (#22–24, unassigned/scheduled) preserved unchanged; no back-fill of account links.
+
+**Current behavior**
+`/finances` (emerald Money identity) shows **Cash on hand** (Total actual cash / Spendable / and,
+when present, Savings-emergency + Credit liabilities + Net position), an **Accounts** manager
+(add/edit/remove; each card labeled "Manual balance", with Spendable/Liability/Inactive tags), and
+**Bills** grouped by payment account with an explicit "Payment account not assigned" group. Adding a
+bill can pick an account or stay Unassigned; marking paid lets the owner record the paid-from account
+and shows "Paid · from <account>" — **no account balance changes**. Every figure is labeled manually
+entered; no projected balance is shown; the strings "safe to spend"/"live balance" appear nowhere in
+the finance UI. `/manage` Money is a compact summary linking to `/finances`, with income management
+retained; Home's Money card links to `/finances`.
+
+**Testing completed**
+`npm run typecheck` ✓; `npm run build` ✓ (includes `/finances`). **`scripts/verify-finance1a.ts` —
+74/74** (real services + real route handlers vs real Neon): account field defaults (purpose `other`,
+manual, spendable true, active true) + validated type/purpose (invalid → 400); cash = 1700 /
+spendable = 1000 / savings-emergency = 700 / credit = 300 with credit excluded from cash; credit sign
+convention + `netPosition` = 1400; active/inactive inclusion; **credit-never-spendable invariant on
+POST and PATCH** (POST credit w/ spendable=true → false; checking→credit w/ spendable=true → false;
+spendable=true / other-field edits on a credit account stay false; credit→checking preserves false /
+no auto-true; explicit enable on a non-credit account → true; calc excludes credit regardless of a
+malformed flag; no stored credit account is spendable); bill↔source link + unassigned stays null
++ invalid account → 400; existing owner bills valid/unassigned; **mark paid records paidAccountId and
+leaves both source and paid-from balances UNCHANGED** + invalid paid account → 400; income still
+creatable/deletable; scope scans (no provider/sync/reconcile fields, no transfers/splits/movements
+tables, no Plaid, `balance_source` present); truthfulness scans (no "safe to spend"/"live balance",
+"manually entered" present, no projected balance); Home compact + links `/finances`, `/manage` links
+`/finances` + preserves income; no usage log/AI; **owner accounts/bills survive unchanged**; exact-ID
+cleanup; request 222 untouched. **Browser** (desktop + 375px): created a temp credit account → Credit
+liabilities $250 shown separately, total cash stayed $2,000, net $1,750, tags "Manual balance owed"/
+"Liability — not cash"; added a bill assigned to Chase (grouped under Chase) while the owner's bill
+stayed under "Payment account not assigned"; marked it paid from Chase → "Paid · from Chase" and
+**Chase's DB balance stayed $2,000.00**; mobile single-column. All temp browser records removed by
+exact id; owner data byte-for-byte intact. **Regressions:** Build 2A 136 / 2B.1 126 / 2B.2 60 / Home
+1A 55 / Manage-tasks 27 — all green. **`npm run lint` not run** (interactive-only, unconfigured, as in
+prior builds). **No AI/Anthropic call.**
+
+**Known issues / not tested**
+- I **relaxed one assertion in `scripts/verify-home1a.ts`** ("no migration beyond 0004"): it was Home
+  1A's proxy for "added no schema", but Finance 1A.1 legitimately adds `0005`, which falsified it. It
+  now asserts the Home-era baseline `0004` is present (Home 1A still added no migration of its own) and
+  no longer forbids later sanctioned migrations. Disclosed here for review.
+- The `/finances` DB-failure error state is enforced by construction (try/catch → explicit error, never
+  mock) but was **not** runtime-simulated.
+- The browser pass was run against the pre-correction build; the credit/spendable PATCH invariant was
+  added after and is verified deterministically (the harness drives the real PATCH route against Neon).
+
+**Decisions needed** — owner review before commit. Finance 1A.2 and 1A.3 each require separate
+authorization.
+**Recommended next step** — owner reviews Finance 1A.1; if approved, authorize the commit, then the
+Finance 1A.2 (income splits + transfers) bounded task can be prepared.
 
 ### Manage clarity + task-completion history — implemented — 2026-06-23
 

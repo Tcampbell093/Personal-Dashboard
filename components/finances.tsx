@@ -23,14 +23,18 @@ async function readError(res: Response): Promise<string> {
   return data?.error ?? `Request failed (${res.status}).`;
 }
 
+type FinanceSection = "accounts" | "bills" | "income";
+
 export function FinanceManager({
   accounts,
   bills,
   income,
+  sections = ["accounts", "bills", "income"],
 }: {
   accounts: AccountView[];
   bills: BillView[];
   income: IncomeView[];
+  sections?: FinanceSection[];
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -56,48 +60,54 @@ export function FinanceManager({
 
   return (
     <div className="finance-mgr">
-      <div className="finance-cols">
-        <AccountsBlock
-          accounts={accounts}
-          pending={pending}
-          onAdd={(name, balance) =>
-            mutate("/api/finances/accounts", json({ name, currentBalance: balance }))
-          }
-          onDelete={(id) =>
-            mutate(`/api/finances/accounts/${id}`, { method: "DELETE" })
-          }
-        />
-        <BillsBlock
-          bills={bills}
-          pending={pending}
-          onAdd={(name, amount, dueDate) =>
-            mutate(
-              "/api/finances/bills",
-              json({ name, expectedAmount: amount, dueDate: dueDate || undefined }),
-            )
-          }
-          onPay={(id) =>
-            mutate(`/api/finances/bills/${id}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ status: "paid" }),
-            })
-          }
-          onDelete={(id) => mutate(`/api/finances/bills/${id}`, { method: "DELETE" })}
-        />
-        <IncomeBlock
-          income={income}
-          pending={pending}
-          onAdd={(source, amount, payDate) =>
-            mutate(
-              "/api/finances/income",
-              json({ source, expectedAmount: amount, payDate }),
-            )
-          }
-          onDelete={(id) =>
-            mutate(`/api/finances/income/${id}`, { method: "DELETE" })
-          }
-        />
+      <div className={sections.length === 1 ? "finance-single" : "finance-cols"}>
+        {sections.includes("accounts") && (
+          <AccountsBlock
+            accounts={accounts}
+            pending={pending}
+            onAdd={(name, balance) =>
+              mutate("/api/finances/accounts", json({ name, currentBalance: balance }))
+            }
+            onDelete={(id) =>
+              mutate(`/api/finances/accounts/${id}`, { method: "DELETE" })
+            }
+          />
+        )}
+        {sections.includes("bills") && (
+          <BillsBlock
+            bills={bills}
+            pending={pending}
+            onAdd={(name, amount, dueDate) =>
+              mutate(
+                "/api/finances/bills",
+                json({ name, expectedAmount: amount, dueDate: dueDate || undefined }),
+              )
+            }
+            onPay={(id) =>
+              mutate(`/api/finances/bills/${id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status: "paid" }),
+              })
+            }
+            onDelete={(id) => mutate(`/api/finances/bills/${id}`, { method: "DELETE" })}
+          />
+        )}
+        {sections.includes("income") && (
+          <IncomeBlock
+            income={income}
+            pending={pending}
+            onAdd={(source, amount, payDate) =>
+              mutate(
+                "/api/finances/income",
+                json({ source, expectedAmount: amount, payDate }),
+              )
+            }
+            onDelete={(id) =>
+              mutate(`/api/finances/income/${id}`, { method: "DELETE" })
+            }
+          />
+        )}
       </div>
       {error && <div className="taskadd-error">{error}</div>}
     </div>

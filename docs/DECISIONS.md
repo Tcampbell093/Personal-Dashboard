@@ -247,6 +247,52 @@
 - **Evidence:** Owner-approved bounded "Manage clarity and task-history" task. No AI, no decorative
   game features.
 
+### ADR-021 — Finance 1A.1: account-aware manual finance (accounts + bills), no balance mutation
+- **Classification:** Owner-approved decision (owner approved the Finance 1A.1 scope, with explicit
+  owner decisions on each point below)
+- **Detail:** First of three gated Finance 1A sub-builds. **Accounts** gain `institution`, a
+  validated `type` and `purpose`, `balanceSource` (`manual`|`linked`), `includeInSpendable`, and
+  `active`. **Bills** gain nullable `sourceAccountId` + `paidAccountId`. A dedicated **`/finances`**
+  page (emerald Money identity) shows **manually entered actual balances** with truthful rollups
+  (total actual cash / spendable / savings-emergency / credit liabilities) and bills grouped by
+  payment account. Owner-decided rules locked in:
+  - **No balance mutation in 1A.1.** Marking a bill paid records status + `paidAt` + `paidAccountId`
+    only; actual balances stay manually entered. (Recorded movements that move balances on
+    pay/receive/transfer are deferred to **1A.3**.)
+  - **Credit is a liability, never cash.** A credit account's balance is the amount **owed** (stored
+    positive); it is shown separately and excluded from every cash total. `netPosition = cash −
+    credit owed`.
+  - **Cash definitions:** total actual cash = active cash-type accounts (incl. savings); spendable =
+    the `includeInSpendable` subset (savings/emergency default excluded); never one total that adds
+    credit-card debt as available money.
+  - **Credit-never-spendable is a hard data invariant**, enforced server-side on **both POST and
+    PATCH**: whenever the resulting stored type is credit, `includeInSpendable` is persisted `false`
+    (any client attempt to set it true is overridden); switching a credit account to a non-credit
+    type never auto-enables spendable (the existing value is preserved unless the owner explicitly
+    sets it). No stored credit account can ever have `includeInSpendable=true`.
+  - **Provider scope correction:** no `providerAccountId` / `syncStatus` / `connectionError` /
+    `lastSyncedAt` on the account — only the provider-neutral `balanceSource`. A future
+    bank-connection model (`financial_connections`, Finance 1B) owns connection health.
+  - **Reconciliation scope correction:** no `lastReconciledAt` and no reconcile workflow (Finance
+    1A.3 owns reconciliation + its audit adjustment).
+  - **Legacy `estimatedRemaining`** is kept only as a temporary compatibility figure (wording
+    unchanged) but corrected so it never counts credit or inactive accounts as cash; Finance 1A.3
+    replaces it with account-aware projection.
+  - **Recorded future decisions:** movement-backed balance updates (1A.3); fixed → percent-of-
+    remaining → remainder **income splits** (1A.2); **transfers** scheduled + completed (1A.2);
+    separate bank-connection model (1B).
+  - **Enum vs validated-string:** `balance_source` is a **pgEnum** (closed, behavior-gating binary).
+    `type` and `purpose` are **validated varchars** (server-enforced against fixed lists) so the
+    owner can extend the vocabularies later without a type migration.
+  - **Migration:** additive only (`0005_concerned_colossus.sql` — `CREATE TYPE` + `ADD COLUMN` + FK
+    `ADD CONSTRAINT`); reviewed for destructive ops before applying; existing accounts/bills
+    preserved with truthful defaults (`purpose='other'`, `balanceSource='manual'`,
+    `includeInSpendable=true`, `active=true`, bill account links null).
+- **Evidence:** `scripts/verify-finance1a.ts` (74/74, real services + routes vs real Neon) + browser
+  (desktop + 375px), including DB-confirmed "Chase balance unchanged after a paid-from-Chase bill"
+  and owner-data preservation. No AI / no usage log. Build 1 / 2A / 2B.1 / 2B.2 / Home 1A /
+  Manage-tasks regress green.
+
 ---
 
 ## Open decisions — `[DECISION NEEDED]`

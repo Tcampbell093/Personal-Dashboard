@@ -195,6 +195,17 @@ atmosphere), near-black void + graphite cards, urgency reasons as small **text-l
 (act/aware/good), compact sections, and a 375px single-column layout. No artwork yet (CSS
 atmosphere only).
 
+**Money — `/finances` (Finance 1A.1).** The dedicated finance workspace applies the **Money emerald**
+identity (`var(--good)` `#3fb47a`) as the dominant accent: the "Money." wordmark dot, section ticks,
+positive cash figures, and a "Spendable" account tag. It reuses existing primitives (`.tier`/`.tier-head`,
+`.btn`, `.linkbtn`, `.empty`, the mock/privacy banner) plus scoped `.fin-*` classes (summary stat cards,
+account cards, bill groups, inline forms). **Truthfulness conventions, enforced and verified:** every
+balance is text-labelled "Manual balance" (credit: "Manual balance owed"); liabilities use the urgency
+red `var(--act)` **with** the text tag "Liability — not cash" (never color alone); the page never renders
+a projected balance and the strings "safe to spend"/"live balance" appear nowhere. State is conveyed by
+text tags (Spendable / Excluded from spendable / Inactive / Liability — not cash), not color alone, at AA
+contrast; 375px stacks to a single column.
+
 **Experiences palette note.** Experiences uses a restrained gradient from cyan toward violet
 (suggesting discovery, scenery, nightlife, creativity, and possibility) rather than a generic
 informational blue. It must remain **distinct from the urgency colors** (`act`/`aware`/

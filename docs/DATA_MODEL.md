@@ -18,7 +18,8 @@
 ## Enums (Postgres `pgEnum`)
 
 `task_status`, `priority`, `recurrence`, `obligation_type`, `obligation_status`,
-`importance`, `bill_status`, `signal_type`, `signal_status`, `opportunity_category`,
+`importance`, `bill_status`, `balance_source` (Finance 1A.1: `manual`|`linked`), `signal_type`,
+`signal_status`, `opportunity_category`,
 `opportunity_status`, `feedback_kind`, `job_status`, `interest_status`, `run_status`,
 `experience_request_status`, `experience_status`, `experience_energy_level`,
 `experience_physical_difficulty`, `experience_interpretation_source`.
@@ -48,15 +49,49 @@
   (reserved for future calendar sync, unused).
 
 ### Finances
-- **`financial_accounts`** — `name`, `type`, `currentBalance` (manual; no bank link),
-  `balanceUpdatedAt`, `notes`.
+- **`financial_accounts`** — `name`, `type` (validated varchar: checking|savings|cash|credit|other),
+  **Finance 1A.1**: `institution` (optional), `purpose` (validated varchar:
+  spending|bills|savings|emergency|cash|other; existing rows default `'other'`, never guessed),
+  `currentBalance` (manually entered actual balance; for **credit** accounts this is the amount
+  **owed** — a liability, positive = you owe — and is never counted as cash), `balanceSource`
+  (`balance_source` enum `manual`|`linked`, default `manual`; `linked` is reserved for a future
+  read-only bank connection and is unused), `includeInSpendable` (bool, default `true`), `active`
+  (bool, default `true`), `balanceUpdatedAt`, `notes`. **No bank connection.** Provider/connection-
+  health fields are deliberately **not** here — a future connection may back several accounts, so
+  that lives in a separate `financial_connections` model later (Finance 1B). No `lastReconciledAt`
+  (reconciliation is Finance 1A.3).
+  - **Cash/liability rules** (`computeCashSummary`, pure): only **active** accounts count; **total
+    actual cash** = Σ balance over active cash-type accounts; **spendable** = the `includeInSpendable`
+    subset (savings/emergency default excluded; credit forced excluded); **savings/emergency** = Σ
+    over active accounts whose purpose is savings|emergency (surfaced separately, still within total
+    cash); **credit liabilities** = Σ over active credit accounts; `netPosition = totalActualCash −
+    creditLiabilities`. Credit is **never** added to any cash total.
 - **`recurring_bills`** — template: `name`, `expectedAmount`, `minimumPayment`,
   `dueDayOfMonth`, `recurrence`, `active`. **No instance generation implemented yet.**
 - **`financial_entries`** — concrete bills/income instances; `kind` = `bill | income`,
   optional `recurringBillId`, `dueDate`, `expectedAmount`, `actualAmount`, `status`,
-  `paidAt`. (Finance services use `kind = "bill"` rows for bills.)
+  `paidAt`. **Finance 1A.1**: `sourceAccountId` (account a bill is normally paid from) and
+  `paidAccountId` (account actually used when marked paid) — **both nullable FKs to
+  `financial_accounts`**; a null `sourceAccountId` renders as "Payment account not assigned"
+  (never auto-guessed or back-filled). **Marking a bill paid records status + `paidAt` +
+  `paidAccountId` and does NOT mutate any account balance** (the recorded-movements ledger that
+  will move balances on pay/receive/transfer arrives in Finance 1A.3). (Finance services use
+  `kind = "bill"` rows for bills.)
 - **`income_entries`** — `source`, `expectedAmount`, `actualAmount`, `payDate`,
-  `recurrence`, `isPayday`.
+  `recurrence`, `isPayday`. (Still managed on `/manage`; account-linked/split income is deferred
+  to Finance 1A.2.)
+
+**Finance roadmap (recorded; not implemented in 1A.1):**
+- **1A.2** — account-linked & **split income** (resolution order: fixed allocations → percentage
+  **of the remaining** amount → one optional **remainder** account, with deterministic last-cent
+  handling through the remainder) and **transfers** between owned accounts (scheduled + completed;
+  two-leg, net-zero, never income/expense).
+- **1A.3** — a recorded **movements ledger** so paying a bill / receiving income / completing a
+  transfer updates **actual** account balances; **reconciliation** (set actual to the real balance,
+  with an audit adjustment); and **account-aware projection** replacing the legacy
+  `estimatedRemaining`.
+- **1B** — a separate **`financial_connections`** model for read-only bank links (`balanceSource =
+  linked`); connection health lives there, not on the account row.
 
 ### Signals & opportunities
 - **`signal_sources`** — ingest sources (`name`, `baseUrl`, `kind`, `active`). Unused by UI.
@@ -170,7 +205,9 @@ at `/manage` (the relocated dashboard) and still covers every vertical.
 ## View models (UI contract)
 
 The UI never depends on Drizzle row types. View models live in `lib/types.ts`
-(`TaskView`, `ObligationView`, `FinancialOutlook`, `AccountView`, `BillView`,
-`IncomeView`, `SignalView`, `OpportunityView`, `JobView`, `InterestItemView`,
+(`TaskView`, `ObligationView`, `FinancialOutlook`, `AccountView` (Finance 1A.1: +institution,
+purpose, balanceSource, includeInSpendable, active, isCash, isLiability), `CashSummary`,
+`BillView` (+sourceAccountId, paidAccountId), `IncomeView`, `SignalView`, `OpportunityView`,
+`JobView`, `InterestItemView`,
 `ExperienceRequestView`, `ExperienceView`, `ExperienceXpSummary`, `Briefing`,
 `DashboardData`). Service-layer `to*Views()` functions map rows → view models.

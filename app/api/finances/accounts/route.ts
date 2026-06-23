@@ -1,8 +1,22 @@
-/* /api/finances/accounts — list + create financial accounts. */
+/* /api/finances/accounts — list + create financial accounts.
+ *
+ * Finance 1A.1: accounts carry institution, a validated type + purpose, a
+ * manually entered actual balance, balanceSource (always "manual" today),
+ * an include-in-spendable flag, and an active flag. Type/purpose/balanceSource
+ * are validated against the controlled vocabularies in the service layer. */
 
 import { NextResponse } from "next/server";
-import { createAccount, listAccounts } from "@/lib/services/finances";
+import {
+  createAccount,
+  listAccounts,
+  ACCOUNT_TYPES,
+  ACCOUNT_PURPOSES,
+  BALANCE_SOURCES,
+} from "@/lib/services/finances";
 import { CURRENT_USER_ID } from "@/lib/auth";
+
+const inList = <T extends readonly string[]>(v: unknown, list: T): v is T[number] =>
+  typeof v === "string" && (list as readonly string[]).includes(v);
 
 export async function GET() {
   try {
@@ -28,17 +42,61 @@ export async function POST(request: Request) {
   if (!name) {
     return NextResponse.json({ error: "Account name is required." }, { status: 400 });
   }
+
+  const type = b.type === undefined || b.type === "" ? "checking" : b.type;
+  if (!inList(type, ACCOUNT_TYPES)) {
+    return NextResponse.json(
+      { error: `Account type must be one of: ${ACCOUNT_TYPES.join(", ")}.` },
+      { status: 400 },
+    );
+  }
+  const purpose = b.purpose === undefined || b.purpose === "" ? "other" : b.purpose;
+  if (!inList(purpose, ACCOUNT_PURPOSES)) {
+    return NextResponse.json(
+      { error: `Account purpose must be one of: ${ACCOUNT_PURPOSES.join(", ")}.` },
+      { status: 400 },
+    );
+  }
+  const balanceSource =
+    b.balanceSource === undefined || b.balanceSource === "" ? "manual" : b.balanceSource;
+  if (!inList(balanceSource, BALANCE_SOURCES)) {
+    return NextResponse.json({ error: "Invalid balance source." }, { status: 400 });
+  }
+
   const balance = Number(b.currentBalance);
-  if (b.currentBalance !== undefined && !Number.isFinite(balance)) {
+  if (b.currentBalance !== undefined && b.currentBalance !== "" && !Number.isFinite(balance)) {
     return NextResponse.json({ error: "Balance must be a number." }, { status: 400 });
   }
+
+  // Savings/emergency default to excluded from spendable cash unless the owner
+  // says otherwise; everything else defaults to included. Credit accounts are
+  // liabilities and are never spendable cash, regardless of what was sent.
+  const defaultSpendable = !(purpose === "savings" || purpose === "emergency");
+  const includeInSpendable =
+    type === "credit"
+      ? false
+      : b.includeInSpendable === undefined
+        ? defaultSpendable
+        : Boolean(b.includeInSpendable);
+  const active = b.active === undefined ? true : Boolean(b.active);
+  const institution =
+    typeof b.institution === "string" && b.institution.trim()
+      ? b.institution.trim()
+      : null;
+  const notes = typeof b.notes === "string" && b.notes.trim() ? b.notes.trim() : null;
 
   try {
     const row = await createAccount({
       userId: CURRENT_USER_ID,
       name,
-      type: typeof b.type === "string" && b.type ? b.type : "checking",
+      type,
+      institution,
+      purpose,
       currentBalance: String(Number.isFinite(balance) ? balance : 0),
+      balanceSource,
+      includeInSpendable,
+      active,
+      notes,
       balanceUpdatedAt: new Date(),
     });
     return NextResponse.json({ account: row }, { status: 201 });

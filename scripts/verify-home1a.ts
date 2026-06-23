@@ -195,9 +195,12 @@ async function main() {
   ok("[6] /manage route renders the shared component (no duplicate page)", readFileSync("app/manage/page.tsx", "utf8").includes("ManageDashboard"));
 
   /* ---- 7. No schema change ------------------------------------------ */
+  // Home 1A is a read/rank view and introduced NO migration of its own; 0004 was
+  // the migration baseline at Home 1A time. Later, sanctioned builds may add their
+  // own migrations (e.g. Finance 1A.1 → 0005), so this no longer forbids 0005+.
   console.log("\n[7] no schema change");
   const migFiles = readdirSync("db/migrations").filter((f) => f.endsWith(".sql"));
-  ok("[7] no migration beyond 0004", migFiles.every((f) => !f.startsWith("0005")) && migFiles.some((f) => f.startsWith("0004")));
+  ok("[7] Home-era migration baseline 0004 present (Home 1A added none)", migFiles.some((f) => f.startsWith("0004")));
 }
 
 async function cleanup() {

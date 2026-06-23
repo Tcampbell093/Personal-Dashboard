@@ -1,9 +1,15 @@
-/* /api/finances/bills/[id] — update, mark paid (status=paid), soft-delete. */
+/* /api/finances/bills/[id] — update, mark paid (status=paid), soft-delete.
+ *
+ * Finance 1A.1: marking a bill paid records status + paidAt + the account it was
+ * actually paid from (`paidAccountId`, optional). It does NOT mutate any account
+ * balance — balances stay manually entered until Finance 1A.3. The bill's
+ * `sourceAccountId` (normal payment account) can also be (re)assigned or cleared. */
 
 import { NextResponse } from "next/server";
 import {
   updateBill,
   deleteBill,
+  accountExists,
   BILL_STATUSES,
   type NewBill,
 } from "@/lib/services/finances";
@@ -11,6 +17,13 @@ import { CURRENT_USER_ID } from "@/lib/auth";
 
 const isDate = (s: unknown): s is string =>
   typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
+
+function readAccountId(v: unknown): number | null | Error {
+  if (v === undefined || v === null || v === "") return null;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n <= 0) return new Error("Invalid account id.");
+  return n;
+}
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -53,6 +66,28 @@ export async function PATCH(request: Request, { params }: Ctx) {
       return NextResponse.json({ error: "Invalid due date." }, { status: 400 });
     }
     patch.dueDate = isDate(b.dueDate) ? b.dueDate : null;
+  }
+  // Reassign or clear the normal payment account.
+  if ("sourceAccountId" in b) {
+    const src = readAccountId(b.sourceAccountId);
+    if (src instanceof Error) {
+      return NextResponse.json({ error: src.message }, { status: 400 });
+    }
+    if (src !== null && !(await accountExists(CURRENT_USER_ID, src))) {
+      return NextResponse.json({ error: "Source account not found." }, { status: 400 });
+    }
+    patch.sourceAccountId = src;
+  }
+  // The account actually used for payment (recorded, never moves a balance).
+  if ("paidAccountId" in b) {
+    const paid = readAccountId(b.paidAccountId);
+    if (paid instanceof Error) {
+      return NextResponse.json({ error: paid.message }, { status: 400 });
+    }
+    if (paid !== null && !(await accountExists(CURRENT_USER_ID, paid))) {
+      return NextResponse.json({ error: "Payment account not found." }, { status: 400 });
+    }
+    patch.paidAccountId = paid;
   }
   if (b.status !== undefined) {
     if (!BILL_STATUSES.includes(b.status as never)) {

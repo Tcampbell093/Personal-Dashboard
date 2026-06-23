@@ -109,7 +109,7 @@ export function MoneyAwareness({ section }: { section: HomeSection<HomeMoney> })
       <div className="home-card-head">
         <span className="home-tick good" />
         <h2>Money awareness</h2>
-        <a className="home-link" href="/manage">Manage money →</a>
+        <a className="home-link" href="/finances">Manage money →</a>
       </div>
       {!section.ok ? (
         <Unavailable note="Money awareness is temporarily unavailable." />

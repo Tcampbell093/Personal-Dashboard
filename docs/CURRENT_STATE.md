@@ -4,7 +4,7 @@
 > after every substantive change (see `CLAUDE.md`). For the durable product vision, see
 > `docs/PRODUCT_VISION.md`.
 
-**Last updated:** 2026-06-23 · **Reflects branch:** `main` (Home 1A implemented, uncommitted)
+**Last updated:** 2026-06-23 · **Reflects branch:** `main` (Finance 1A.1 implemented, uncommitted)
 
 ## Status legend
 
@@ -165,8 +165,36 @@ rendered page**. No browser-driven UI clicks and no automated tests were run.
   truthful signal ("N tasks completed today") in Life momentum when applicable. **No schema change**
   — the `tasks.completedAt` column already existed. Home 1A (55/55) and Build 2A/2B.1/2B.2
   regress green.
+- **Finance 1A.1 — account-aware manual finance**, verified **deterministically**
+  (`scripts/verify-finance1a.ts`, **74/74**, real services + real route handlers against real Neon)
+  and via the **browser** (desktop + 375px). A dedicated **`/finances`** page (emerald Money
+  identity) shows **manually entered actual balances** only — never a projection, never
+  "safe to spend"/"live balance". Accounts now carry **institution, a validated type**
+  (checking/savings/cash/credit/other) **and purpose** (spending/bills/savings/emergency/cash/other),
+  **balanceSource** (`manual`|`linked`; always `manual` today, `linked` reserved for a future
+  read-only bank connection), **includeInSpendable**, and **active** flags. Truthful rollups:
+  **Total actual cash** (active cash-type accounts), **Spendable actual cash** (the
+  includeInSpendable subset; savings/emergency default excluded), **Savings/emergency** surfaced
+  separately, and **Credit liabilities** shown apart — **credit is never added to cash** (positive
+  balance = amount owed; `netPosition = cash − credit`). Bills gained **`sourceAccountId`** and
+  **`paidAccountId`** (both nullable); existing/unassigned bills stay valid and render under
+  **"Payment account not assigned"** (never auto-guessed); they group by payment account on the page.
+  **Marking a bill paid records status + paidAt + the account used and does NOT change any account
+  balance** (browser- and DB-confirmed: Chase stayed $2,000 after a paid-from-Chase bill). The
+**credit-never-spendable invariant is enforced server-side on both POST and PATCH** (a stored credit
+account can never have `includeInSpendable=true`; switching credit→non-credit never auto-enables
+spendable). `/manage`
+  Money is reduced to a compact summary that **links to `/finances`** while **income management is
+  preserved on `/manage`** (FinanceManager `sections={["income"]}`); Home's Money card links to
+  `/finances`. The legacy `estimatedRemaining` is kept as a temporary compatibility figure (wording
+  unchanged) but **corrected to exclude credit and inactive accounts**. Additive migration
+  `0005_concerned_colossus.sql` (reviewed: only `CREATE TYPE` + `ADD COLUMN` + FK `ADD CONSTRAINT`,
+  no destructive ops) applied; **owner accounts/bills survived untouched**. **No AI / no usage log**,
+  ID-scoped cleanup, request 222 + owner data untouched. Build 1 / 2A (136) / 2B.1 (126) / 2B.2 (60)
+  / Home 1A (55) / Manage-tasks (27) regress green.
 - **`npm run typecheck` and `npm run build`** pass on the current code (the build includes the
-  Home `/`, `/manage`, and the `/interpret`, `/recommend`, `/select-recommendation` routes).
+  Home `/`, `/manage`, `/finances`, and the `/interpret`, `/recommend`, `/select-recommendation`
+  routes).
 
 ## 🟡 Partially implemented
 
