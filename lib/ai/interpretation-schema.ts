@@ -15,11 +15,21 @@ export const INTERPRETATION_JSON_SCHEMA = {
     startingLocation: { type: ["string", "null"] },
     maxTravelMiles: { type: ["integer", "null"] },
     maxTravelMinutes: { type: ["integer", "null"] },
-    energyLevel: { type: ["string", "null"], enum: ["low", "medium", "high", null] },
+    // Nullable enums as anyOf unions — Anthropic rejects `enum` combined with a
+    // `["string","null"]` type array. String branch = string enum values only;
+    // null branch = type:"null". App validation still enforces the same values.
+    energyLevel: {
+      anyOf: [
+        { type: "string", enum: ["low", "medium", "high"] },
+        { type: "null" },
+      ],
+    },
     desiredFeeling: { type: ["string", "null"] },
     maxPhysicalDifficulty: {
-      type: ["string", "null"],
-      enum: ["easy", "moderate", "challenging", null],
+      anyOf: [
+        { type: "string", enum: ["easy", "moderate", "challenging"] },
+        { type: "null" },
+      ],
     },
     interests: { type: "array", items: { type: "string" } },
     exclusions: { type: "array", items: { type: "string" } },

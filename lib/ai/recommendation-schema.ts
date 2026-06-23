@@ -38,9 +38,14 @@ const RECOMMENDATION_ITEM_SCHEMA = {
     estimatedDurationMinutes: { type: ["integer", "null"] },
     locationText: { type: ["string", "null"] },
     travelAssumption: { type: ["string", "null"] },
+    // Nullable enum as an anyOf union — Anthropic's structured-output subset
+    // rejects `enum` combined with a `["string","null"]` type array. The string
+    // branch carries only string enum values; the null branch is type:"null".
     physicalDifficulty: {
-      type: ["string", "null"],
-      enum: ["easy", "moderate", "challenging", null],
+      anyOf: [
+        { type: "string", enum: ["easy", "moderate", "challenging"] },
+        { type: "null" },
+      ],
     },
     intendedFeeling: { type: ["string", "null"] },
     assumptions: { type: "array", items: { type: "string" } },

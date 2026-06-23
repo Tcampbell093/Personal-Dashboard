@@ -67,8 +67,9 @@ async function main() {
   console.log("Build 2A deterministic verification\n");
 
   console.log("provider schema compatibility:");
-  // Anthropic structured-output subset rejects array minItems>1 / maxItems.
-  const interpViolations: string[] = (function walk(schema: unknown, path = "$"): string[] {
+  // Anthropic structured-output subset rejects: array minItems>1 / maxItems;
+  // `enum` combined with a type-array; and enum arrays containing null.
+  function schemaViolations(schema: unknown, path = "$"): string[] {
     const out: string[] = [];
     if (schema && typeof schema === "object") {
       const s = schema as Record<string, unknown>;
@@ -77,11 +78,31 @@ async function main() {
         if (typeof s.minItems === "number" && s.minItems > 1) out.push(`${path}.minItems`);
         if (s.maxItems !== undefined) out.push(`${path}.maxItems`);
       }
-      for (const [k, v] of Object.entries(s)) if (v && typeof v === "object") out.push(...walk(v, `${path}.${k}`));
+      if (s.enum !== undefined) {
+        if (Array.isArray(s.type)) out.push(`${path}: enum+type-array`);
+        if (Array.isArray(s.enum) && (s.enum as unknown[]).includes(null)) out.push(`${path}: enum contains null`);
+      }
+      for (const [k, v] of Object.entries(s)) if (v && typeof v === "object") out.push(...schemaViolations(v, `${path}.${k}`));
     }
     return out;
-  })(INTERPRETATION_JSON_SCHEMA);
-  ok(`interpretation schema has no unsupported array constraints (${JSON.stringify(interpViolations)})`, interpViolations.length === 0);
+  }
+  const interpViolations = schemaViolations(INTERPRETATION_JSON_SCHEMA);
+  ok(`interpretation schema has no unsupported constructs (${JSON.stringify(interpViolations)})`, interpViolations.length === 0);
+  // Nullable enums are anyOf(string-enum, null), and validation accepts values + null.
+  const ip = (INTERPRETATION_JSON_SCHEMA as Record<string, any>).properties;
+  for (const [field, vals] of [["energyLevel", ["low", "medium", "high"]], ["maxPhysicalDifficulty", ["easy", "moderate", "challenging"]]] as const) {
+    const anyOf = (ip[field] as { anyOf?: Array<Record<string, unknown>> }).anyOf;
+    const strBranch = anyOf?.find((b) => b.type === "string");
+    const nullBranch = anyOf?.find((b) => b.type === "null");
+    ok(`${field} is anyOf(string-enum, null)`,
+      Array.isArray(anyOf) && anyOf.length === 2 &&
+      JSON.stringify(strBranch?.enum) === JSON.stringify(vals) &&
+      !!nullBranch && Object.keys(nullBranch).length === 1);
+    for (const v of [...vals, null]) {
+      const r = validateInterpretation({ ...VALID, [field]: v });
+      ok(`${field} accepts ${JSON.stringify(v)}`, (r as unknown as Record<string, unknown>)[field] === v);
+    }
+  }
 
   console.log("validateInterpretation:");
   const v = validateInterpretation(VALID);

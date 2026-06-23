@@ -42,9 +42,11 @@ function ok(name: string, cond: boolean) {
   else { failed++; console.error(`  ✗ ${name}`); }
 }
 
-/** Recursively find array nodes carrying constraints Anthropic's structured-output
- * subset rejects (minItems > 1, or any maxItems). Returns the offending paths. */
-function unsupportedArrayConstraints(schema: unknown, path = "$"): string[] {
+/** Recursively find provider-schema constructs Anthropic's structured-output
+ * subset rejects: array minItems>1 / any maxItems; an `enum` combined with a
+ * `type` array (nullable enum must be expressed as anyOf); or an `enum` array
+ * containing null. Returns the offending paths. */
+function providerSchemaViolations(schema: unknown, path = "$"): string[] {
   const out: string[] = [];
   if (schema && typeof schema === "object") {
     const s = schema as Record<string, unknown>;
@@ -53,8 +55,12 @@ function unsupportedArrayConstraints(schema: unknown, path = "$"): string[] {
       if (typeof s.minItems === "number" && s.minItems > 1) out.push(`${path}.minItems=${s.minItems}`);
       if (s.maxItems !== undefined) out.push(`${path}.maxItems=${String(s.maxItems)}`);
     }
+    if (s.enum !== undefined) {
+      if (Array.isArray(s.type)) out.push(`${path}: enum combined with type-array ${JSON.stringify(s.type)}`);
+      if (Array.isArray(s.enum) && (s.enum as unknown[]).includes(null)) out.push(`${path}: enum contains null`);
+    }
     for (const [k, v] of Object.entries(s)) {
-      if (v && typeof v === "object") out.push(...unsupportedArrayConstraints(v, `${path}.${k}`));
+      if (v && typeof v === "object") out.push(...providerSchemaViolations(v, `${path}.${k}`));
     }
   }
   return out;
@@ -138,8 +144,32 @@ async function main() {
 
   /* ---- 0. Provider-schema Anthropic compatibility -------------------- */
   console.log("[0] provider schema compatibility");
-  const recViolations = unsupportedArrayConstraints(RECOMMENDATIONS_JSON_SCHEMA);
-  ok(`[0] recommendation provider schema has no unsupported array constraints (${JSON.stringify(recViolations)})`, recViolations.length === 0);
+  const recViolations = providerSchemaViolations(RECOMMENDATIONS_JSON_SCHEMA);
+  ok(`[0] recommendation provider schema has no unsupported constructs (${JSON.stringify(recViolations)})`, recViolations.length === 0);
+  // physicalDifficulty must be an anyOf union: string-enum branch + null branch.
+  const itemProps = ((RECOMMENDATIONS_JSON_SCHEMA as Record<string, any>).properties.recommendations.items.properties) as Record<string, any>;
+  const pdAnyOf = (itemProps.physicalDifficulty as { anyOf?: Array<Record<string, unknown>> })?.anyOf;
+  const pdStrBranch = pdAnyOf?.find((b) => b.type === "string");
+  const pdNullBranch = pdAnyOf?.find((b) => b.type === "null");
+  ok("[0] physicalDifficulty is anyOf(string-enum, null)",
+    Array.isArray(pdAnyOf) && pdAnyOf.length === 2 &&
+    JSON.stringify(pdStrBranch?.enum) === JSON.stringify(["easy", "moderate", "challenging"]) &&
+    !!pdNullBranch && Object.keys(pdNullBranch).length === 1);
+  // App validation accepts each enum value AND null, and rejects an invalid value.
+  const mk = (diff: unknown) => ({ recommendations: Array.from({ length: RECOMMENDATION_BATCH_SIZE }, () => ({
+    title: "T", description: "d", whyItFits: "w", estimatedCostMin: null, estimatedCostMax: null,
+    estimatedDurationMinutes: null, locationText: null, travelAssumption: null, physicalDifficulty: diff,
+    intendedFeeling: null, assumptions: [], preparationNotes: [] })) });
+  for (const v of ["easy", "moderate", "challenging", null]) {
+    let okv = false;
+    try { okv = validateRecommendationBatch(mk(v))[0].physicalDifficulty === (v as never); } catch { okv = false; }
+    ok(`[0] physicalDifficulty accepts ${JSON.stringify(v)}`, okv);
+  }
+  {
+    let rejected = false;
+    try { validateRecommendationBatch(mk("extreme")); } catch (e) { rejected = e instanceof AiError && e.category === "invalid_ai_output"; }
+    ok("[0] physicalDifficulty rejects invalid value (whole-batch)", rejected);
+  }
   // Application validator still enforces "exactly three" + whole-batch rejection.
   const goodThree = { recommendations: Array.from({ length: RECOMMENDATION_BATCH_SIZE }, (_, i) => ({
     title: `T${i}`, description: "d", whyItFits: "w", estimatedCostMin: 1, estimatedCostMax: 2,
