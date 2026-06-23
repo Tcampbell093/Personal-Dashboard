@@ -189,6 +189,12 @@ dominant identity color per page.
 | **Relationships & family** | warm rose `#f08aa0` | warmth, connection | soft, human, hearth-like |
 | **Personal identity & portfolio** | gold `#e0b24f` | pride, curation | gallery / spotlight, refined |
 
+**Implemented:** the **Home / Today** page (`/`, Home 1A) is the first surface to apply this system
+— a `--home: #e8c878` champagne identity (date eyebrow, section ticks, a subtle static dawn
+atmosphere), near-black void + graphite cards, urgency reasons as small **text-labelled** pills
+(act/aware/good), compact sections, and a 375px single-column layout. No artwork yet (CSS
+atmosphere only).
+
 **Experiences palette note.** Experiences uses a restrained gradient from cyan toward violet
 (suggesting discovery, scenery, nightlife, creativity, and possibility) rather than a generic
 informational blue. It must remain **distinct from the urgency colors** (`act`/`aware`/

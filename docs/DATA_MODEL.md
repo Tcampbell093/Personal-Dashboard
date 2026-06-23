@@ -148,6 +148,17 @@ rejects the entire batch with no partial persistence. These are concepts, not ve
 - **`daily_briefings`** — one row per user per date (unique). Table exists; the app
   currently recomputes briefings per request and does **not** write here.
 
+## Home / Today (read/rank view — no schema)
+
+Home 1A (the default `/`) adds **no tables or columns**. It is a deterministic read-and-rank
+view assembled by `lib/services/home.ts` (`buildHomeView`) over existing data only: `tasks`,
+`obligations`, `financial_entries` (via `computeFinancialOutlook` + `listBills`),
+`experiences` (+ `xpSummary`), and the owner's `users.name` (first token, for the greeting —
+no new field). Prioritization is the pure `rankNeedsAttention` in `lib/briefing.ts` (overdue →
+due-today → critical → due-soon → high, each with a visible reason). Experimental verticals
+(signals/opportunities/jobs/interest) are excluded from Home. The full management workspace lives
+at `/manage` (the relocated dashboard) and still covers every vertical.
+
 ## View models (UI contract)
 
 The UI never depends on Drizzle row types. View models live in `lib/types.ts`

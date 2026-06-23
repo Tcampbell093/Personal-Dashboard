@@ -4,7 +4,7 @@
 > after every substantive change (see `CLAUDE.md`). For the durable product vision, see
 > `docs/PRODUCT_VISION.md`.
 
-**Last updated:** 2026-06-22 · **Reflects branch:** `main` (Build 2B.2 implemented, uncommitted)
+**Last updated:** 2026-06-23 · **Reflects branch:** `main` (Home 1A implemented, uncommitted)
 
 ## Status legend
 
@@ -134,8 +134,27 @@ rendered page**. No browser-driven UI clicks and no automated tests were run.
   refresh persists; cards disappear after success; delete → cards return; manual fallback intact;
   desktop + 375px. Build 1 / 2A (125/125) / 2B.1 (113/113) regress green. **No live Anthropic call
   was made.**
+- **Home / Today command center — Home 1A (deterministic, default `/`)**, verified
+  **deterministically** (`scripts/verify-home1a.ts`, **55/55**) and via the **browser** (desktop +
+  375px). `/` is now a curated, mostly-read-only daily command center with five sections — Today
+  (timezone-aware date + greeting that uses `users.name` only for a genuine name — placeholders
+  like "Owner"/"User" suppress to a nameless "Good afternoon." — + a deterministic one-line
+  orientation), Needs attention (ranked,
+  explainable reasons), Coming up, Money awareness, Life momentum — built **only** from real
+  verticals (tasks, obligations, finances, experiences/XP). The former full dashboard moved
+  verbatim to **`/manage`** (one shared `ManageDashboard` component; no duplicate page). **No AI**
+  (deterministic ranking via `lib/briefing.ts` `rankNeedsAttention`); two direct actions reuse
+  existing islands (complete a task, mark a bill paid); experimental verticals
+  (signals/opportunities/jobs/interest) are **excluded from Home** and honestly labeled
+  "experimental / sample-backed" on `/manage`. Money shows only `FinancialOutlook`-supported
+  figures with the wording "Estimated remaining from manually entered balances" (never
+  safe-to-spend/live-balance). Sections degrade independently; a core/DB failure shows a single
+  full-page "Today is temporarily unavailable" state (never mock). Verified: ranking order +
+  reason labels, top-five curation, money equals `FinancialOutlook`, momentum equals `xpSummary`,
+  no usage-log/AI invocation, no schema change, ID-scoped cleanup, request 222 + owner data
+  untouched. Build 1 / 2A (136) / 2B.1 (126) / 2B.2 (60) regress green.
 - **`npm run typecheck` and `npm run build`** pass on the current code (the build includes the
-  `/interpret`, `/recommend`, and `/select-recommendation` routes).
+  Home `/`, `/manage`, and the `/interpret`, `/recommend`, `/select-recommendation` routes).
 
 ## 🟡 Partially implemented
 

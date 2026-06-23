@@ -214,6 +214,24 @@
   ADR-010 explicitly deferred until the recommendation states/columns existed.
 - **Evidence:** Owner-specified in the Build 2B.2 authorization.
 
+### ADR-019 — Home / Today as the default page; deterministic-first; dashboard → /manage
+- **Classification:** Owner-approved decision
+- **Detail:** The default route `/` is now the **Home / Today** command center — a curated,
+  mostly-read-only daily view (Today, Needs attention, Coming up, Money awareness, Life momentum)
+  built **only** from real verticals (tasks, obligations, finances, experiences/XP, `users.name`).
+  Prioritization is **deterministic and explainable** (`rankNeedsAttention` in `lib/briefing.ts`;
+  every item shows a visible reason) — **no AI**. The former full dashboard was **relocated
+  verbatim** to **`/manage`** via a single shared `components/manage/manage-dashboard.tsx` (no
+  duplicate page). Two direct actions only (complete a task, mark a bill paid) reuse existing
+  islands; sections degrade independently, with a full-page error reserved for core/DB failure
+  (never mock fallback). **Experimental/sample-backed verticals (signals, opportunities, jobs,
+  interest) are excluded from Home** and honestly labeled on `/manage`. Money shows only
+  `FinancialOutlook`-supported figures with the wording "Estimated remaining from manually entered
+  balances" — never safe-to-spend/disposable/available/live-balance. No new schema or migration.
+- **Home identity:** warm champagne `#e8c878` (per `docs/DESIGN_SYSTEM.md`).
+- **Evidence:** Owner approved the Home 1A plan with these decisions/corrections. **Home 1B**
+  (an owner-triggered AI daily brief) remains **separately gated** and is not implemented.
+
 ---
 
 ## Open decisions — `[DECISION NEEDED]`

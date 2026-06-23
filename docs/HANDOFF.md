@@ -12,18 +12,19 @@
 
 ## Next approved task
 
-### Build 2B.2 — Recommendation selection + one-action plan creation (Experience loop)
+### Home / Today — Home 1A (deterministic daily command center)
 
 - **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** See the latest handoff
-  report below. This completes the core Experience workflow
-  `request → interpretation → recommendations → choice → planned experience`. (Build 2A
-  committed `1409c37`; design system `974dbe5`; Build 2B.1 committed `5977b9b`.)
-- **No further Experience-loop build is currently authorized.** Possible future directions (each
-  separately gated): a settings UI for `intelligence_settings`; a close/archive workflow (would
-  introduce `experience_request_status = closed`); rule-based fallback recommendations (would
-  introduce the `fallback` source value + a catalog); the application-wide visual redesign
-  (`docs/DESIGN_SYSTEM.md`); a live Sonnet/Haiku smoke test once the owner deliberately enables a
-  key. None of these may begin without explicit approval.
+  report below. `/` is now the Home / Today command center; the former dashboard moved to
+  `/manage`. (Build 2A `1409c37`; design system `974dbe5`; Build 2B.1 `5977b9b`; Build 2B.2
+  committed `ef08dd2`.)
+- **No further build is currently authorized.** Separately-gated future directions:
+  **Home 1B** (owner-triggered AI daily brief — reuses the provider boundary + cost/privacy/
+  logging controls; deterministic Home is its fallback); a settings UI for
+  `intelligence_settings`; a close/archive workflow (`experience_request_status = closed`);
+  rule-based fallback recommendations (`fallback` source + catalog); the application-wide visual
+  redesign; a live Sonnet/Haiku smoke test once the owner deliberately enables a key. None may
+  begin without explicit approval.
 
 > **Status note (verbatim, required while no live key is configured):** "Anthropic adapter
 > implemented and deterministically verified; live Anthropic invocation pending owner
@@ -100,6 +101,96 @@ specific build. Builds are ordered so the manual loop works end-to-end before an
 ---
 
 ## Latest handoff
+
+### Home / Today — Home 1A (deterministic daily command center) — implemented — 2026-06-23
+
+**Task Completed**
+Implemented Home 1A exactly to the approved scope + owner decisions: `/` is a new deterministic,
+real-data-only daily command center (Today, Needs attention, Coming up, Money awareness, Life
+momentum); the former full dashboard was relocated verbatim to `/manage` via one shared component
+(no duplicate page). No AI, no new schema/migration, no new mutation logic. Not committed —
+awaiting owner review.
+
+**Files Changed**
+- New: `app/manage/page.tsx` (thin wrapper); `components/manage/manage-dashboard.tsx` (the
+  relocated dashboard + honest experimental labels + Home nav); `lib/services/home.ts`
+  (`buildHomeView` + per-section loaders + `getOwnerFirstName`); `components/home/sections.tsx`
+  (Today/NeedsAttention/ComingUp/MoneyAwareness/LifeMomentum); `components/home/mark-bill-paid.tsx`
+  (client island reusing the bills PATCH API); `scripts/verify-home1a.ts`.
+- Modified: `app/page.tsx` (rewritten as Home / Today; old content moved out — not deleted);
+  `lib/briefing.ts` (+`rankNeedsAttention` deterministic ranker); `lib/types.ts` (Home view
+  models); `app/globals.css` (Home champagne styles); docs.
+- Deleted: none. Dependencies: none. Schema/migration: none.
+
+**Refactor boundary (exact)**
+The entire former `app/page.tsx` body became `export async function ManageDashboard()` in
+`components/manage/manage-dashboard.tsx` (with `NextSevenDays`). `app/manage/page.tsx` is a 3-line
+wrapper that renders `<ManageDashboard/>`. `app/page.tsx` was rewritten as the Home / Today page.
+There is exactly ONE management implementation; `/` and `/manage` share no page code.
+
+**Current Behavior**
+`/` greets the owner (`Good <part-of-day>, <users.name first token>.`, fallback `Good <part>.`),
+shows a deterministic one-line orientation, then five sections from real data only. Needs
+attention is ranked with visible reasons ("Overdue 3 days", "Due today", "Critical priority",
+"Due in 2 days") and curated to ≤5; a task item offers the complete action, the Money section
+offers mark-bill-paid — the only two direct actions. Money shows `estimatedRemaining` as
+"Estimated remaining from manually entered balances" (never safe-to-spend/live-balance). Each
+section degrades independently to a compact unavailable note; a core/DB failure shows one
+full-page "Today is temporarily unavailable" (never mock). Experimental verticals are absent from
+Home and labeled "experimental / sample-backed" on `/manage`, which preserves all prior forms and
+actions.
+
+**Prioritization rules**
+`rankNeedsAttention(tasks, obligations, finances)` (pure, in `lib/briefing.ts`): per open task the
+single most urgent of overdue (rank 1000+days, "Overdue N days") → due-today (900, "Due today") →
+critical (800, "Critical priority") → due-in-≤3 (700−days, "Due in N days") → high (600, "High
+priority"); obligations by start date (overdue/today/soon); one "N overdue bills" item (950) when
+finances report overdue bills. Sorted desc; Home shows the top 5.
+
+**Section-level failure behavior**
+`buildHomeView` runs a core owner read (DB-liveness probe; a throw → full-page error) then loads
+the four sections with `Promise.allSettled`; each maps to `{ok,data}`. A single section's failure
+renders only that section's "temporarily unavailable" note. No mock fallback anywhere.
+
+**Experimental-label behavior**
+`/manage` shows "experimental / sample-backed" on signals, opportunities, jobs, and interest
+section titles (unconditional this build) and in the live-data banner; per-row `MockTag` remains
+on seeded demo rows. These verticals never appear on Home.
+
+**Testing Completed**
+`npm run typecheck` ✓; `npm run build` ✓ (includes `/` and `/manage`). **`scripts/verify-home1a.ts`
+— 55/55** (incl. placeholder-name suppression + timezone): ranker order + reason labels; top-five
+curation (UI caps at 5); greeting suppresses placeholder names ("Owner"/"User"/blank → nameless)
+and personalizes a genuine name; date/part-of-day/daily-boundary use the configured timezone
+(`APP_TIME_ZONE`, default `America/New_York`, invalid → safe fallback), correct across UTC/local
+midnight; `buildHomeView` from
+seeded real data (needsAttention reasons + sort; money equals `FinancialOutlook`; momentum equals
+`xpSummary`; coming-up includes the planned experience); HomeView excludes
+signals/opportunities/jobs/interest keys; **no usage-log row / no AI invocation**; complete-task
+and mark-bill-paid via their real services; wording present / forbidden phrases absent;
+section-unavailable + full-page-error states present in source; `/manage` preserves all vertical
+forms and shows honest experimental labels; **no schema change** (no migration beyond 0004);
+exact-ID cleanup; request 222 + owner data untouched. **Browser** (desktop + 375px): Home renders
+with the champagne identity; ranked "Due in 3 days"/"Overdue 1 day" labels; complete-task removes
+the item; mark-bill-paid removes the bill; `/manage` intact with experimental labels; mobile
+single-column. **Build 2A 136/136; Build 2B.1 126/126; Build 2B.2 60/60.** **`npm run lint` not
+run** (interactive-only, unconfigured). **No live AI/Anthropic call.**
+
+**Known Issues / Not Tested**
+- The stored `users.name` is the placeholder **"Owner"**, which is now **suppressed** → the
+  greeting renders "Good afternoon." (nameless). Setting `users.name` to a genuine first name
+  personalizes it — **no code change needed** (owner data deliberately untouched).
+- Date, part-of-day greeting, and the daily boundary now use a **configured timezone**
+  (`APP_TIME_ZONE`, default `America/New_York`) via `lib/time.ts`; set `APP_TIME_ZONE` on Netlify
+  to match the owner's locale if different.
+- Section-failure and full-page-error *rendering* are asserted in source + by construction (the
+  resilience contract), not by runtime-simulating a partial DB outage.
+
+**Decisions Needed**
+Owner review/approval before commit. Home 1B (AI brief) requires separate authorization.
+
+**Recommended Next Step**
+Owner reviews Home 1A; if approved, authorizes the commit. Home 1B can then be scoped separately.
 
 ### Build 2B.2 — Recommendation selection + one-action plan creation — implemented — 2026-06-22
 

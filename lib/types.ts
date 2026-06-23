@@ -195,6 +195,63 @@ export interface ExperienceXpSummary {
   completedCount: number;
 }
 
+/* --- Home / Today command center (Home 1A, deterministic) ---------------- */
+
+/** One ranked, explainable item in the Home "Needs attention" list. Each carries
+ * a human-readable reason. Task items include the TaskView so Home can offer the
+ * one direct action (complete); obligation/bill items are read-only. */
+export interface HomeNeedItem {
+  key: string;
+  kind: "task" | "obligation" | "bill";
+  title: string;
+  reason: string; // e.g. "Overdue 3 days", "Due today", "Critical priority", "Due in 2 days"
+  tone: "act" | "aware";
+  rank: number; // higher = more urgent; deterministic
+  task?: TaskView;
+}
+
+export interface HomeComingItem {
+  key: string;
+  kind: "obligation" | "experience";
+  title: string;
+  date: string | null;
+  detail: string | null;
+}
+
+export interface HomeMoney {
+  estimatedRemaining: number;
+  accountsTotal: number;
+  billsDueBeforePayday: number;
+  overdueCount: number;
+  due7: number;
+  due30: number;
+  nextPaydayDate: string | null;
+  /** Next few unpaid bills (for the one direct action: mark paid). */
+  dueBills: BillView[];
+}
+
+export interface HomeMomentum {
+  totalXp: number;
+  completedCount: number;
+  nextPlanned: { id: number; title: string; plannedDate: string | null } | null;
+  lastResolved: { id: number; title: string; status: ExperienceStatus } | null;
+  plannedCount: number;
+}
+
+/** A section is either ok (with data) or unavailable (degraded independently). */
+export interface HomeSection<T> {
+  ok: boolean;
+  data: T | null;
+}
+
+export interface HomeView {
+  firstName: string | null;
+  needsAttention: HomeSection<{ items: HomeNeedItem[]; openTaskCount: number; openObligationCount: number }>;
+  comingUp: HomeSection<HomeComingItem[]>;
+  money: HomeSection<HomeMoney>;
+  momentum: HomeSection<HomeMomentum>;
+}
+
 export interface Briefing {
   date: string;
   summary: string;

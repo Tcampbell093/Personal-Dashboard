@@ -15,8 +15,10 @@ import type {
   ObligationView,
   OpportunityView,
   FinancialOutlook,
+  HomeNeedItem,
   Tier,
 } from "./types";
+import { localToday, localDaysUntil } from "./time";
 
 const PRIORITY_RANK: Record<string, number> = {
   critical: 4,
@@ -25,7 +27,7 @@ const PRIORITY_RANK: Record<string, number> = {
   low: 1,
 };
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
+const todayIso = () => localToday();
 
 /** Pick the single most pressing task: highest priority, then earliest due. */
 export function topTask(tasks: TaskView[]): TaskView | null {
@@ -130,12 +132,8 @@ export function generateBriefing(input: {
 /* Map any dated item to a tier. This is the signature of the whole product:
  * the dashboard is a triage, not a feed. */
 
-const DAYS = (dateStr: string | null): number => {
-  if (!dateStr) return Infinity;
-  const target = new Date(dateStr + "T00:00:00");
-  const now = new Date(todayIso() + "T00:00:00");
-  return Math.round((target.getTime() - now.getTime()) / 86_400_000);
-};
+// Whole-day difference vs. the local (app-timezone) calendar date.
+const DAYS = (dateStr: string | null): number => localDaysUntil(dateStr);
 
 /** Tier for a task: due today/overdue or critical = act; soon = aware. */
 export function tierForTask(t: TaskView): Tier {
@@ -151,4 +149,65 @@ export function tierForOpportunity(o: OpportunityView): Tier {
   if (d <= 0) return "act_today";
   if (d <= 7) return "be_aware";
   return "explore";
+}
+
+/* ----------------------------------------------- Home: needs attention --- */
+/* Deterministic, explainable ranking for the Home / Today "Needs attention"
+ * list. Every item carries a visible `reason`; higher `rank` = more urgent. At
+ * most ONE reason per task/obligation (the most urgent that applies). The Home
+ * page slices the sorted result to a small curated number (≈5). No AI. */
+
+const ATTENTION_HORIZON_DAYS = 3;
+const plural = (n: number, unit: string) => `${n} ${unit}${n === 1 ? "" : "s"}`;
+
+/** The single most urgent reason for a dated, open item, or null if not pressing. */
+function datedReason(dateStr: string | null): { reason: string; tone: "act" | "aware"; rank: number } | null {
+  const d = DAYS(dateStr);
+  if (d === Infinity) return null;
+  if (d < 0) return { reason: `Overdue ${plural(-d, "day")}`, tone: "act", rank: 1000 + Math.min(-d, 999) };
+  if (d === 0) return { reason: "Due today", tone: "act", rank: 900 };
+  if (d <= ATTENTION_HORIZON_DAYS) return { reason: `Due in ${plural(d, "day")}`, tone: "aware", rank: 700 - d };
+  return null;
+}
+
+/**
+ * Build the ranked Needs-attention list from real data. Tasks get the most
+ * urgent of: overdue / due-today / due-soon (by date), else critical / high
+ * priority. Obligations: overdue / due-today / due-soon by start date. Bills:
+ * a single item when there are overdue bills. Returns ALL qualifying items,
+ * sorted most-urgent first; the caller curates the top N.
+ */
+export function rankNeedsAttention(input: {
+  tasks: TaskView[];
+  obligations: ObligationView[];
+  finances?: FinancialOutlook | null;
+}): HomeNeedItem[] {
+  const items: HomeNeedItem[] = [];
+
+  for (const t of input.tasks) {
+    if (t.status === "completed" || t.status === "cancelled") continue;
+    const dr = datedReason(t.dueDate);
+    if (dr) {
+      items.push({ key: `task-${t.id}`, kind: "task", title: t.title, reason: dr.reason, tone: dr.tone, rank: dr.rank, task: t });
+    } else if (t.priority === "critical") {
+      items.push({ key: `task-${t.id}`, kind: "task", title: t.title, reason: "Critical priority", tone: "act", rank: 800, task: t });
+    } else if (t.priority === "high") {
+      items.push({ key: `task-${t.id}`, kind: "task", title: t.title, reason: "High priority", tone: "aware", rank: 600, task: t });
+    }
+  }
+
+  for (const o of input.obligations) {
+    if (OBLIGATION_CLOSED.has(o.status)) continue;
+    const dr = datedReason(o.startDate);
+    if (dr) {
+      items.push({ key: `obl-${o.id}`, kind: "obligation", title: o.title, reason: dr.reason, tone: dr.tone, rank: dr.rank });
+    }
+  }
+
+  if (input.finances && input.finances.overdueCount > 0) {
+    const n = input.finances.overdueCount;
+    items.push({ key: "bills-overdue", kind: "bill", title: `${plural(n, "overdue bill")}`, reason: "Overdue", tone: "act", rank: 950 });
+  }
+
+  return items.sort((a, b) => b.rank - a.rank);
 }
