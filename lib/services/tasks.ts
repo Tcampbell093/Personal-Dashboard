@@ -24,6 +24,7 @@ export function toTaskViews(rows: TaskRow[]): TaskView[] {
     priority: r.priority,
     status: r.status,
     category: r.category,
+    completedAt: r.completedAt ? r.completedAt.toISOString() : null,
   }));
 }
 
@@ -59,6 +60,15 @@ export async function completeTask(userId: number, id: number) {
     status: "completed",
     completedAt: new Date(),
   });
+}
+
+/** Reopen a completed task: return it to the active list and clear the
+ * completion timestamp. Never hard-deletes; the row is the same task. */
+export async function reopenTask(userId: number, id: number) {
+  return updateTask(userId, id, {
+    status: "not_started",
+    completedAt: null,
+  } as Partial<NewTask>);
 }
 
 export async function deferTask(userId: number, id: number) {

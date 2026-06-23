@@ -1,13 +1,17 @@
-/* Full management workspace (relocated from the former `/` dashboard).
+/* Full management workspace (the route-owned component for `/manage`).
  *
- * This is the complete triage + add/edit experience for every vertical. It now
- * lives at `/manage`; the default `/` is the curated Home / Today command center.
- * Moved here verbatim (no behavior change) plus: a Home nav link, and honest
- * "experimental / sample-backed" labels on the mock-backed verticals. */
+ * Clarified information architecture (not a redesign):
+ *   1. Act Today          — actionable TASKS (overdue / due today / urgent) + add
+ *   2. Upcoming Commitments — dated OBLIGATIONS to be aware of (distinct from tasks)
+ *   3. Money              — financial outlook + bills
+ *   4. Recently completed — collapsed task history with reopen
+ *   5. Experimental       — sample-backed verticals, honestly labeled
+ * The default `/` is the Home / Today command center. */
 
 import { loadDashboard } from "@/lib/services/dashboard";
 import { tierForTask, tierForOpportunity } from "@/lib/briefing";
-import { AddTaskForm, TaskActions } from "@/components/tasks";
+import { localDaysUntil } from "@/lib/time";
+import { AddTaskForm, TaskActions, ReopenTask } from "@/components/tasks";
 import { AddObligationForm, ObligationActions } from "@/components/obligations";
 import { FinanceManager } from "@/components/finances";
 import { RowActions } from "@/components/row-actions";
@@ -27,6 +31,7 @@ import {
   shortDate,
   tone,
 } from "@/components/ui";
+import type { TaskView } from "@/lib/types";
 
 const TODAY = new Date();
 const longDate = TODAY.toLocaleDateString("en-US", {
@@ -35,31 +40,59 @@ const longDate = TODAY.toLocaleDateString("en-US", {
   day: "numeric",
 });
 
-// Honest section label for the experimental, sample-backed verticals.
 const EXPERIMENTAL = " — experimental / sample-backed";
+const RECENT_COMPLETED_LIMIT = 10;
+
+/** Explicit due/overdue label for a task (text, never color alone). */
+function dueLabel(dueDate: string | null): { text: string; cls: string } {
+  if (!dueDate) return { text: "No due date", cls: "muted" };
+  const d = localDaysUntil(dueDate);
+  if (d < 0) return { text: `Overdue ${-d} day${-d === 1 ? "" : "s"}`, cls: "act" };
+  if (d === 0) return { text: "Due today", cls: "act" };
+  if (d <= 7) return { text: `Due in ${d} day${d === 1 ? "" : "s"}`, cls: "aware" };
+  return { text: `Due ${shortDate(dueDate)}`, cls: "muted" };
+}
+
+function TaskRow({ t, live }: { t: TaskView; live: boolean }) {
+  const due = dueLabel(t.dueDate);
+  return (
+    <div className="row" key={t.id}>
+      <div>
+        <div className="main">{t.title}</div>
+        <div className="sub">
+          <span className={`duelabel ${due.cls}`}>{due.text}</span>
+          {t.category ? ` · ${t.category}` : ""}
+          {t.dueTime ? ` · ${t.dueTime}` : ""}
+        </div>
+      </div>
+      <div className="right">
+        <Badge variant={tone(t.priority)}>{t.priority}</Badge>
+        {live && <TaskActions task={t} />}
+      </div>
+    </div>
+  );
+}
 
 export async function ManageDashboard() {
   const d = await loadDashboard();
 
-  // Only open tasks are triaged; completed/cancelled ones drop off the board.
   const openTasks = d.tasks.filter(
     (t) => t.status !== "completed" && t.status !== "cancelled",
   );
   const actTasks = openTasks.filter((t) => tierForTask(t) === "act_today");
-  const awareTasks = openTasks.filter((t) => tierForTask(t) === "be_aware");
-  const exploreTasks = openTasks.filter((t) => tierForTask(t) === "explore");
-  // Dismissed/expired items drop off the board across the read-mostly verticals.
+  const laterTasks = openTasks.filter((t) => tierForTask(t) !== "act_today");
+  const completedTasks = d.tasks
+    .filter((t) => t.status === "completed")
+    .sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? ""));
+
   const liveOpps = d.opportunities.filter(
     (o) => !["dismissed", "expired", "unsuccessful"].includes(o.status),
   );
   const actOpps = liveOpps.filter((o) => tierForOpportunity(o) === "act_today");
   const awareOpps = liveOpps.filter((o) => tierForOpportunity(o) === "be_aware");
-  const liveSignals = d.signals.filter(
-    (s) => !["dismissed", "expired"].includes(s.status),
-  );
+  const liveSignals = d.signals.filter((s) => !["dismissed", "expired"].includes(s.status));
   const liveJobs = d.jobs.filter((j) => !["dismissed", "expired"].includes(j.status));
   const liveInterest = d.interest.filter((i) => i.status !== "dismissed");
-  // Only still-open obligations stay on the board.
   const openObligations = d.obligations.filter(
     (o) => o.status !== "done" && o.status !== "cancelled" && o.status !== "missed",
   );
@@ -78,129 +111,61 @@ export async function ManageDashboard() {
         </span>
       </header>
 
-      {(() => {
-        const live = [
-          d.tasksLive && "tasks",
-          d.obligationsLive && "obligations",
-          d.financesLive && "finances",
-          d.signalsLive && "signals",
-          d.opportunitiesLive && "opportunities",
-          d.jobsLive && "jobs",
-          d.interestLive && "interests",
-        ].filter(Boolean);
-        if (live.length === 0) {
-          return (
-            <div className="mockbanner">
-              Showing <b>mock data</b>. Nothing here is connected to a database,
-              a calendar, or any external source yet. Connect Neon and seed to go
-              live.
-            </div>
-          );
-        }
-        if (!d.usingMockData) {
-          return (
-            <div className="mockbanner">
-              <b>Tasks, obligations, and finances are live</b> from your database.
-              Signals, opportunities, jobs, and interests remain
-              <b> experimental / sample-backed</b> and are not your real records.
-              AI/automation stays off until you enable it.
-            </div>
-          );
-        }
-        return (
-          <div className="mockbanner">
-            <b>{live.join(", ")} are live</b> from your database. The remaining
-            sections show <b>experimental / sample-backed</b> data, not your real
-            records.
-          </div>
-        );
-      })()}
+      <div className="mockbanner">
+        <b>Tasks, obligations, and finances are live</b> from your database. Signals,
+        opportunities, jobs, and interests remain <b>experimental / sample-backed</b> and are
+        not your real records. AI/automation stays off until you enable it.
+      </div>
 
       {/* HERO — the day in one line */}
       <section className="hero">
         <div className="eyebrow">Daily briefing</div>
         <div className="line">{d.briefing.summary}</div>
-        <div className="meta">
-          <span>
-            Top task: <b>{d.briefing.mostImportantTask}</b>
-          </span>
-          <span>
-            Next up: <b>{d.briefing.mostImportantObligation}</b>
-          </span>
-          <span>
-            Opportunity: <b>{d.briefing.mostRelevantOpportunity}</b>
-          </span>
-        </div>
         {d.briefing.warning && <div className="warn">⚠ {d.briefing.warning}</div>}
       </section>
 
-      {/* ============================== ACT TODAY ============================ */}
+      {/* ===== 1. ACT TODAY — actionable tasks ===== */}
       <section className="tier tier-act">
         <div className="tier-head">
           <span className="tier-tick" />
           <span className="tier-name">Act today</span>
-          <span className="tier-sub">due now, closing, or overdue</span>
+          <span className="tier-sub">tasks to do and complete — overdue, due today, or urgent</span>
         </div>
         <div className="grid">
-          <Card title="Do today" edge="act">
+          <Card title="Do today — tasks" edge="act">
             {d.tasksLive && <AddTaskForm />}
             {actTasks.length === 0 && <Empty>Nothing is due today. Breathe.</Empty>}
             {actTasks.map((t) => (
-              <div className="row" key={t.id}>
-                <div>
-                  <div className="main">{t.title}</div>
-                  <div className="sub">
-                    {t.category ?? "Uncategorized"}
-                    {t.dueTime ? ` · ${t.dueTime}` : ""}
-                  </div>
-                </div>
-                <div className="right">
-                  <Badge variant={tone(t.priority)}>{t.priority}</Badge>
-                  {d.tasksLive && <TaskActions task={t} />}
-                </div>
-              </div>
+              <TaskRow t={t} live={d.tasksLive} key={t.id} />
             ))}
           </Card>
 
-          <Card title={`Opportunity radar — closing${EXPERIMENTAL}`} edge="act">
-            {actOpps.length === 0 && (
-              <Empty>No opportunities closing today.</Empty>
-            )}
-            {actOpps.map((o) => (
-              <div className="row" key={o.id}>
-                <div>
-                  <div className="main">{o.title}</div>
-                  <div className="sub">{o.summary}</div>
-                </div>
-                <div className="right">
-                  <Badge variant="act">closes {shortDate(o.timeWindowEnd)}</Badge>
-                  {d.opportunitiesLive && (
-                    <RowActions base="/api/opportunities" id={o.id} />
-                  )}
-                </div>
-              </div>
+          <Card title="Other open tasks" edge="act">
+            {laterTasks.length === 0 && <Empty>No other open tasks.</Empty>}
+            {laterTasks.map((t) => (
+              <TaskRow t={t} live={d.tasksLive} key={t.id} />
             ))}
           </Card>
         </div>
       </section>
 
-      {/* ============================== BE AWARE ============================= */}
+      {/* ===== 2. UPCOMING COMMITMENTS — obligations (distinct from tasks) ===== */}
       <section className="tier tier-aware">
         <div className="tier-head">
           <span className="tier-tick" />
-          <span className="tier-name">Be aware</span>
-          <span className="tier-sub">this week — obligations, money, signals</span>
+          <span className="tier-name">Upcoming commitments</span>
+          <span className="tier-sub">appointments and dated commitments to be aware of — not checklist tasks</span>
         </div>
         <div className="grid cols-3">
-          <Card title="Upcoming obligations" edge="aware" className="span-2">
+          <Card title="Commitments" edge="aware" className="span-2">
             {d.obligationsLive && <AddObligationForm />}
-            {openObligations.length === 0 && <Empty>Calendar is clear.</Empty>}
+            {openObligations.length === 0 && <Empty>No upcoming commitments.</Empty>}
             {openObligations.map((o) => (
               <div className="row" key={o.id}>
                 <div>
                   <div className="main">{o.title}</div>
                   <div className="sub">
-                    {label(o.type)}
+                    <span className="commitment-type">{label(o.type)}</span>
                     {o.location ? ` · ${o.location}` : ""}
                   </div>
                 </div>
@@ -215,6 +180,23 @@ export async function ManageDashboard() {
             ))}
           </Card>
 
+          <Card title="Next seven days" edge="aware">
+            <NextSevenDays
+              obligations={openObligations}
+              tasks={openTasks.map((t) => ({ date: t.dueDate }))}
+            />
+          </Card>
+        </div>
+      </section>
+
+      {/* ===== 3. MONEY ===== */}
+      <section className="tier tier-aware">
+        <div className="tier-head">
+          <span className="tier-tick" style={{ background: "var(--good)" }} />
+          <span className="tier-name">Money</span>
+          <span className="tier-sub">outlook and bills</span>
+        </div>
+        <div className="grid cols-3">
           <Card title="Financial outlook" edge="aware">
             <div className="figure num">{money(d.finances.estimatedRemaining)}</div>
             <div className="sub" style={{ marginBottom: 10 }}>
@@ -239,10 +221,57 @@ export async function ManageDashboard() {
               </span>
             </div>
           </Card>
+          {d.financesLive && (
+            <Card title="Manage money" edge="aware" className="span-2">
+              <FinanceManager accounts={d.accounts} bills={d.bills} income={d.income} />
+            </Card>
+          )}
         </div>
+      </section>
 
-        <div className="grid" style={{ marginTop: "var(--gap)" }}>
-          <Card title={`Local intelligence — signals${EXPERIMENTAL}`} edge="aware" className="span-2">
+      {/* ===== 4. RECENTLY COMPLETED — collapsed task history ===== */}
+      <section className="tier">
+        <details className="manage-completed">
+          <summary>
+            Recently completed tasks
+            <span className="manage-completed-count">{completedTasks.length}</span>
+          </summary>
+          {completedTasks.length === 0 ? (
+            <div className="empty">No completed tasks yet.</div>
+          ) : (
+            <div className="card manage-completed-card">
+              {completedTasks.slice(0, RECENT_COMPLETED_LIMIT).map((t) => (
+                <div className="row" key={t.id}>
+                  <div>
+                    <div className="main done-title">{t.title}</div>
+                    <div className="sub">
+                      Completed {t.completedAt ? shortDate(t.completedAt.slice(0, 10)) : "—"}
+                      {t.category ? ` · ${t.category}` : ""}
+                    </div>
+                  </div>
+                  <div className="right">{d.tasksLive && <ReopenTask taskId={t.id} />}</div>
+                </div>
+              ))}
+              {completedTasks.length > RECENT_COMPLETED_LIMIT && (
+                <div className="sub" style={{ marginTop: 8 }}>
+                  Showing the {RECENT_COMPLETED_LIMIT} most recent of {completedTasks.length}{" "}
+                  completed tasks.
+                </div>
+              )}
+            </div>
+          )}
+        </details>
+      </section>
+
+      {/* ===== 5. EXPERIMENTAL — sample-backed verticals (honestly labeled) ===== */}
+      <section className="tier tier-explore">
+        <div className="tier-head">
+          <span className="tier-tick" style={{ background: "var(--explore)" }} />
+          <span className="tier-name">Experimental</span>
+          <span className="tier-sub">sample-backed — not your real records yet</span>
+        </div>
+        <div className="grid cols-3">
+          <Card title={`Signals${EXPERIMENTAL}`} edge="explore" className="span-2">
             {d.signalsLive && <AddSignalForm />}
             {liveSignals.length === 0 && <Empty>No signals right now.</Empty>}
             {liveSignals.map((s) => (
@@ -266,70 +295,25 @@ export async function ManageDashboard() {
             ))}
           </Card>
 
-          <Card title={`This week's opportunities${EXPERIMENTAL}`} edge="aware">
+          <Card title={`Opportunities${EXPERIMENTAL}`} edge="explore">
             {d.opportunitiesLive && <AddOpportunityForm />}
-            {awareOpps.length === 0 && <Empty>None this week.</Empty>}
-            {awareOpps.map((o) => (
+            {[...actOpps, ...awareOpps].length === 0 && <Empty>None right now.</Empty>}
+            {[...actOpps, ...awareOpps].map((o) => (
               <div className="row" key={o.id}>
                 <div>
                   <div className="main">{o.title}</div>
                   <div className="sub">{label(o.category)}</div>
                 </div>
                 <div className="right">
-                  <span className="num">
-                    {o.potentialValue ? money(o.potentialValue) : ""}
-                  </span>
-                  {d.opportunitiesLive && (
-                    <RowActions base="/api/opportunities" id={o.id} />
-                  )}
-                </div>
-              </div>
-            ))}
-          </Card>
-
-          <Card title="Other open tasks" edge="aware">
-            {awareTasks.length + exploreTasks.length === 0 && (
-              <Empty>No other open tasks.</Empty>
-            )}
-            {[...awareTasks, ...exploreTasks].map((t) => (
-              <div className="row" key={t.id}>
-                <div>
-                  <div className="main">{t.title}</div>
-                  <div className="sub">
-                    {t.category ?? "Uncategorized"}
-                    {t.dueDate ? ` · due ${shortDate(t.dueDate)}` : ""}
-                  </div>
-                </div>
-                <div className="right">
-                  <Badge variant={tone(t.priority)}>{t.priority}</Badge>
-                  {d.tasksLive && <TaskActions task={t} />}
+                  <span className="num">{o.potentialValue ? money(o.potentialValue) : ""}</span>
+                  {d.opportunitiesLive && <RowActions base="/api/opportunities" id={o.id} />}
                 </div>
               </div>
             ))}
           </Card>
         </div>
 
-        {d.financesLive && (
-          <div className="grid" style={{ marginTop: "var(--gap)" }}>
-            <Card title="Manage money" edge="aware" className="span-2">
-              <FinanceManager
-                accounts={d.accounts}
-                bills={d.bills}
-                income={d.income}
-              />
-            </Card>
-          </div>
-        )}
-      </section>
-
-      {/* =============================== EXPLORE ============================= */}
-      <section className="tier tier-explore">
-        <div className="tier-head">
-          <span className="tier-tick" />
-          <span className="tier-name">Explore</span>
-          <span className="tier-sub">no rush — jobs, interests, longer horizon</span>
-        </div>
-        <div className="grid">
+        <div className="grid" style={{ marginTop: "var(--gap)" }}>
           <Card title={`Job matches${EXPERIMENTAL}`} edge="explore">
             {d.jobsLive && <AddJobForm />}
             {liveJobs.length === 0 && <Empty>No job matches yet.</Empty>}
@@ -346,9 +330,7 @@ export async function ManageDashboard() {
                   </div>
                 </div>
                 <div className="right">
-                  {j.matchScore != null && (
-                    <Badge variant="explore">{j.matchScore}% match</Badge>
-                  )}
+                  {j.matchScore != null && <Badge variant="explore">{j.matchScore}% match</Badge>}
                   {d.jobsLive && <RowActions base="/api/jobs" id={j.id} />}
                 </div>
               </div>
@@ -370,23 +352,11 @@ export async function ManageDashboard() {
                   </div>
                 </div>
                 <div className="right">
-                  <span className="num">
-                    {i.relevanceScore != null ? `${i.relevanceScore}` : ""}
-                  </span>
+                  <span className="num">{i.relevanceScore != null ? `${i.relevanceScore}` : ""}</span>
                   {d.interestLive && <RowActions base="/api/interest" id={i.id} />}
                 </div>
               </div>
             ))}
-          </Card>
-        </div>
-
-        {/* next seven days */}
-        <div className="grid" style={{ marginTop: "var(--gap)" }}>
-          <Card title="Next seven days" edge="explore" className="span-2">
-            <NextSevenDays
-              obligations={openObligations}
-              tasks={openTasks.map((t) => ({ date: t.dueDate }))}
-            />
           </Card>
         </div>
       </section>
@@ -417,13 +387,13 @@ function NextSevenDays({
 
   return (
     <div className="week">
-      {days.map((d) => (
-        <div className="day" key={d.iso}>
-          <div className="dow">{d.dow}</div>
-          <div className="dnum num">{d.dnum}</div>
+      {days.map((dd) => (
+        <div className="day" key={dd.iso}>
+          <div className="dow">{dd.dow}</div>
+          <div className="dnum num">{dd.dnum}</div>
           <div className="dot-row">
-            {d.hasObligation && <span className="d aware" />}
-            {d.hasTask && <span className="d act" />}
+            {dd.hasObligation && <span className="d aware" />}
+            {dd.hasTask && <span className="d act" />}
           </div>
         </div>
       ))}

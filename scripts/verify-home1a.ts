@@ -34,7 +34,7 @@ const iso = (offsetDays: number) => {
 };
 const mkTask = (o: Partial<TaskView>): TaskView => ({
   id: o.id ?? 0, title: o.title ?? "t", dueDate: o.dueDate ?? null, dueTime: null,
-  priority: o.priority ?? "medium", status: o.status ?? "pending", category: null,
+  priority: o.priority ?? "medium", status: o.status ?? "pending", category: null, completedAt: o.completedAt ?? null,
 });
 const mkObl = (o: Partial<ObligationView>): ObligationView => ({
   id: o.id ?? 0, title: o.title ?? "o", type: "appointment", startDate: o.startDate ?? iso(10),

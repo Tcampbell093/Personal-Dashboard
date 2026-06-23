@@ -12,12 +12,12 @@
 
 ## Next approved task
 
-### Home / Today — Home 1A (deterministic daily command center)
+### Manage clarity + task-completion history (bounded)
 
 - **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** See the latest handoff
-  report below. `/` is now the Home / Today command center; the former dashboard moved to
-  `/manage`. (Build 2A `1409c37`; design system `974dbe5`; Build 2B.1 `5977b9b`; Build 2B.2
-  committed `ef08dd2`.)
+  report below. Clarifies `/manage` (Act Today vs Upcoming Commitments) and makes task completion
+  non-destructive + recoverable (confirmation/Undo, Recently-completed history, Reopen). No AI, no
+  schema change. (Home 1A committed `405fd45`; Build 2B.2 `ef08dd2`; design system `974dbe5`.)
 - **No further build is currently authorized.** Separately-gated future directions:
   **Home 1B** (owner-triggered AI daily brief — reuses the provider boundary + cost/privacy/
   logging controls; deterministic Home is its fallback); a settings UI for
@@ -101,6 +101,71 @@ specific build. Builds are ordered so the manual loop works end-to-end before an
 ---
 
 ## Latest handoff
+
+### Manage clarity + task-completion history — implemented — 2026-06-23
+
+**Task Completed**
+Fixed the two reviewed problems: (1) completing a task silently vanished with no confirmation,
+history, or recovery; (2) "Act Today" and "Be Aware" looked/read interchangeably. No redesign, no
+AI, no decorative features. Not committed — awaiting owner review.
+
+**How completion worked before**
+`completeTask` already set `status='completed'` + `completedAt` and **retained** the row (soft-
+hidden; even returned by `listTasks`), but the UI simply filtered completed tasks out — no
+confirmation, no history view, no reopen. So the data was safe; only the experience was missing.
+
+**Schema migration required?** **No.** The `tasks.completedAt` timestamp column already exists.
+
+**Files changed**
+- `lib/services/tasks.ts` — add `reopenTask` (status→`not_started`, `completedAt`→null); `toTaskViews` exposes `completedAt`.
+- `app/api/tasks/[id]/route.ts` — `status:"not_started"` routes through `reopenTask` (undo/reopen clears `completedAt`).
+- `components/tasks.tsx` — `TaskActions` gains a completion confirmation ("Completed ✓") + short-lived **Undo** (6s); new `ReopenTask` control.
+- `components/manage/manage-dashboard.tsx` — restructured IA: **Act Today** (tasks + due/overdue labels), **Upcoming Commitments** (obligations, distinct), **Money**, collapsed **Recently completed** (reopen), **Experimental** (labeled).
+- `lib/types.ts` — `TaskView.completedAt`; `HomeMomentum.tasksCompletedToday`.
+- `lib/services/home.ts` + `components/home/sections.tsx` — Home shows "N tasks completed today" (local-tz) in Life momentum.
+- `app/globals.css` — due-label, commitment-type, recently-completed disclosure, completion-toast styles.
+- `lib/mock-data.ts` — mock tasks add `completedAt: null` (type conformance).
+- New: `scripts/verify-manage-tasks.ts`. Docs updated. **No migration. No deletions.**
+
+**Final Act Today definition**
+Actionable **tasks** the owner can do and complete now — overdue, due today, or urgent — with
+explicit due/overdue labels, task creation, and the complete action.
+
+**Final Upcoming Commitments definition**
+Dated **obligations** the owner should be aware of (appointments, commitments, important dates) —
+explicitly "not checklist tasks" — with obligation creation and their own done/cancel actions.
+
+**Completed-history behavior**
+A collapsed-by-default "Recently completed tasks" section lists recent completed tasks (top 10,
+newest first by `completedAt`) with completion date + a Reopen action; a note links to the count of
+older items.
+
+**Undo / reopen behavior**
+On completion the task persists as completed immediately, a confirmation + Undo shows for ~6s; Undo
+(or Reopen from history) PATCHes `status:"not_started"`, which `reopenTask` uses to return the task
+to the active list and **clear `completedAt`**. Never a hard delete.
+
+**Testing Completed**
+`npm run typecheck` ✓; `npm run build` ✓. **`scripts/verify-manage-tasks.ts` — 27/27**: complete
+removes from active + retains row + stamps `completedAt` (recent) + appears in completed history;
+unrelated task survives; no hard delete (`deletedAt` null); reopen (service + real PATCH route)
+restores to active and clears `completedAt`; obligations remain separate from tasks; `/manage`
+source has distinct "Act today"/"Upcoming commitments" + "not checklist tasks" + collapsed
+"Recently completed" `<details>` + Reopen + due/overdue labels; no usage log/AI; exact-ID cleanup;
+request 222 untouched. **Browser** (desktop + 375px): clarified IA visible; complete shows the
+confirmation + Undo; task appears under collapsed Recently completed; Reopen returns it to Act
+Today; mobile single-column. **Home 1A 55/55; Build 2A 136; 2B.1 126; 2B.2 60.** **`npm run lint`
+not run** (interactive-only). **No AI/Anthropic call.**
+
+**Known Issues / Not Tested**
+- The 6s Undo window elapsed during a screenshot round-trip in the browser pass, so the *toast*
+  itself wasn't captured in a still — its logic is verified in code and the task moved correctly to
+  Recently completed; Undo/Reopen behavior is fully verified.
+- The owner's real completed task **"Go to Mall"** (id 16) is intentionally **left in place** — it
+  correctly appears under Recently completed (owner data untouched).
+
+**Decisions Needed** — owner review before commit.
+**Recommended Next Step** — owner reviews; if approved, authorize the commit.
 
 ### Home / Today — Home 1A (deterministic daily command center) — implemented — 2026-06-23
 

@@ -33,6 +33,7 @@ export const mockTasks: TaskView[] = [
     priority: "critical",
     status: "not_started",
     category: "Opportunity",
+    completedAt: null,
   },
   {
     id: 2,
@@ -42,6 +43,7 @@ export const mockTasks: TaskView[] = [
     priority: "high",
     status: "in_progress",
     category: "Admin",
+    completedAt: null,
   },
   {
     id: 3,
@@ -51,6 +53,7 @@ export const mockTasks: TaskView[] = [
     priority: "medium",
     status: "not_started",
     category: "Projects",
+    completedAt: null,
   },
   {
     id: 4,
@@ -60,6 +63,7 @@ export const mockTasks: TaskView[] = [
     priority: "low",
     status: "not_started",
     category: "Personal",
+    completedAt: null,
   },
 ];
 

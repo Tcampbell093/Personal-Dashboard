@@ -35,6 +35,14 @@
 ### Tasks & obligations
 - **`tasks`** — `title`, `description`, `dueDate`, `dueTime`, `priority`, `status`,
   `category`, `recurrence`, `notes`, `completedAt`. Indexed on (`userId`,`status`) and `dueDate`.
+  **Completion lifecycle:** completing sets `status='completed'` + `completedAt` (a row is **never
+  hard-deleted** on completion); it leaves the active list (UI filters `completed`/`cancelled`) but
+  is retained and shown under a collapsed "Recently completed" history. **Reopen** (`reopenTask`,
+  also the route's `status:"not_started"` path) returns it to the active list and **clears
+  `completedAt`**. `deletedAt` is the separate soft-delete. Tasks and **obligations are distinct
+  object types** (different tables, fields, and lifecycle — obligations use `done`/`cancelled`/
+  `missed`, not task completion) and are surfaced as separate "Act Today" vs "Upcoming Commitments"
+  sections; they are never presented as interchangeable.
 - **`obligations`** — `title`, `type`, `startDate`, `endDate`, `startTime`, `location`,
   `description`, `importance`, `reminderDate`, `status`, `source`, `externalCalendarId`
   (reserved for future calendar sync, unused).

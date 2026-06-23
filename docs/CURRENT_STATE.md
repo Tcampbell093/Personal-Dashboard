@@ -153,6 +153,18 @@ rendered page**. No browser-driven UI clicks and no automated tests were run.
   reason labels, top-five curation, money equals `FinancialOutlook`, momentum equals `xpSummary`,
   no usage-log/AI invocation, no schema change, ID-scoped cleanup, request 222 + owner data
   untouched. Build 1 / 2A (136) / 2B.1 (126) / 2B.2 (60) regress green.
+- **Manage clarity + task-completion history**, verified **deterministically**
+  (`scripts/verify-manage-tasks.ts`, **27/27**) and via the **browser**. `/manage` now separates
+  **Act Today** (actionable tasks with explicit "Overdue N days" / "Due today" / "Due in N days"
+  labels + complete action) from **Upcoming Commitments** (obligations — dated, "not checklist
+  tasks", with their own done/cancel actions) — distinguished by wording, subtitle, metadata, and
+  action labels (not color alone). Completing a task no longer makes it silently vanish: it shows
+  a confirmation with a short-lived **Undo**, is **retained** (status `completed` + `completedAt`,
+  never hard-deleted), and appears in a **collapsed "Recently completed"** section with a
+  **Reopen** action that returns it to the active list and clears `completedAt`. Home shows a small
+  truthful signal ("N tasks completed today") in Life momentum when applicable. **No schema change**
+  — the `tasks.completedAt` column already existed. Home 1A (55/55) and Build 2A/2B.1/2B.2
+  regress green.
 - **`npm run typecheck` and `npm run build`** pass on the current code (the build includes the
   Home `/`, `/manage`, and the `/interpret`, `/recommend`, `/select-recommendation` routes).
 

@@ -11,6 +11,7 @@ import { NextResponse } from "next/server";
 import {
   updateTask,
   completeTask,
+  reopenTask,
   deleteTask,
   type NewTask,
 } from "@/lib/services/tasks";
@@ -81,9 +82,15 @@ export async function PATCH(request: Request, { params }: Ctx) {
 
   try {
     // "completed" goes through completeTask so completedAt is stamped.
+    // "not_started" goes through reopenTask so completedAt is cleared (undo/reopen).
     let row;
     if (b.status === "completed") {
       row = await completeTask(CURRENT_USER_ID, id);
+      if (Object.keys(patch).length > 0) {
+        row = await updateTask(CURRENT_USER_ID, id, patch);
+      }
+    } else if (b.status === "not_started") {
+      row = await reopenTask(CURRENT_USER_ID, id);
       if (Object.keys(patch).length > 0) {
         row = await updateTask(CURRENT_USER_ID, id, patch);
       }

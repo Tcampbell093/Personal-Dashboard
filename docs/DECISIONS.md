@@ -232,6 +232,21 @@
 - **Evidence:** Owner approved the Home 1A plan with these decisions/corrections. **Home 1B**
   (an owner-triggered AI daily brief) remains **separately gated** and is not implemented.
 
+### ADR-020 — Manage clarity (Act Today vs Upcoming Commitments) + task-completion history
+- **Classification:** Owner-approved decision
+- **Detail:** `/manage` separates **Act Today** (actionable tasks; explicit due/overdue labels;
+  complete action) from **Upcoming Commitments** (dated obligations; "not checklist tasks"; their
+  own done/cancel) — distinguished by wording, subtitles, metadata, and action labels, never color
+  alone. Tasks and obligations are treated as **distinct object types** and never presented as
+  interchangeable. **Task completion is non-destructive and recoverable:** completing sets
+  `status='completed'` + `completedAt` (no hard delete), shows a confirmation + short-lived
+  **Undo**, removes the task from the active list, and lists it under a **collapsed "Recently
+  completed"** section with a **Reopen** action that restores it to active and clears `completedAt`.
+  Home shows a small truthful "N tasks completed today" signal only; the full archive stays on
+  `/manage`. **No schema change** — the `tasks.completedAt` column already existed (no migration).
+- **Evidence:** Owner-approved bounded "Manage clarity and task-history" task. No AI, no decorative
+  game features.
+
 ---
 
 ## Open decisions — `[DECISION NEEDED]`

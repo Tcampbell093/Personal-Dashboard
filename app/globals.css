@@ -1066,3 +1066,60 @@ textarea.taskadd-field:focus {
   color: var(--text);
   font-size: 14px;
 }
+
+/* ---------------------------------- Manage clarity + task history --- */
+/* Explicit due/overdue label on task rows (text, never color alone). */
+.duelabel { font-weight: 600; }
+.duelabel.act { color: var(--act); }
+.duelabel.aware { color: var(--aware); }
+.duelabel.muted { color: var(--muted-dim); }
+/* Obligation type reads as a "commitment", visually distinct from task metadata. */
+.commitment-type {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--aware);
+}
+
+/* Completion confirmation + Undo (transient, in the task row). */
+.task-completed-toast {
+  align-items: center;
+  gap: 8px;
+}
+.task-completed-msg {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--good);
+}
+
+/* Recently completed — collapsed task history. */
+.manage-completed {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 12px 16px;
+}
+.manage-completed > summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  list-style: none;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.manage-completed > summary::-webkit-details-marker { display: none; }
+.manage-completed > summary::before { content: "▸ "; color: var(--muted); }
+.manage-completed[open] > summary::before { content: "▾ "; }
+.manage-completed-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.manage-completed-card { margin-top: 12px; }
+.done-title { color: var(--muted); text-decoration: line-through; }

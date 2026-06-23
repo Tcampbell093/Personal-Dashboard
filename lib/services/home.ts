@@ -15,6 +15,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { listTasks, toTaskViews } from "@/lib/services/tasks";
+import { localToday } from "@/lib/time";
 import { listObligations, toObligationViews } from "@/lib/services/obligations";
 import {
   computeFinancialOutlook,
@@ -152,11 +153,16 @@ async function loadMoney(userId: number): Promise<HomeMoney> {
 }
 
 async function loadMomentum(userId: number): Promise<HomeMomentum> {
-  const [xp, planned, history] = await Promise.all([
+  const [xp, planned, history, taskRows] = await Promise.all([
     xpSummary(userId),
     listPlanned(userId).then(toExperienceViews),
     listHistory(userId).then(toExperienceViews),
+    listTasks(userId).then(toTaskViews),
   ]);
+  const today = localToday();
+  const tasksCompletedToday = taskRows.filter(
+    (t) => t.status === "completed" && t.completedAt && localToday(new Date(t.completedAt)) === today,
+  ).length;
   const nextPlanned =
     [...planned]
       .filter((e) => e.plannedDate)
@@ -168,6 +174,7 @@ async function loadMomentum(userId: number): Promise<HomeMomentum> {
     totalXp: xp.total,
     completedCount: xp.completedCount,
     plannedCount: planned.length,
+    tasksCompletedToday,
     nextPlanned: nextPlanned
       ? { id: nextPlanned.id, title: nextPlanned.title, plannedDate: nextPlanned.plannedDate }
       : null,

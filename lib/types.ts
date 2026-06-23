@@ -14,6 +14,7 @@ export interface TaskView {
   priority: Priority;
   status: string;
   category: string | null;
+  completedAt: string | null;
 }
 
 export interface ObligationView {
@@ -236,6 +237,8 @@ export interface HomeMomentum {
   nextPlanned: { id: number; title: string; plannedDate: string | null } | null;
   lastResolved: { id: number; title: string; status: ExperienceStatus } | null;
   plannedCount: number;
+  // Small positive daily signal: tasks completed today (local timezone).
+  tasksCompletedToday: number;
 }
 
 /** A section is either ok (with data) or unavailable (degraded independently). */

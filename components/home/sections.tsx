@@ -172,6 +172,15 @@ export function LifeMomentum({ section }: { section: HomeSection<HomeMomentum> }
               {section.data!.completedCount} completed · {section.data!.plannedCount} planned
             </span>
           </div>
+          {section.data!.tasksCompletedToday > 0 && (
+            <div className="home-momentum-row">
+              <span className="home-reason good">Today</span>
+              <span>
+                {section.data!.tasksCompletedToday} task
+                {section.data!.tasksCompletedToday === 1 ? "" : "s"} completed today
+              </span>
+            </div>
+          )}
           {section.data!.nextPlanned && (
             <div className="home-momentum-row">
               <span className="home-reason aware">Next</span>
