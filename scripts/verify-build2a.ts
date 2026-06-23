@@ -11,7 +11,7 @@
 
 import { and, eq } from "drizzle-orm";
 import { AiError } from "@/lib/ai/provider";
-import { validateInterpretation } from "@/lib/ai/interpretation-schema";
+import { validateInterpretation, INTERPRETATION_JSON_SCHEMA } from "@/lib/ai/interpretation-schema";
 import { enforceBudget, estimateCost, estimateInputTokens } from "@/lib/ai/cost";
 import { pricingFor, INTERPRET_MODEL } from "@/lib/ai/models";
 import { FakeProvider } from "@/lib/ai/fake-provider";
@@ -65,6 +65,23 @@ const VALID = {
 
 async function main() {
   console.log("Build 2A deterministic verification\n");
+
+  console.log("provider schema compatibility:");
+  // Anthropic structured-output subset rejects array minItems>1 / maxItems.
+  const interpViolations: string[] = (function walk(schema: unknown, path = "$"): string[] {
+    const out: string[] = [];
+    if (schema && typeof schema === "object") {
+      const s = schema as Record<string, unknown>;
+      const isArray = s.type === "array" || (Array.isArray(s.type) && s.type.includes("array"));
+      if (isArray) {
+        if (typeof s.minItems === "number" && s.minItems > 1) out.push(`${path}.minItems`);
+        if (s.maxItems !== undefined) out.push(`${path}.maxItems`);
+      }
+      for (const [k, v] of Object.entries(s)) if (v && typeof v === "object") out.push(...walk(v, `${path}.${k}`));
+    }
+    return out;
+  })(INTERPRETATION_JSON_SCHEMA);
+  ok(`interpretation schema has no unsupported array constraints (${JSON.stringify(interpViolations)})`, interpViolations.length === 0);
 
   console.log("validateInterpretation:");
   const v = validateInterpretation(VALID);

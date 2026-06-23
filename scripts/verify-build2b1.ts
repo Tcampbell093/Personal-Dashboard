@@ -12,6 +12,11 @@ import { and, eq } from "drizzle-orm";
 import { AiError } from "@/lib/ai/provider";
 import { estimateCost } from "@/lib/ai/cost";
 import { FakeProvider } from "@/lib/ai/fake-provider";
+import {
+  RECOMMENDATIONS_JSON_SCHEMA,
+  RECOMMENDATION_BATCH_SIZE,
+  validateRecommendationBatch,
+} from "@/lib/ai/recommendation-schema";
 import { db } from "@/db";
 import { apiUsageLogs, experienceRequests, experiences, intelligenceSettings } from "@/db/schema";
 import { CURRENT_USER_ID } from "@/lib/auth";
@@ -35,6 +40,24 @@ let failed = 0;
 function ok(name: string, cond: boolean) {
   if (cond) { passed++; console.log(`  ✓ ${name}`); }
   else { failed++; console.error(`  ✗ ${name}`); }
+}
+
+/** Recursively find array nodes carrying constraints Anthropic's structured-output
+ * subset rejects (minItems > 1, or any maxItems). Returns the offending paths. */
+function unsupportedArrayConstraints(schema: unknown, path = "$"): string[] {
+  const out: string[] = [];
+  if (schema && typeof schema === "object") {
+    const s = schema as Record<string, unknown>;
+    const isArray = s.type === "array" || (Array.isArray(s.type) && s.type.includes("array"));
+    if (isArray) {
+      if (typeof s.minItems === "number" && s.minItems > 1) out.push(`${path}.minItems=${s.minItems}`);
+      if (s.maxItems !== undefined) out.push(`${path}.maxItems=${String(s.maxItems)}`);
+    }
+    for (const [k, v] of Object.entries(s)) {
+      if (v && typeof v === "object") out.push(...unsupportedArrayConstraints(v, `${path}.${k}`));
+    }
+  }
+  return out;
 }
 
 const acct = {
@@ -112,6 +135,25 @@ function noPrivate(row: typeof apiUsageLogs.$inferSelect | null, ...secrets: str
 
 async function main() {
   console.log("Build 2B.1 deterministic verification (fake provider, no Anthropic)\n");
+
+  /* ---- 0. Provider-schema Anthropic compatibility -------------------- */
+  console.log("[0] provider schema compatibility");
+  const recViolations = unsupportedArrayConstraints(RECOMMENDATIONS_JSON_SCHEMA);
+  ok(`[0] recommendation provider schema has no unsupported array constraints (${JSON.stringify(recViolations)})`, recViolations.length === 0);
+  // Application validator still enforces "exactly three" + whole-batch rejection.
+  const goodThree = { recommendations: Array.from({ length: RECOMMENDATION_BATCH_SIZE }, (_, i) => ({
+    title: `T${i}`, description: "d", whyItFits: "w", estimatedCostMin: 1, estimatedCostMax: 2,
+    estimatedDurationMinutes: 30, locationText: "L", travelAssumption: "est", physicalDifficulty: "easy",
+    intendedFeeling: "calm", assumptions: ["a"], preparationNotes: ["p"] })) };
+  let exactlyThreeOk = false;
+  try { exactlyThreeOk = validateRecommendationBatch(goodThree).length === RECOMMENDATION_BATCH_SIZE; } catch { exactlyThreeOk = false; }
+  ok("[0] validator accepts exactly three", exactlyThreeOk);
+  for (const n of [0, 1, 2, 4, 5]) {
+    const batch = { recommendations: (goodThree.recommendations).slice(0, 1).flatMap(() => Array.from({ length: n }, (_, i) => goodThree.recommendations[i % RECOMMENDATION_BATCH_SIZE])) };
+    let rejected = false;
+    try { validateRecommendationBatch(batch); } catch (e) { rejected = e instanceof AiError && e.category === "invalid_ai_output"; }
+    ok(`[0] validator rejects a batch of ${n} (whole-batch)`, rejected);
+  }
 
   const [origSettings] = await db
     .select().from(intelligenceSettings).where(eq(intelligenceSettings.userId, U)).limit(1);

@@ -62,14 +62,19 @@ const RECOMMENDATION_ITEM_SCHEMA = {
   ],
 } as const;
 
+// NOTE: the provider schema sends a PLAIN array — no `minItems`/`maxItems`.
+// Anthropic's structured-output subset rejects array `minItems` values other
+// than 0 or 1 (and does not support `maxItems` here). The "exactly three"
+// requirement is enforced after parsing by validateRecommendationBatch() (which
+// rejects the whole batch when the count is wrong), and the system prompt asks
+// the model for exactly RECOMMENDATION_BATCH_SIZE concepts. Do not re-add item
+// count constraints to this schema — keep them in the application validator.
 export const RECOMMENDATIONS_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
   properties: {
     recommendations: {
       type: "array",
-      minItems: RECOMMENDATION_BATCH_SIZE,
-      maxItems: RECOMMENDATION_BATCH_SIZE,
       items: RECOMMENDATION_ITEM_SCHEMA,
     },
   },
