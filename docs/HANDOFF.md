@@ -12,16 +12,17 @@
 
 ## Next approved task
 
-### Brand rename → Xanther
+### Finance 1B.0 — bank-integration security & provider foundation
 
 - **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** See the latest handoff report
-  below. Bounded branding/identity change: user-facing product name is now **Xanther** (browser title,
-  login wordmark, README, PRODUCT_VISION canonical definition, ROADMAP future-assistant doc,
-  DESIGN_SYSTEM wordmark note, DECISIONS ADR-026). Technical identifiers (routes, API, DB, env vars,
-  repo/Netlify names) **unchanged**; **no migration**; **no voice/AI/deps** added; Finance 1A.4 intact.
-  - **No further build is authorized.** Section identities (`Today.`/`Money.`/`Manage.`/`Experiences.`)
-    are preserved; the future conversational Xanther assistant is documented only (not implemented).
-    The next finance gate remains **Finance 1B** (below).
+  below. Contracts + security model **before any bank connection exists**: provider-neutral
+  `lib/providers/*` (`BankProvider` interface + DTOs, canonical transaction-sign convention, pure
+  balance-authority resolver, AES-256-GCM token-encryption module) + `docs/BANK_INTEGRATION_SECURITY.md`
+  + doc updates + `scripts/verify-finance1b0.ts` (38/38). **No** Plaid SDK, provider call, link route,
+  stored token, connection table, or migration. **Read-only Finance 1B moves no money.**
+  - **The next approved finance build after review is Finance 1B.1** (connection + Sandbox Link flow:
+    `financial_connections`, link-token/exchange, encrypted token storage, Sandbox institutions) — it
+    requires its own explicit owner authorization. Production/OAuth onboarding is a later owner step.
 
 ### Finance 1A.4 — recurring income + estimate-vs-confirmed paychecks (committed `a15f99f`)
 
@@ -123,6 +124,99 @@ specific build. Builds are ordered so the manual loop works end-to-end before an
 ---
 
 ## Latest handoff
+
+### Finance 1B.0 — bank-integration security & provider foundation — implemented — 2026-06-25
+
+**Task Completed** — internal contracts + security plan required **before** any Plaid connection
+exists. Finance 1B is **read-only and moves no money**. Not committed — awaiting owner review.
+
+**Repository state confirmed** — HEAD `9470cf7` (Xanther rename); local == `origin/main`; clean tree;
+Finance 1A.4 present; no provider SDK/connection routes/tables/tokens (only forward-looking comments in
+`db/schema.ts`); consistent with the approved Finance 1B plan.
+
+**Approved first-version defaults recorded** — Plaid initial provider; domain provider-neutral;
+Sandbox-only first; Production/OAuth later (owner-controlled); cached balances sufficient (no paid
+real-time refresh); 90-day bounded history eventually; **all matches owner-confirmed** initially; future
+merged-but-source-labeled activity view; disconnect preserves history (archived/stale linked account);
+linked balances provider-authoritative; imported transactions are evidence, not balance commands;
+**no money movement.**
+
+**Provider-neutral contracts added** (`lib/providers/`) — `types.ts` (DTOs: `LinkSession`,
+`PublicCredentialExchange`, `ConnectionMetadata`, `ProviderAccount`, `ProviderBalance`,
+`ImportedTransactionDTO`, `RemovedTransactionRef`, `TransactionSyncPage`, `VerifiedWebhook`; a branded
+secret `ProviderAccessToken`) and `bank-provider.ts` (`BankProvider`: createLinkSession /
+createUpdateLinkSession / exchangePublicCredential / getConnectionMetadata / listAccounts /
+getCachedBalances / syncTransactions / revokeConnection / verifyWebhook). **No raw Plaid types**, no SDK
+import, no adapter, no registry, no money-movement method.
+
+**Canonical transaction-sign convention** (`amount.ts`) — inflow **positive**, outflow **negative**,
+**zero invalid**; `toXantherAmount(raw, convention)` normalizes provider-native amounts (Plaid is
+`outflow_positive`). Verified: paycheck deposit → +, purchase → −, transfer withdrawal → −, transfer
+deposit → +. No provider-native sign leaks downstream.
+
+**Balance-authority resolver** (`balance-authority.ts`, pure) — manual ← `currentBalance`; linked ←
+latest provider snapshot (authoritative, with `asOf`); stale/disconnected exposes last-known **only when
+labeled stale**; **missing linked balance → `linked_unavailable` (null), never the manual balance**;
+projection consumes but never overwrites. The projection engine itself is **unchanged** (type-only seam).
+
+**Token-encryption module** (`token-crypto.ts`) — **AES-256-GCM** via Node `crypto` only; **random
+96-bit nonce per encryption**; versioned envelope `{v, keyVersion, nonce, ciphertext, tag}`; 256-bit key
+from **secure random bytes** supplied via `BANK_TOKEN_ENC_KEY`, **read lazily** (never at import —
+startup never requires it); decrypt server-side only; **hashing explicitly not used** (token must be
+recoverable); **no real credential created or stored** (fake test strings only). **Server-only boundary
+(post-review hardening):** a runtime guard (`if (typeof window !== "undefined") throw`) fails closed in
+any browser bundle (no new dependency; `server-only` would both add a dep and break the Node harness); a
+transitive import-graph scan proves **no Client Component reaches token-crypto** and no provider barrel
+re-exports it. **Fail-closed invariants** (all verified): the key decoder accepts **only strict base64
+decoding to exactly 32 bytes** (malformed/wrong-length rejected); unsupported envelope version, missing
+nonce/ciphertext/tag/keyVersion, tampered ciphertext, tampered tag, and wrong key each throw a
+`TokenCryptoError`; **no error message contains plaintext, ciphertext, token, key, or secret env value**.
+
+**Durable pending-sync trigger design (documented, NOT built)** — verified webhook records a durable
+pending-sync row in Neon; duplicates collapse per connection; a bounded processor paginates
+`/transactions/sync`; **cursor advances only after successful persistence** (prior cursor preserved on
+error); webhook does **no** unbounded multipage sync; **no imaginary queue/worker**. Smallest realistic
+processor (later, owner's choice): bounded server-side processor after recording the request, a
+scheduled Netlify poller, or another supported mechanism. `now` vs `planned` clearly distinguished.
+
+**Env-var contract (names only — not required at runtime)** — `PLAID_CLIENT_ID`, `PLAID_SECRET`,
+`PLAID_ENV`, `BANK_TOKEN_ENC_KEY`, `PLAID_WEBHOOK_URL`, `PLAID_REDIRECT_URI`; none `NEXT_PUBLIC_`;
+Sandbox/Production separate; redacted in logs; key from secure random bytes (not a password).
+
+**Plaid owner-setup checklist** — in `docs/BANK_INTEGRATION_SECURITY.md` (create/confirm team, Sandbox
+creds, leave Production unset, Sandbox fake data only, register HTTPS redirect URI before OAuth,
+Chase/BofA need eligible Production/trial, confirm Transactions product, record webhook/redirect URLs
+later, **never paste credentials anywhere**). No credentials requested in this build.
+
+**Exact files changed** — new: `lib/providers/types.ts`, `lib/providers/bank-provider.ts`,
+`lib/providers/amount.ts`, `lib/providers/balance-authority.ts`, `lib/providers/token-crypto.ts`,
+`scripts/verify-finance1b0.ts`, `docs/BANK_INTEGRATION_SECURITY.md`; updated docs: `CURRENT_STATE.md`,
+`DATA_MODEL.md`, `DECISIONS.md` (ADR-027), `ROADMAP.md`, `HANDOFF.md`.
+
+**Testing completed** — `npm run typecheck` ✓; `npm run build` ✓; **`scripts/verify-finance1b0.ts` —
+52/52** (contracts present, no raw Plaid import, sign normalization, balance authority incl. no-manual-
+fallback + freshness, durable-sync design, AES-256-GCM round-trip + nonce + tamper/wrong-key/malformed
+rejection + lazy-key, **server-only import-boundary scan over client components + fail-closed envelope/
+key-decoder invariants + no-secret-in-error-message**, no client-exposed secret, no `NEXT_PUBLIC_PLAID`,
+no Plaid dep/route/table/migration/provider-call, no AI/usage-log, Finance 1A.4 + request 222 + owner
+data intact, **no DB writes**); all regression suites green; secret scan clean. **Change-set: 12 files —
+5 modified (`docs/CURRENT_STATE.md`, `DATA_MODEL.md`, `DECISIONS.md`, `HANDOFF.md`, `ROADMAP.md`) + 7 new
+(`lib/providers/{types,bank-provider,amount,balance-authority,token-crypto}.ts`,
+`scripts/verify-finance1b0.ts`, `docs/BANK_INTEGRATION_SECURITY.md`).**
+
+**Known issues / limitations** — bank sync is **not functional** (by design). The Plaid adapter, the
+webhook endpoint, the `connection_sync_requests`/connection tables + migration, the link/exchange/sync
+routes, and the UI are **planned, not built** (Finance 1B.1+). `BANK_TOKEN_ENC_KEY` and the other env
+vars are documented names only — unset and not required at runtime. The token-crypto `resolveMasterKeyFromEnv`
+helper is wired in a later build. The `verify-finance*` `!/plaid/i` guard assertions in the existing
+suites still pass because no Plaid code/route was added; they will be revisited when 1B.1 lands.
+
+**Decisions needed** — owner review before commit; Finance 1B.1 requires separate authorization. Open
+questions from the 1B plan (Production timing, paid balance refresh, history window, unified activity
+view, auto-confirm policy, disconnect default, key custody) remain owner decisions.
+
+**Recommended next step** — owner reviews Finance 1B.0; if approved, authorize the commit
+(`chore(finance): establish bank integration security foundation`), then prepare Finance 1B.1.
 
 ### Brand rename → Xanther — implemented — 2026-06-25
 

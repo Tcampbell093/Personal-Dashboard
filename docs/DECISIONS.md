@@ -491,6 +491,53 @@
   (browser title, login wordmark, README, PRODUCT_VISION, ROADMAP, DESIGN_SYSTEM); typecheck + build +
   full regression suite green; secret scan clean; routes/schema/APIs/deps/env unchanged.
 
+### ADR-027 — Finance 1B.0: bank-integration security & provider foundation
+- **Classification:** Owner-approved decision (owner approved the Finance 1B plan + the 1B.0 scope and
+  first-version defaults).
+- **Detail:** Establishes the internal contracts + security model **before any bank connection exists**.
+  Finance 1B is **read-only and moves no money**. This build adds **no** Plaid SDK, provider call,
+  link route, stored token, table, or migration.
+  - **Provider = Plaid (initial); domain stays provider-neutral.** The finance domain depends only on
+    `lib/providers/bank-provider.ts` (`BankProvider`) + DTOs in `lib/providers/types.ts`; a future Plaid
+    adapter maps raw responses behind that boundary. No multi-provider registry.
+  - **Sandbox-first.** Production/OAuth onboarding is a later owner step. Real Chase/BofA need eligible
+    Production access (the standalone Development environment was decommissioned 2024-06-20; Limited
+    Production blocks OAuth for Chase/BofA/Wells Fargo and is replaced by Trial plans for teams created
+    after 2026-04-15).
+  - **Cached balances only** — no paid real-time refresh in the initial version; balances carry an
+    `asOf` and the UI shows a truthful "last updated".
+  - **Canonical sign convention** (`lib/providers/amount.ts`): inflow **positive**, outflow
+    **negative**, **zero invalid**. Adapters normalize provider-native amounts before returning DTOs; no
+    provider-native sign leaks into matching/UI.
+  - **Balance authority** (`lib/providers/balance-authority.ts`, pure): manual ← `currentBalance`;
+    linked ← latest provider snapshot (provider-authoritative, with `asOf`); stale/disconnected exposes
+    last-known **only when labeled stale**; a missing linked balance resolves to **`linked_unavailable`
+    (null)** and **never** falls back to the manual balance; projections consume but never overwrite it.
+  - **Imported evidence vs command ledger:** `account_movements` stays manual-command history; linked
+    imported transactions are **evidence** and create **no** balance movement.
+  - **Token encryption** (`lib/providers/token-crypto.ts`): **AES-256-GCM** (Node `crypto` only), random
+    96-bit nonce per encryption, versioned envelope `{v, keyVersion, nonce, ciphertext, tag}`, 256-bit
+    master key from **secure random bytes** supplied via `BANK_TOKEN_ENC_KEY` **read lazily** (never at
+    import). **Server-only:** a runtime `typeof window` guard fails closed in any browser bundle (no new
+    dependency), and a transitive import scan proves no Client Component reaches the module. **Fail
+    closed:** strict base64 → exactly-32-byte key (else reject); unsupported version, missing
+    nonce/ciphertext/tag/keyVersion, tampered ciphertext/tag, and wrong key each throw; no error message
+    leaks plaintext/ciphertext/token/key. **Hashing is explicitly not used** (token must be recoverable).
+    **No real credential created/stored** — fake test strings.
+  - **Durable pending-sync trigger (planned, not built):** a verified webhook records a durable
+    pending-sync row in Neon (duplicates collapse per connection); a bounded processor paginates
+    `/transactions/sync`; the cursor advances **only after successful persistence** (prior cursor
+    preserved on error); the webhook does **no** unbounded multipage sync. No imaginary queue/worker.
+  - **Env-var contract (names only, not required at runtime yet):** `PLAID_CLIENT_ID`, `PLAID_SECRET`,
+    `PLAID_ENV`, `BANK_TOKEN_ENC_KEY`, `PLAID_WEBHOOK_URL`, `PLAID_REDIRECT_URI` — none `NEXT_PUBLIC_`;
+    Sandbox/Production secrets separate; redacted in logs.
+- **Evidence:** `scripts/verify-finance1b0.ts` (52/52: provider-neutral contracts, sign normalization,
+  balance authority incl. no-manual-fallback, durable-sync design, AES-256-GCM round-trip + tamper
+  rejection, server-only import-boundary scan + fail-closed envelope/key-decoder invariants, no Plaid
+  dep/route/table/migration/credential, no NEXT_PUBLIC bank var, Finance 1A.4 + owner data + request 222
+  intact) + typecheck + build + all regressions green + secret scan clean. Full reference:
+  `docs/BANK_INTEGRATION_SECURITY.md`.
+
 ---
 
 ## Open decisions — `[DECISION NEEDED]`

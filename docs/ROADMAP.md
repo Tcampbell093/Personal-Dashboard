@@ -25,6 +25,12 @@
   native-device** capability, **not** a requirement for the current Netlify web app. This
   stays within existing guardrails: AI assists, the owner decides; nothing publishes, spends,
   contacts people, or exposes private information without explicit owner approval.
+- **Read-only bank connections (Finance 1B)** — *in foundational preparation.* The provider-neutral
+  contracts + security model (Finance 1B.0) exist; **bank sync is not functional**. Initial provider is
+  Plaid, Sandbox-first, cached balances, owner-confirmed matching, **read-only — no money movement**.
+  Linked balances are provider-authoritative; imported transactions are evidence, not balance commands.
+  See `docs/BANK_INTEGRATION_SECURITY.md` and `docs/DECISIONS.md` ADR-027. (The active approved task is
+  always in `docs/HANDOFF.md`.)
 - **Personal knowledge and editable memory** — structured, inspectable, editable personal data.
 - **Experience and Adventure Loop** — capturing and acting on experiences/adventures.
 - **AI recommendation foundation** — the basis for owner-gated, explainable recommendations.

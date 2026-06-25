@@ -196,6 +196,19 @@ duplicate manual income movements; uncertain matches need owner approval; recurr
   uncertain matches; recurring detection may suggest but never silently create a schedule.
 - **1B** — a separate **`financial_connections`** model for read-only bank links (`balanceSource =
   linked`); connection health lives there, not on the account row.
+- **1B.0 — DONE (foundation only; no DB change)** — provider-neutral contracts + security model, **no
+  tables yet**. Added `lib/providers/*` (the `BankProvider` interface + DTOs, a canonical
+  transaction-sign convention `inflow + / outflow − / 0 invalid`, a pure balance-authority resolver,
+  and an AES-256-GCM token-encryption module) and `docs/BANK_INTEGRATION_SECURITY.md`. **Proposed**
+  additive tables (designed, NOT created): `financial_connections` (encrypted access-token envelope +
+  status + per-connection `transactions` cursor), `provider_account_mappings` (connection-scoped
+  provider account id ↔ `financial_accounts`), `imported_transactions` (revision-aware evidence,
+  Xanther-signed amounts, pending/posted/removed), `connection_sync_requests` + `connection_sync_runs`
+  (durable webhook-triggered sync state), `transaction_matches` (owner-confirmed match evidence,
+  supports split-deposit many-to-one). **Balance authority:** manual ← `currentBalance`; linked ←
+  provider snapshot (authoritative, with `asOf`); a missing linked balance is `unavailable`, never the
+  manual balance. **Imported transactions are evidence, never `account_movements` commands** — a linked
+  match creates no balance movement. See `docs/DECISIONS.md` ADR-027.
 
 ### Signals & opportunities
 - **`signal_sources`** — ingest sources (`name`, `baseUrl`, `kind`, `active`). Unused by UI.

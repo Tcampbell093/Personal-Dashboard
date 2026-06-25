@@ -9,7 +9,14 @@
 > only; technical identifiers (routes, DB, env vars, the `Personal-Dashboard` repo) keep their
 > original names. See `docs/DECISIONS.md` ADR-026.
 
-**Last updated:** 2026-06-25 · **Reflects branch:** `main` (Finance 1A.4 committed `a15f99f`; Xanther rename uncommitted)
+**Last updated:** 2026-06-25 · **Reflects branch:** `main` (Finance 1A.4 + Xanther rename committed `9470cf7`; Finance 1B.0 foundation uncommitted)
+
+> **Finance 1B (read-only bank connections) is in foundational preparation — bank sync is NOT
+> functional.** Finance 1B.0 added provider-neutral contracts (`lib/providers/*`), a canonical
+> transaction-sign convention, a pure balance-authority resolver, an AES-256-GCM token-encryption
+> module, and the security/setup reference (`docs/BANK_INTEGRATION_SECURITY.md`). **No** Plaid SDK,
+> provider call, link route, stored token, connection table, or migration exists. Read-only Finance 1B
+> performs **no money movement**. See `docs/DECISIONS.md` ADR-027.
 
 ## Status legend
 
