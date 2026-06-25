@@ -32,7 +32,7 @@ export function LoginForm({ next }: { next: string }) {
   return (
     <form className="loginbox" onSubmit={submit}>
       <div className="wordmark" style={{ fontSize: 18 }}>
-        Personal Command Center<span className="dot">.</span>
+        Xanther<span className="dot">.</span>
       </div>
       <p className="sub" style={{ margin: "4px 0 18px" }}>
         Enter your password to continue.

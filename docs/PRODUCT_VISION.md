@@ -8,8 +8,18 @@
 
 ## What this is
 
-Personal Command Center is a **private, AI-powered personal operating system** for the
-owner, paired with a **separately controlled public identity**.
+> **Xanther** is a private, AI-powered personal operating system and life-progression
+> platform. It combines practical life management, financial awareness, planning, experience
+> discovery, personal progression, memory, and an eventual conversational AI assistant.
+
+`Xanther` is the official product name. It refers to both **(1)** the application and personal
+Life OS, and **(2)** the future conversational assistant that operates through the
+application's permissioned tools. Xanther is **not** merely a dashboard, command tool, or
+generic chatbot. Previous names — *Personal Command Center*, *Personal Command Tool*,
+*Command Tool*, *Personal Dashboard* — are **historical aliases only**.
+
+Xanther is a **private, AI-powered personal operating system** for the owner, paired with a
+**separately controlled public identity**.
 
 - The **private system** is where the owner's information, decisions, finances, and daily
   operations live. It is for the owner.

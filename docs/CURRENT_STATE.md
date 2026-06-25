@@ -3,8 +3,13 @@
 > What is actually in the repository, classified by maturity. Keep it factual and update it
 > after every substantive change (see `CLAUDE.md`). For the durable product vision, see
 > `docs/PRODUCT_VISION.md`.
+>
+> **Product name:** the application is **Xanther** (a private AI-powered personal operating
+> system / Life OS). *Personal Command Center* and other prior names are historical aliases
+> only; technical identifiers (routes, DB, env vars, the `Personal-Dashboard` repo) keep their
+> original names. See `docs/DECISIONS.md` ADR-026.
 
-**Last updated:** 2026-06-25 · **Reflects branch:** `main` (Finance 1A.4 implemented, uncommitted)
+**Last updated:** 2026-06-25 · **Reflects branch:** `main` (Finance 1A.4 committed `a15f99f`; Xanther rename uncommitted)
 
 ## Status legend
 

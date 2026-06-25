@@ -10,6 +10,21 @@
 
 ## Candidate areas (unordered)
 
+- **Xanther conversational assistant** *(documented only — not implemented; no code, voice
+  libraries, dependencies, AI calls, or data models exist for it yet)* — the future
+  conversational layer that **operates over the existing Xanther workflows rather than
+  replacing them**. "Xanther" names both the Life OS and this future assistant. It would let
+  the owner make requests such as *"Xanther, what needs my attention this week?"*, *"Xanther,
+  check my finances."*, *"Xanther, what do I have planned?"*, *"Xanther, what can I do this
+  weekend?"*, *"Xanther, add this as a task."*, and *"Xanther, help me understand my
+  progress."* Recorded future architecture: typed conversational input; push-to-talk input;
+  speech-to-text; optional spoken responses; intent and tool routing; permissioned access to
+  Xanther modules; confirmation before consequential actions; bounded personal-memory
+  retrieval; privacy controls; cost controls; audit history; and a typed fallback when voice
+  is unavailable. A custom wake phrase such as *"Hey, Xanther"* is a **long-term
+  native-device** capability, **not** a requirement for the current Netlify web app. This
+  stays within existing guardrails: AI assists, the owner decides; nothing publishes, spends,
+  contacts people, or exposes private information without explicit owner approval.
 - **Personal knowledge and editable memory** — structured, inspectable, editable personal data.
 - **Experience and Adventure Loop** — capturing and acting on experiences/adventures.
 - **AI recommendation foundation** — the basis for owner-gated, explainable recommendations.

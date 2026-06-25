@@ -12,9 +12,20 @@
 
 ## Next approved task
 
-### Finance 1A.4 — recurring income + estimate-vs-confirmed paychecks
+### Brand rename → Xanther
 
 - **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** See the latest handoff report
+  below. Bounded branding/identity change: user-facing product name is now **Xanther** (browser title,
+  login wordmark, README, PRODUCT_VISION canonical definition, ROADMAP future-assistant doc,
+  DESIGN_SYSTEM wordmark note, DECISIONS ADR-026). Technical identifiers (routes, API, DB, env vars,
+  repo/Netlify names) **unchanged**; **no migration**; **no voice/AI/deps** added; Finance 1A.4 intact.
+  - **No further build is authorized.** Section identities (`Today.`/`Money.`/`Manage.`/`Experiences.`)
+    are preserved; the future conversational Xanther assistant is documented only (not implemented).
+    The next finance gate remains **Finance 1B** (below).
+
+### Finance 1A.4 — recurring income + estimate-vs-confirmed paychecks (committed `a15f99f`)
+
+- **Status:** **COMMITTED & PUSHED (`a15f99f`).** See the latest handoff report
   below. **Schedules** (`income_schedules`): weekly/biweekly/twice-monthly/monthly/one-time payday
   rules with estimate modes (fixed/typical → expected, range → minimum, unknown → $0 forecast).
   **Occurrences** are materialized as `income_entries` (bounded −14…+90-day rolling window, idempotent)
@@ -112,6 +123,49 @@ specific build. Builds are ordered so the manual loop works end-to-end before an
 ---
 
 ## Latest handoff
+
+### Brand rename → Xanther — implemented — 2026-06-25
+
+**Task Completed** — bounded branding/identity rename of the product to **Xanther** (`X-A-N-T-H-E-R`).
+Not committed — awaiting owner review.
+
+**Repository state confirmed before implementing** — HEAD `a15f99f` (Finance 1A.4); local == `origin/main`;
+clean working tree; no other uncommitted work.
+
+**Canonical product definition (recorded)** — *Xanther is a private, AI-powered personal operating system
+and life-progression platform combining practical life management, financial awareness, planning,
+experience discovery, personal progression, memory, and an eventual conversational AI assistant.* Xanther
+names both the application/Life OS and the future conversational assistant. *Personal Command Center /
+Personal Command Tool / Command Tool / Personal Dashboard* are historical aliases only.
+
+**User-visible locations renamed** — browser tab title (`app/layout.tsx` metadata `title`), login-screen
+wordmark (`components/login-form.tsx`). Per-page header wordmarks (`Today.`/`Money.`/`Manage.`/
+`Experiences.`) are **section identities** and were intentionally preserved.
+
+**Documentation updated** — `README.md` (heading + intro + historical-name note), `docs/PRODUCT_VISION.md`
+(canonical definition + identity), `docs/ROADMAP.md` (future Xanther conversational assistant — documented,
+not implemented), `docs/DESIGN_SYSTEM.md` (product-wordmark identity note + Life-OS reference),
+`docs/CURRENT_STATE.md` (product-name note), `docs/DECISIONS.md` (ADR-026), `docs/HANDOFF.md` (this report),
+`db/schema.ts` (header comment prose only).
+
+**Historical names intentionally retained** — the GitHub repo name `Personal-Dashboard` (referenced in
+docs/`package.json`/lockfile and git remote — renaming the repo is out of scope and risks breaking the
+remote/Netlify link); the local directory name `personal-command-center`; the npm package `name`
+(`personal-command-center` in `package.json` — an internal identifier, not user-facing); all routes, API
+paths, DB tables/columns, migrations, and env-var names. Each is a technical identifier, not the product
+identity.
+
+**Unchanged (verified)** — routes, API contracts, DB schema, dependencies, env-var names. **No migration**
+generated. **No voice/speech/wake-word code, microphone permission, chat UI, AI call, or data model** added.
+Finance 1A.4 intact; request 222 and owner data untouched.
+
+**Testing completed** — `npm run typecheck` ✓; `npm run build` ✓; all regression suites green; secret
+scan clean; no usage-log row created. (Browser preview not driven — text-only metadata/wordmark change
+verified by build + source.)
+
+**Decisions needed** — owner review before commit. **Recommended next step** — owner approves the rename
+and authorizes the commit (message `chore(brand): rename Personal Command Tool to Xanther`); the GitHub
+repo/Netlify rename, if ever desired, is a separate manual op outside this task.
 
 ### Finance 1A.4 — recurring income + estimate-vs-confirmed paychecks — implemented — 2026-06-25
 

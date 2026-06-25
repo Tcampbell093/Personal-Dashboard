@@ -1,6 +1,6 @@
 # Design System — Visual Language
 
-> The application-wide look and feel for the Personal Life OS. **Direction is owner-approved**
+> The application-wide look and feel for **Xanther** (the personal Life OS). **Direction is owner-approved**
 > (see `docs/DECISIONS.md` ADR-014). Specific token *values*, per-area hues, and artwork are
 > **provisional** until ratified or superseded by a dedicated application-wide visual redesign.
 > Build features to this language using existing CSS primitives; do **not** re-skin existing
@@ -77,6 +77,10 @@ over dense borders. **One card = one idea.**
 
 A persistent, quiet wordmark + area switcher. Each area's nav entry may carry its identity tint
 as a small marker. On mobile, navigation collapses to a compact, thumb-reachable control.
+**Product wordmark identity.** Where the *product* wordmark appears (e.g. the login screen),
+it reads **`Xanther`** — no corporate subtitle or slogan. The per-page header wordmarks
+(`Today.`, `Money.`, `Manage.`, `Experiences.`) are **section identities**, not the product
+name, and are preserved as-is.
 Orientation over ornament. The **current navigation structure is not treated as permanently
 fixed** — areas and workflows may evolve.
 

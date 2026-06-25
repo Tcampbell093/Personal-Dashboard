@@ -466,6 +466,31 @@
   AI / no usage log. Finance 1A.1 / 1A.3A / 1A.2 / 1A.3B / Home 1A / Manage-tasks / Build 2A/2B.1/2B.2
   regress green.
 
+### ADR-026 — Official product name: Xanther
+- **Classification:** Owner-approved decision (owner explicitly renamed the product to **Xanther**,
+  spelled `X-A-N-T-H-E-R`).
+- **Detail:**
+  - **Official name:** the product is **Xanther**. Canonical definition: *Xanther is a private,
+    AI-powered personal operating system and life-progression platform combining practical life
+    management, financial awareness, planning, experience discovery, personal progression, memory, and
+    an eventual conversational AI assistant.* `Xanther` names **both** the application/Life OS and the
+    **future conversational assistant** that will operate through the app's permissioned tools — not
+    merely a dashboard, command tool, or generic chatbot.
+  - **Historical aliases only:** *Personal Command Center*, *Personal Command Tool*, *Command Tool*,
+    *Personal Dashboard*.
+  - **Technical identifiers unchanged:** routes, API endpoints, DB tables/columns, migrations,
+    environment-variable names, internal service names, record identifiers, the GitHub repo name
+    (`Personal-Dashboard`), and the Netlify project/deploy config are **deliberately not renamed** (not
+    user-facing product identity; renaming risks breakage). **No schema migration** was created for the
+    rename.
+  - **Scope:** a bounded branding/identity change. It does **not** change the current roadmap,
+    architecture, or approved functionality. The future conversational layer will **operate over the
+    existing workflows rather than replace them**, and is documented (ROADMAP) but **not implemented**
+    (no voice/speech libraries, dependencies, AI calls, chat UI, or data models were added).
+- **Evidence:** user message renaming the product to Xanther (this task). User-facing surfaces updated
+  (browser title, login wordmark, README, PRODUCT_VISION, ROADMAP, DESIGN_SYSTEM); typecheck + build +
+  full regression suite green; secret scan clean; routes/schema/APIs/deps/env unchanged.
+
 ---
 
 ## Open decisions — `[DECISION NEEDED]`

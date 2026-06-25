@@ -18,7 +18,7 @@ import {
 import type { ExperienceRecommendation } from "@/lib/types";
 
 /* ===========================================================================
- * Personal Command Center — database schema
+ * Xanther — database schema
  *
  * Conventions used everywhere:
  *   - id            serial primary key

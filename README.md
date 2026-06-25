@@ -1,8 +1,18 @@
-# Personal Command Center
+# Xanther
 
-A private, **single-owner** daily-operations dashboard that **triages** what to act on, be
-aware of, and explore — across tasks, obligations, finances, signals, opportunities, jobs,
-and interests. It is an early slice of a larger private personal operating system.
+**Xanther** is a private, AI-powered personal operating system and life-progression
+platform. It combines practical life management, financial awareness, planning, experience
+discovery, personal progression, memory, and an eventual conversational AI assistant.
+
+This repository is an early, **single-owner** slice of that platform: a daily-operations
+surface that **triages** what to act on, be aware of, and explore — across tasks,
+obligations, finances, signals, opportunities, jobs, and interests.
+
+> **Historical names.** Xanther was previously called *Personal Command Center* (and earlier
+> *Personal Command Tool* / *Personal Dashboard*). Those are historical aliases only. Some
+> technical identifiers — the GitHub repo name (`Personal-Dashboard`), routes, database
+> tables/columns, and environment variables — deliberately retain their original names; they
+> are internal, not the product identity, and are out of scope for this branding change.
 
 > **Authoritative documentation lives in [`/docs`](docs/) and [`CLAUDE.md`](CLAUDE.md).**
 > This README is a concise technical entry point. For product vision, current state, the
