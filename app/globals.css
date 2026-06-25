@@ -1260,6 +1260,14 @@ textarea.taskadd-field:focus {
   border: 1px solid var(--line);
   border-radius: 8px;
 }
+/* recurring income schedules (1A.4) */
+.fin-sched-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  padding: 8px 0; border-top: 1px solid var(--line);
+}
+.fin-sched-row:first-of-type { border-top: none; }
+.fin-sched-row.inactive { opacity: 0.6; }
+
 /* income + transfers (1A.2) */
 .fin-income-row, .fin-transfers .fin-bill-row { padding: 8px 0; border-top: 1px solid var(--line); }
 .fin-income-row:first-of-type { border-top: none; }

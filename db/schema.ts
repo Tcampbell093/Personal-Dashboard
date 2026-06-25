@@ -119,10 +119,33 @@ export const movementKind = pgEnum("movement_kind", [
 
 // Finance 1A.2: income lifecycle. `scheduled` = expected, no balance change;
 // `received` = confirmed, manual destinations credited via the ledger.
+// Finance 1A.4 adds `skipped` (a recurring occurrence the owner skipped — no
+// balance change, excluded from projection).
 export const incomeStatus = pgEnum("income_status", [
   "scheduled",
   "received",
   "cancelled",
+  "skipped",
+]);
+
+// Finance 1A.4: recurring-income cadence (a payday schedule, distinct from the
+// shared `recurrence` enum which tasks/bills also use).
+export const incomeCadence = pgEnum("income_cadence", [
+  "one_time",
+  "weekly",
+  "biweekly",
+  "semimonthly",
+  "monthly",
+]);
+
+// Finance 1A.4: how an estimated paycheck amount is known. An estimate stays an
+// estimate until the occurrence is received. `unknown` forecasts only the payday
+// (contributes $0 to projected cash).
+export const estimateType = pgEnum("estimate_type", [
+  "fixed",
+  "typical",
+  "range",
+  "unknown",
 ]);
 
 // Finance 1A.2: how a split-income row computes its share. `fixed` = a dollar
@@ -488,10 +511,95 @@ export const incomeEntries = pgTable(
     ),
     status: incomeStatus("status").notNull().default("scheduled"),
     receivedAt: timestamp("received_at", { withTimezone: true }),
+    // Finance 1A.4: a materialized occurrence of a recurring schedule (null = a
+    // standalone one-time income). `estimateType`/`expectedMin`/`expectedMax` are
+    // copied from the schedule at generation so each occurrence is self-contained
+    // for projection. Standalone income defaults to a `fixed` estimate.
+    scheduleId: integer("schedule_id").references((): AnyPgColumn => incomeSchedules.id),
+    estimateType: estimateType("estimate_type").notNull().default("fixed"),
+    expectedMin: numeric("expected_min", { precision: 12, scale: 2 }),
+    expectedMax: numeric("expected_max", { precision: 12, scale: 2 }),
+    // Finance 1A.4 correction: the schedule rule-date this occurrence fills (set
+    // at generation; survives an individual date override) — schedule regeneration
+    // skips a rule date already claimed by an existing occurrence's scheduled_for.
+    scheduledFor: date("scheduled_for"),
+    // True once the owner edits this individual occurrence (amount/date/estimate/
+    // destination/split). Overridden occurrences are NEVER regenerated/overwritten
+    // by a schedule edit. Tracked explicitly (never inferred from value diffs).
+    isOverridden: boolean("is_overridden").notNull().default(false),
     notes: text("notes"),
     ...timestamps,
   },
-  (t) => [index("income_entries_user_date_idx").on(t.userId, t.payDate)],
+  (t) => [
+    index("income_entries_user_date_idx").on(t.userId, t.payDate),
+    // One live occurrence per schedule per date — idempotent generation backstop.
+    uniqueIndex("income_entries_schedule_date_uq")
+      .on(t.scheduleId, t.payDate)
+      .where(sql`${t.scheduleId} IS NOT NULL AND ${t.deletedAt} IS NULL`),
+  ],
+);
+
+/* Finance 1A.4 — a recurring income SCHEDULE (the reusable rule). Occurrences are
+ * materialized as `income_entries` rows (linked by `scheduleId`), so they reuse
+ * the whole receipt/reversal/split/projection machinery. Editing a schedule
+ * regenerates only its FUTURE scheduled occurrences; received/skipped/cancelled/
+ * past occurrences are preserved. */
+export const incomeSchedules = pgTable(
+  "income_schedules",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    source: varchar("source", { length: 160 }).notNull(),
+    cadence: incomeCadence("cadence").notNull(),
+    anchorDate: date("anchor_date").notNull(),
+    // expected amount estimate (0 allowed for `unknown`); optional range bounds.
+    expectedAmount: numeric("expected_amount", { precision: 12, scale: 2 }).notNull().default("0"),
+    estimateType: estimateType("estimate_type").notNull().default("fixed"),
+    expectedMin: numeric("expected_min", { precision: 12, scale: 2 }),
+    expectedMax: numeric("expected_max", { precision: 12, scale: 2 }),
+    destinationAccountId: integer("destination_account_id").references(
+      () => financialAccounts.id,
+    ),
+    // monthly: dayOfMonth (a day > the month's last day resolves to the last day);
+    // semimonthly: dayA + dayB (same last-day resolution).
+    dayOfMonth: integer("day_of_month"),
+    dayA: integer("day_a"),
+    dayB: integer("day_b"),
+    isPayday: boolean("is_payday").notNull().default(true),
+    active: boolean("active").notNull().default(true),
+    endDate: date("end_date"),
+    notes: text("notes"),
+    ...timestamps,
+  },
+  (t) => [index("income_schedules_user_idx").on(t.userId, t.active)],
+);
+
+// Finance 1A.4: split-allocation rows on a SCHEDULE (snapshot source). When an
+// occurrence is generated, these are copied into income_allocations for it.
+export const incomeScheduleAllocations = pgTable(
+  "income_schedule_allocations",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    scheduleId: integer("schedule_id")
+      .notNull()
+      .references(() => incomeSchedules.id, { onDelete: "cascade" }),
+    accountId: integer("account_id")
+      .notNull()
+      .references(() => financialAccounts.id),
+    allocationType: allocationType("allocation_type").notNull(),
+    value: numeric("value", { precision: 14, scale: 2 }),
+    position: integer("position").notNull().default(0),
+    ...timestamps,
+  },
+  (t) => [
+    index("income_schedule_allocations_idx").on(t.scheduleId),
+    uniqueIndex("income_schedule_allocations_uq").on(t.scheduleId, t.accountId),
+  ],
 );
 
 /* Finance 1A.2 — split-income allocation rows. Each row sends part of one income

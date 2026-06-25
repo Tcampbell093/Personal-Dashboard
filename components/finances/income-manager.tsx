@@ -33,12 +33,26 @@ async function readError(res: Response): Promise<string> {
 }
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
+const ESTIMATE_LABEL: Record<string, string> = {
+  fixed: "Estimated",
+  typical: "Estimated (typical)",
+  range: "Estimated range",
+  unknown: "Amount unknown",
+};
+function estimateText(i: IncomeView): string {
+  if (i.estimateType === "unknown") return "Amount unknown";
+  if (i.estimateType === "range") return `${money(i.expectedMin ?? 0)}–${money(i.expectedMax ?? 0)} (est.)`;
+  return `${money(i.expectedAmount)} (est.)`;
+}
+
 export function IncomeManager({
   income,
   accounts,
+  today,
 }: {
   income: IncomeView[];
   accounts: AccountOption[];
+  today: string;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -69,8 +83,16 @@ export function IncomeManager({
     return true;
   }
 
-  const scheduled = income.filter((i) => i.status !== "received");
+  const scheduled = income
+    .filter((i) => i.status === "scheduled")
+    .sort((a, b) => a.payDate.localeCompare(b.payDate));
   const received = income.filter((i) => i.status === "received");
+  const inactive = income.filter((i) => i.status === "skipped" || i.status === "cancelled");
+
+  const setStatus = (id: number, status: string) =>
+    mutate(`/api/finances/income/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
+    });
 
   function destinationSummary(i: IncomeView): string {
     if (i.allocations.length) return `Split across ${i.allocations.length} accounts`;
@@ -90,18 +112,25 @@ export function IncomeManager({
 
       {income.length === 0 && <div className="empty">No income yet.</div>}
 
-      {scheduled.length > 0 && <div className="fin-bill-grouphead">Scheduled</div>}
+      {scheduled.length > 0 && <div className="fin-bill-grouphead">Upcoming income</div>}
       {scheduled.map((i) => (
         <div className="fin-income-row" key={i.id}>
           <div className="fin-income-head">
             <div>
-              <div className="main">{i.source}</div>
+              <div className="main">
+                {i.source}{" "}
+                <span className={`fin-tag ${i.estimateType === "unknown" ? "aware" : "muted"}`}>{ESTIMATE_LABEL[i.estimateType] ?? "Estimated"}</span>
+                {i.scheduleId != null && <span className="fin-tag muted">Recurring</span>}
+              </div>
               <div className="sub">
-                {money(i.expectedAmount)} · {shortDate(i.payDate)} ·{" "}
+                {estimateText(i)} · {shortDate(i.payDate)} ·{" "}
                 <span className={i.allocations.length || i.destinationAccountId != null ? "" : "unassigned-text"}>
                   {destinationSummary(i)}
                 </span>
               </div>
+              {i.payDate < today && (
+                <div className="sub act">⚠ Expected income has not been confirmed</div>
+              )}
             </div>
             <div className="fin-bill-right">
               <button className="linkbtn" disabled={pending}
@@ -112,10 +141,8 @@ export function IncomeManager({
                 onClick={() => { setReceivingId(receivingId === i.id ? null : i.id); setEditingId(null); }}>
                 Receive
               </button>
-              <button className="linkbtn danger" disabled={pending}
-                onClick={() => mutate(`/api/finances/income/${i.id}`, { method: "DELETE" })}>
-                Delete
-              </button>
+              <button className="linkbtn" disabled={pending} onClick={() => setStatus(i.id, "skipped")}>Skip</button>
+              <button className="linkbtn danger" disabled={pending} onClick={() => setStatus(i.id, "cancelled")}>Cancel</button>
             </div>
           </div>
           {editingId === i.id && (
@@ -146,32 +173,65 @@ export function IncomeManager({
       ))}
 
       {received.length > 0 && <div className="fin-bill-grouphead" style={{ marginTop: 12 }}>Received</div>}
-      {received.map((i) => (
+      {received.map((i) => {
+        const outOfRange =
+          i.estimateType === "range" && i.actualAmount != null &&
+          ((i.expectedMin != null && i.actualAmount < i.expectedMin) ||
+            (i.expectedMax != null && i.actualAmount > i.expectedMax));
+        return (
+          <div className="fin-income-row" key={i.id}>
+            <div className="fin-income-head">
+              <div>
+                <div className="main">
+                  {i.source} <span className="fin-tag good">Confirmed received</span>
+                </div>
+                <div className="sub">
+                  {money(i.actualAmount ?? i.expectedAmount)} · {shortDate(i.receivedAt)} · {destinationSummary(i)}
+                </div>
+                {i.variance != null && i.expectedAmount > 0 && (
+                  <div className={`sub ${Math.abs(i.variance) > 0.005 ? "aware" : ""}`}>
+                    Expected {money(i.expectedAmount)} · actual {money(i.actualAmount!)} · variance{" "}
+                    {i.variance >= 0 ? "+" : "−"}{money(Math.abs(i.variance))}
+                    {i.variancePct != null ? ` (${i.variance >= 0 ? "+" : "−"}${Math.abs(i.variancePct).toFixed(1)}%)` : ""}
+                  </div>
+                )}
+                {outOfRange && <div className="sub act">⚠ Actual amount is outside the expected range</div>}
+              </div>
+              <div className="fin-bill-right">
+                <button className="linkbtn" disabled={pending}
+                  onClick={() => mutate(`/api/finances/income/${i.id}/reverse`, { method: "POST" })}
+                  title="Undo this receipt and restore balances">
+                  Undo receipt
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+
+      {inactive.length > 0 && <div className="fin-bill-grouphead" style={{ marginTop: 12 }}>Skipped / cancelled</div>}
+      {inactive.map((i) => (
         <div className="fin-income-row" key={i.id}>
           <div className="fin-income-head">
             <div>
-              <div className="main">{i.source}</div>
+              <div className="main done-title">{i.source}</div>
               <div className="sub">
-                <span className="fin-tag good">Received</span>{" "}
-                {money(i.actualAmount ?? i.expectedAmount)} · {shortDate(i.receivedAt)} ·{" "}
-                {destinationSummary(i)}
+                <span className="fin-tag muted">{cap(i.status)}</span> {shortDate(i.payDate)} · {destinationSummary(i)}
               </div>
             </div>
             <div className="fin-bill-right">
-              <button className="linkbtn" disabled={pending}
-                onClick={() => mutate(`/api/finances/income/${i.id}/reverse`, { method: "POST" })}
-                title="Undo this receipt and restore balances">
-                Undo receipt
-              </button>
+              <button className="linkbtn" disabled={pending} onClick={() => setStatus(i.id, "scheduled")}>Restore</button>
+              <button className="linkbtn danger" disabled={pending}
+                onClick={() => mutate(`/api/finances/income/${i.id}`, { method: "DELETE" })}>Delete</button>
             </div>
           </div>
         </div>
       ))}
 
       <div className="fin-form-note">
-        Scheduled income does not change any balance. Receiving credits each manual
-        destination and records a movement. Income to a <b>linked</b> account can’t be
-        confirmed manually yet — use a manual account for now.
+        Scheduled income is an <b>estimate</b> and changes no balance. Receiving credits each
+        manual destination and records a movement. Skipped/cancelled occurrences leave the
+        forecast. Income to a <b>linked</b> account can’t be confirmed manually yet.
       </div>
       {error && <div className="taskadd-error">{error}</div>}
     </div>

@@ -225,6 +225,18 @@ is an inline per-account panel (app balance, real-balance input, live signed adj
 note, confirm) with a "Last reconciled <date>" / "Not yet reconciled" label and an Undo control. A
 projected figure is **never** styled or labeled as a current/live/available/safe-to-spend balance.
 
+**Money — recurring income & estimate-vs-confirmed (Finance 1A.4).** A **Recurring income** panel lists
+schedules (`source · cadence · next date · estimate/range · destination · payday/paused tags`) with
+edit/pause/remove; its create form reveals cadence-specific fields (monthly day, twice-monthly day A/B)
+and estimate-specific fields (amount, or min+max for a range, or nothing for unknown). The **Income**
+panel shows upcoming occurrences with a text **estimate badge** — `Estimated` / `Estimated (typical)` /
+`Estimated range` (muted) or `Amount unknown` (amber `--aware`) — plus Skip/Cancel, and an "Expected
+income has not been confirmed" warning (act) for past scheduled occurrences; received occurrences show a
+`Confirmed received` tag (good) with **variance** (expected vs actual, $ + %) and an out-of-range flag.
+Estimated amounts are always text-labeled as estimates and never styled as confirmed/guaranteed cash;
+direction and certainty are conveyed in words, not color alone. Home distinguishes **Next expected
+payday** from **Next scheduled income** and shows the estimate label.
+
 **Money — income splits + transfers (Finance 1A.2).** Income uses a compact panel with a Single /
 Split toggle; split rows are `account · type (Fixed $ / % of remaining / Remainder) · value` with a
 live **dollar preview** that re-sums on every keystroke and shows the validation error inline before

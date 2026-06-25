@@ -4,7 +4,7 @@
 > after every substantive change (see `CLAUDE.md`). For the durable product vision, see
 > `docs/PRODUCT_VISION.md`.
 
-**Last updated:** 2026-06-25 · **Reflects branch:** `main` (Finance 1A.3B implemented, uncommitted)
+**Last updated:** 2026-06-25 · **Reflects branch:** `main` (Finance 1A.4 implemented, uncommitted)
 
 ## Status legend
 
@@ -268,10 +268,44 @@ spendable). `/manage`
   materialization / AI. **Owner data untouched** (no fabricated reconciliation); ID-scoped cleanup;
   request 222 untouched; no usage log. Finance 1A.1 (68) / 1A.3A (63) / 1A.2 (72) / Home 1A (56) /
   Manage-tasks (27) / Build 2A (136) / 2B.1 (126) / 2B.2 (60) regress green.
+- **Finance 1A.4 — recurring income + estimate-vs-confirmed paychecks**, verified **deterministically**
+  (`scripts/verify-finance1a4.ts`, **65/65**: pure recurrence + projection, plus schedule generation/
+  receipt/split/reversal/status + history-safety + individual-override preservation against real Neon)
+  and **end-to-end through the running server**
+  (recurring schedules → occurrences → receive-with-variance → reverse → skip; Home wording).
+  A **recurring income SCHEDULE** (`income_schedules`) is the reusable payday rule; its **occurrences
+  are materialized as `income_entries`** (linked by `schedule_id`) so they reuse the existing receipt/
+  reversal/split/projection machinery. **Cadences:** one-time, weekly, biweekly, **twice-monthly**
+  (two days, a day past month-end resolving to the last calendar day — leap-aware), monthly (incl.
+  last day). **Estimate modes:** `fixed`/`typical` (use the expected amount), `range` (projection uses
+  the **minimum**, conservative), `unknown` (forecasts the payday at **$0**). Every estimate is labeled
+  (**Estimated / Estimated range / Amount unknown / Confirmed received**); the UI never implies
+  guaranteed, payroll-certain, or bank/employer-verified income. **Generation** is bounded (a rolling
+  −14…+90-day window), idempotent (existing-date check + a partial unique index), replenished on
+  `/finances` + Home load — no background automation. Receiving an occurrence reuses the income ledger
+  (atomic, split-aware), records the **actual amount + variance** (actual − expected, $ and %), and is
+  reversible; **skip/cancel** exclude an occurrence from projection (received/paid never double-counted).
+  Schedule edits regenerate only **future, still-scheduled, non-overridden** occurrences (received/
+  skipped/cancelled/reversed/past **and individually-edited** occurrences are preserved — tracked by an
+  explicit `is_overridden` flag + a `scheduled_for` rule-date claim so no duplicate is created on the
+  original or moved date). **Removing a schedule that has any history ARCHIVES it** (soft-delete +
+  pause; every occurrence + ledger movement kept and readable; no new generation); only a genuinely
+  unused schedule is hard-deleted (the `income_entries.schedule_id` / `account_movements.income_id` FKs
+  are `ON DELETE no action`, so the DB cannot cascade-delete occurrences or ledger history).
+  **Next-payday wording is now truthful:** *Until next expected payday* only when an active
+  recurring payday occurrence is next, *Until next scheduled income* for one-time/non-payroll income,
+  and a deterministic 14-day fallback otherwise. Home shows next expected payday/scheduled income + an
+  estimate label + an unconfirmed-income flag. Additive migrations `0009_loud_nightmare.sql`
+  (`CREATE TYPE` ×2 + `ALTER TYPE ADD VALUE` + 2 `CREATE TABLE` + nullable/defaulted `ADD COLUMN`s) and
+  `0010_curvy_lily_hollister.sql` (`income_entries.scheduled_for` + `is_overridden`, additive, no
+  backfill); existing income stays standalone — **no auto-conversion**. **No** Plaid / bank login / imported
+  transactions / payroll integration / AI. **Owner income unchanged** (still standalone); ID-scoped
+  cleanup; request 222 untouched; no usage log. Finance 1A.1 (68) / 1A.3A (63) / 1A.2 (72) / 1A.3B (57)
+  / Home 1A (56) / Manage-tasks (27) / Build 2A (136) / 2B.1 (126) / 2B.2 (60) regress green.
 - **`npm run typecheck` and `npm run build`** pass on the current code (the build includes the
   Home `/`, `/manage`, `/finances`, the bill `pay`/`reverse` routes, the income `receive`/`reverse`
-  + `transfers` routes, the account `reconcile`/`reconcile/undo` routes, and the `/interpret`,
-  `/recommend`, `/select-recommendation` routes).
+  + `transfers` + `income-schedules` routes, the account `reconcile`/`reconcile/undo` routes, and the
+  `/interpret`, `/recommend`, `/select-recommendation` routes).
 
 ## 🟡 Partially implemented
 

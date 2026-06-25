@@ -57,6 +57,8 @@ const I = (o: Partial<IncomeView> & { id: number }): IncomeView => ({
   id: o.id, source: o.source ?? `I${o.id}`, expectedAmount: o.expectedAmount ?? 0, payDate: o.payDate ?? "2026-07-01",
   isPayday: o.isPayday ?? true, status: o.status ?? "scheduled", actualAmount: null, receivedAt: null,
   destinationAccountId: o.destinationAccountId ?? null, allocations: o.allocations ?? [],
+  scheduleId: o.scheduleId ?? null, estimateType: o.estimateType ?? "fixed", expectedMin: o.expectedMin ?? null,
+  expectedMax: o.expectedMax ?? null, variance: o.variance ?? null, variancePct: o.variancePct ?? null,
 });
 const T = (o: Partial<TransferView> & { id: number }): TransferView => ({
   id: o.id, fromAccountId: o.fromAccountId ?? 0, fromName: null, toAccountId: o.toAccountId ?? 0, toName: null,

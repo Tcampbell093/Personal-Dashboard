@@ -35,15 +35,38 @@ export function addDays(iso: string, n: number): string {
 
 /** Next payday: soonest upcoming payday-flagged scheduled income, else soonest
  * upcoming scheduled income. Received income is never a future payday. */
-export function nextPaydayDate(income: IncomeView[], today: string): string | null {
+/** The next upcoming SCHEDULED income occurrence and what kind it is. A recurring
+ * PAYDAY (an occurrence linked to a schedule and flagged isPayday) → "payday"; a
+ * one-time / non-payroll income → "scheduled"; nothing upcoming → "none". */
+export function nextIncome(
+  income: IncomeView[],
+  today: string,
+): { kind: "payday" | "scheduled" | "none"; date: string | null } {
   const upcoming = income
-    .filter((i) => i.status !== "received" && i.payDate >= today)
+    .filter((i) => i.status === "scheduled" && i.payDate >= today)
     .sort((a, b) => a.payDate.localeCompare(b.payDate));
-  return (upcoming.find((i) => i.isPayday) ?? upcoming[0] ?? null)?.payDate ?? null;
+  if (!upcoming.length) return { kind: "none", date: null };
+  const payday = upcoming.find((i) => i.scheduleId != null && i.isPayday);
+  if (payday) return { kind: "payday", date: payday.payDate };
+  return { kind: "scheduled", date: upcoming[0].payDate };
 }
 
-/** Resolve a horizon to a concrete end date + label. "payday" falls back to a
- * deterministic 14 days when no future payday exists. */
+export function nextPaydayDate(income: IncomeView[], today: string): string | null {
+  return nextIncome(income, today).date;
+}
+
+/** The amount a scheduled occurrence contributes to projected cash, by estimate
+ * mode: fixed/typical → expected; range → minimum (conservative); unknown → $0
+ * (the payday still appears, but adds nothing to projected cash). */
+export function estimatedProjectionAmount(i: IncomeView): number {
+  if (i.estimateType === "unknown") return 0;
+  if (i.estimateType === "range") return i.expectedMin ?? 0;
+  return i.expectedAmount;
+}
+
+/** Resolve a horizon to a concrete end date + label. "payday" claims a payday
+ * only when a true recurring payday occurrence exists; otherwise it names the
+ * next scheduled income, with a deterministic 14-day fallback. */
 export function resolveHorizon(
   horizon: ProjectionHorizon,
   income: IncomeView[],
@@ -51,9 +74,10 @@ export function resolveHorizon(
 ): { date: string; label: string } {
   if (horizon === "7d") return { date: addDays(today, 7), label: "Next 7 days" };
   if (horizon === "30d") return { date: addDays(today, 30), label: "Next 30 days" };
-  const pd = nextPaydayDate(income, today);
-  if (pd) return { date: pd, label: "Until next payday" };
-  return { date: addDays(today, 14), label: "Next 14 days (no upcoming payday)" };
+  const ni = nextIncome(income, today);
+  if (ni.kind === "payday") return { date: ni.date!, label: "Until next expected payday" };
+  if (ni.kind === "scheduled") return { date: ni.date!, label: "Until next scheduled income" };
+  return { date: addDays(today, 14), label: "Next 14 days (no upcoming income)" };
 }
 
 export interface ProjectionInput {
@@ -108,10 +132,19 @@ export function computeProjection(input: ProjectionInput): FinanceProjection {
     items.push({ date: b.dueDate, kind: "bill", accountId: acct.id, accountName: acct.name, amount: -amt, label: `Bill: ${b.name}`, resultingBalance: null });
   }
 
-  // INCOME — only SCHEDULED income (received already in actual) within horizon.
+  // INCOME — only SCHEDULED income projects (received/cancelled/skipped never do)
+  // within horizon. Estimate mode sets the amount: fixed/typical → expected;
+  // range → minimum; unknown → $0 (the payday still appears, adds nothing).
   for (const i of income) {
-    if (i.status === "received" || !withinHorizon(i.payDate)) continue;
-    const gross = i.expectedAmount;
+    if (i.status !== "scheduled" || !withinHorizon(i.payDate)) continue;
+    const estTag = i.estimateType === "range" ? "estimated range" : i.estimateType === "unknown" ? "amount unknown" : "estimated";
+    const gross = estimatedProjectionAmount(i);
+    if (gross <= 0) {
+      // Unknown / zero estimate — show the payday, contribute $0 to projection.
+      const destName = i.destinationAccountId != null ? (acctById.get(i.destinationAccountId)?.name ?? null) : i.allocations.length ? "split" : null;
+      items.push({ date: i.payDate, kind: "income", accountId: i.destinationAccountId ?? null, accountName: destName, amount: 0, label: `Income: ${i.source} (amount unknown)`, resultingBalance: null });
+      continue;
+    }
     let shares: { accountId: number; cents: number }[] | null;
     if (i.allocations.length) {
       const res = computeAllocationShares(
@@ -126,7 +159,7 @@ export function computeProjection(input: ProjectionInput): FinanceProjection {
     }
     if (!shares) {
       unassignedIncome.push({ id: i.id, source: i.source, amount: gross, payDate: i.payDate });
-      items.push({ date: i.payDate, kind: "income", accountId: null, accountName: null, amount: gross, label: `Income: ${i.source} (destination not assigned)`, resultingBalance: null });
+      items.push({ date: i.payDate, kind: "income", accountId: null, accountName: null, amount: gross, label: `Income: ${i.source} (${estTag}, destination not assigned)`, resultingBalance: null });
       continue;
     }
     for (const s of shares) {
@@ -138,7 +171,7 @@ export function computeProjection(input: ProjectionInput): FinanceProjection {
         continue;
       }
       proj.get(acct.id)!.scheduledInflows += dollars;
-      items.push({ date: i.payDate, kind: "income", accountId: acct.id, accountName: acct.name, amount: dollars, label: `Income: ${i.source}`, resultingBalance: null });
+      items.push({ date: i.payDate, kind: "income", accountId: acct.id, accountName: acct.name, amount: dollars, label: `Income: ${i.source} (${estTag})`, resultingBalance: null });
     }
   }
 
@@ -206,8 +239,10 @@ export function computeProjection(input: ProjectionInput): FinanceProjection {
   // Timeline sorted by date for display.
   items.sort((a, b) => (a.date ?? "9999-99-99").localeCompare(b.date ?? "9999-99-99"));
 
+  const ni = nextIncome(income, today);
   return {
     horizon, horizonLabel, horizonDate, nextPaydayDate: payday,
+    nextIncomeKind: ni.kind, nextIncomeDate: ni.date,
     accounts: [...proj.values()], items, totals, warnings,
     unassignedBills, unassignedIncome, linkedSkipped,
   };

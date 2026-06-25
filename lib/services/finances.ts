@@ -47,6 +47,9 @@ export const ACCOUNT_PURPOSES = [
   "other",
 ] as const;
 export const BALANCE_SOURCES = ["manual", "linked"] as const;
+// Finance 1A.4: recurring-income vocabularies (validated in the schedule service).
+export const INCOME_CADENCES = ["one_time", "weekly", "biweekly", "semimonthly", "monthly"] as const;
+export const ESTIMATE_TYPES = ["fixed", "typical", "range", "unknown"] as const;
 
 // Account types whose (positive) balance is spendable cash. Credit is a
 // liability and `other` is unclassified — neither counts as cash.
@@ -209,20 +212,30 @@ export function toIncomeViews(
   rows: Awaited<ReturnType<typeof listIncome>>,
   allocationsByIncome?: Map<number, AllocationView[]>,
 ): IncomeView[] {
-  return rows.map((r) => ({
-    id: r.id,
-    source: r.source,
-    // The outlook keeps using actual ?? expected; the receipt lifecycle uses the
-    // explicit status/actualAmount fields below.
-    expectedAmount: num(r.actualAmount ?? r.expectedAmount),
-    payDate: r.payDate,
-    isPayday: r.isPayday,
-    status: r.status ?? "scheduled",
-    actualAmount: r.actualAmount != null ? num(r.actualAmount) : null,
-    receivedAt: r.receivedAt ? r.receivedAt.toISOString() : null,
-    destinationAccountId: r.destinationAccountId ?? null,
-    allocations: allocationsByIncome?.get(r.id) ?? [],
-  }));
+  return rows.map((r) => {
+    const expected = num(r.expectedAmount);
+    const actual = r.actualAmount != null ? num(r.actualAmount) : null;
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    return {
+      id: r.id,
+      source: r.source,
+      // The TRUE expected amount (the estimate); receipt fills actualAmount.
+      expectedAmount: expected,
+      payDate: r.payDate,
+      isPayday: r.isPayday,
+      status: r.status ?? "scheduled",
+      actualAmount: actual,
+      receivedAt: r.receivedAt ? r.receivedAt.toISOString() : null,
+      destinationAccountId: r.destinationAccountId ?? null,
+      allocations: allocationsByIncome?.get(r.id) ?? [],
+      scheduleId: r.scheduleId ?? null,
+      estimateType: r.estimateType ?? "fixed",
+      expectedMin: r.expectedMin != null ? num(r.expectedMin) : null,
+      expectedMax: r.expectedMax != null ? num(r.expectedMax) : null,
+      variance: actual != null ? round2(actual - expected) : null,
+      variancePct: actual != null && expected > 0 ? round2(((actual - expected) / expected) * 100) : null,
+    };
+  });
 }
 
 /* ------------------------------------------------------------- the outlook --- */
@@ -669,7 +682,9 @@ export async function setIncomeDestination(
     throw new FinanceError(409, "Only scheduled income can be re-assigned.");
   if (accountId != null) await requireCashAccount(userId, accountId);
   await db.delete(incomeAllocations).where(eq(incomeAllocations.incomeId, incomeId));
-  return updateIncome(userId, incomeId, { destinationAccountId: accountId } as Partial<NewIncome>);
+  // Finance 1A.4 correction: an explicit occurrence edit marks it overridden so a
+  // later schedule edit never overwrites it.
+  return updateIncome(userId, incomeId, { destinationAccountId: accountId, isOverridden: true } as Partial<NewIncome>);
 }
 
 /** Replace the split allocations for a scheduled income (sets split mode). */
@@ -698,7 +713,8 @@ export async function setIncomeAllocations(
       position: i,
     })),
   );
-  return updateIncome(userId, incomeId, { destinationAccountId: null } as Partial<NewIncome>);
+  // Mark the occurrence overridden (split mode); clear single-destination.
+  return updateIncome(userId, incomeId, { destinationAccountId: null, isOverridden: true } as Partial<NewIncome>);
 }
 
 /**
@@ -866,6 +882,28 @@ export async function reverseIncomeReceipt(userId: number, id: number) {
 }
 
 export { requireCashAccount };
+
+/** Finance 1A.4: set an occurrence's open status (skip / cancel / un-skip back to
+ * scheduled). A received occurrence must be reversed first. Skipped/cancelled
+ * occurrences are excluded from projection but preserved as history. */
+export const OCCURRENCE_STATUSES = ["scheduled", "skipped", "cancelled"] as const;
+export async function setIncomeStatus(
+  userId: number,
+  id: number,
+  status: (typeof OCCURRENCE_STATUSES)[number],
+) {
+  if (!OCCURRENCE_STATUSES.includes(status)) throw new FinanceError(400, "Invalid status.");
+  const inc = await getIncome(userId, id);
+  if (!inc) throw new FinanceError(404, "Income not found.");
+  if (inc.status === "received")
+    throw new FinanceError(409, "Reverse the receipt before changing this occurrence's status.");
+  const [row] = await db
+    .update(incomeEntries)
+    .set({ status, updatedAt: new Date() })
+    .where(and(eq(incomeEntries.id, id), eq(incomeEntries.userId, userId), isNull(incomeEntries.deletedAt)))
+    .returning();
+  return row ?? null;
+}
 
 /* ============================ Finance 1A.3B: reconciliation ledger ========== */
 

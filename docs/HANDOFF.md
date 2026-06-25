@@ -12,26 +12,30 @@
 
 ## Next approved task
 
-### Finance 1A.3B — reconciliation + projected balances
+### Finance 1A.4 — recurring income + estimate-vs-confirmed paychecks
 
 - **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** See the latest handoff report
-  below. **Reconciliation:** enter the real bank balance → atomic set + `lastReconciledAt` + an
-  auditable `reconcile_adjustment` (zero-delta = timestamp only); manual-only; duplicate/concurrent
-  applies once; **Undo** restores the prior balance + appends `reconcile_reversal` (double-undo
-  blocked). **Projection** (pure engine) = actual + scheduled inflows − outflows by horizon (7d /
-  until-payday / 30d); never overwrites actual; only scheduled items project; received/paid/completed
-  never double-counted; unassigned + linked items surfaced/warned, never guessed; credit kept separate.
-  `/finances` gained actual-vs-projected cards + horizon selector + Forecast timeline + Reconcile panel;
-  Home shows Manual actual cash + projected + shortfall; `/manage` stays summary-only. Additive
-  migration `0008` (reviewed, applied). (Finance 1A.2 committed `22f5024`; 1A.3A `b6d7c6f`; 1A.1 `726c3e8`.)
+  below. **Schedules** (`income_schedules`): weekly/biweekly/twice-monthly/monthly/one-time payday
+  rules with estimate modes (fixed/typical → expected, range → minimum, unknown → $0 forecast).
+  **Occurrences** are materialized as `income_entries` (bounded −14…+90-day rolling window, idempotent)
+  and reuse the existing receipt/split/reversal/projection. Receipt records actual + **variance**;
+  skip/cancel exclude from projection. Schedule edits regenerate only future, non-overridden scheduled
+  occurrences (`is_overridden` + `scheduled_for` preserve individual edits); removing a schedule with
+  history **archives** it (FKs `ON DELETE no action` — no cascade to occurrences/movements).
+  **Next-payday wording** is now truthful (expected-payday vs scheduled-income vs 14-day fallback).
+  `/finances` gained a Recurring-income section + estimate labels + variance; Home shows next expected
+  payday + estimate; `/manage` stays summary-only. Additive migrations `0009` + `0010` (reviewed,
+  applied); no auto-conversion of owner income. (Finance 1A.3B committed
+  `f7f8e08`; 1A.2 `22f5024`; 1A.3A `b6d7c6f`; 1A.1 `726c3e8`.)
 - **No further build is currently authorized.** The next finance gate is **Finance 1B** (read-only bank
   connections — `financial_connections`, `balanceSource = linked` — replacing manual reconciliation, and
-  **matching manual movements against imported bank transactions** with owner approval for uncertain
-  matches). Other separately-gated directions remain: **Home 1B** (owner-triggered AI daily brief); a
-  settings UI for `intelligence_settings`; a close/archive workflow (`experience_request_status =
-  closed`); rule-based fallback recommendations; the application-wide visual redesign; a live
-  Sonnet/Haiku smoke test once the owner deliberately enables a key. None may begin without explicit
-  approval.
+  **matching imported bank transactions to bills/income occurrences/transfers**, possibly several
+  deposits to one paycheck, with owner approval for uncertain matches; recurring detection may suggest
+  but never silently create a schedule). Other separately-gated directions remain: **Home 1B**
+  (owner-triggered AI daily brief); a settings UI for `intelligence_settings`; a close/archive workflow
+  (`experience_request_status = closed`); rule-based fallback recommendations; the application-wide
+  visual redesign; a live Sonnet/Haiku smoke test once the owner deliberately enables a key. None may
+  begin without explicit approval.
 
 > **Status note (verbatim, required while no live key is configured):** "Anthropic adapter
 > implemented and deterministically verified; live Anthropic invocation pending owner
@@ -108,6 +112,130 @@ specific build. Builds are ordered so the manual loop works end-to-end before an
 ---
 
 ## Latest handoff
+
+### Finance 1A.4 — recurring income + estimate-vs-confirmed paychecks — implemented — 2026-06-25
+
+**Task Completed**
+Implemented Finance 1A.4 on the existing finance ledger + projection engine: recurring income schedules
+with explicit estimate confidence, materialized occurrences, estimate-vs-confirmed paychecks with
+variance, and truthful next-payday wording. **No** Plaid / bank login / imported transactions / payroll
+integration / automatic bank matching / discretionary spending / AI / automatic money movement. Not
+committed — awaiting owner review.
+
+**Repository state confirmed before implementing** — HEAD `f7f8e08` (Finance 1A.3B); income receipt/
+reversal + splits + projection present; no recurring-income model; clean tree.
+
+**Schema & migration changes** — migration `0009_loud_nightmare.sql` (additive only): new enums
+`income_cadence` + `estimate_type`; `income_status` += `skipped`; new tables `income_schedules` +
+`income_schedule_allocations`; `income_entries` += `scheduleId`/`estimateType`/`expectedMin`/
+`expectedMax` (estimate_type defaults `fixed` for existing rows); a partial unique index on
+`(schedule_id, pay_date)`. **History-safety correction** — migration `0010_curvy_lily_hollister.sql`
+(additive only): `income_entries` += `scheduled_for` (the rule date an occurrence fills) + `is_overridden`
+(default false). **No `DROP`/rewrite/backfill/owner-data change** — existing income stays standalone (no
+auto-conversion; `is_overridden` defaults false, no guessed overrides).
+
+**History-safety corrections (post-review):**
+- **Schedule deletion preserves history.** Removing a schedule that has ANY occurrence/history now
+  **archives** it (soft-delete + pause; all occurrences + ledger movements kept, no new generation);
+  only a genuinely unused schedule is hard-deleted. The `income_entries.schedule_id` and
+  `account_movements.income_id` FKs are **`ON DELETE no action`**, so the DB cannot cascade-delete
+  occurrences or ledger history. The DELETE route returns `mode: "archived" | "deleted"`; the UI says
+  **Archive**.
+- **Individual occurrence edits are preserved.** Editing an occurrence (amount/date/estimate/destination/
+  split) sets an explicit **`is_overridden`** flag (never inferred from value diffs); schedule
+  regeneration deletes + recreates only FUTURE, still-`scheduled`, **non-overridden** occurrences, and a
+  **`scheduled_for`** rule-date claim ensures no duplicate is created on the original or moved date.
+
+**Recurrence model & date rules** — pure `lib/finance-recurrence.ts`. Weekly/biweekly = anchor + k·step
+(same weekday); twice-monthly = two days per month; monthly = a day of month. A monthly/semimonthly day
+beyond the month's last day resolves to the **last calendar day** (so 31 = last day; Feb is leap-aware).
+UTC-anchored calendar math; the app timezone supplies "today". `endDate` and `active` bound generation.
+
+**Occurrence generation strategy** — materialized (not derived) into `income_entries`, in a bounded
+rolling **−14…+90-day** window; idempotent (skip dates that already have a non-deleted occurrence +
+`ON CONFLICT DO NOTHING` + the partial unique index); replenished on `/finances` + Home load. No
+background automation. Each occurrence snapshots the schedule's destination/split + estimate fields so
+it is self-contained for projection.
+
+**Estimate modes & projection rules** — `fixed`/`typical` → expected amount; `range` → the **minimum**
+(conservative); `unknown` → **$0** (the payday still appears in the timeline). Estimated income is never
+treated as confirmed cash; every projected estimate is labeled (estimated / estimated range / amount
+unknown). Only `scheduled` occurrences project — received/cancelled/skipped never do.
+
+**Receipt, split, reversal & variance** — receiving an occurrence reuses `receiveIncome` (atomic,
+split-aware via the copied allocations), records actual gross + received date, and exposes **variance**
+(actual − expected, $ and %) + an out-of-range flag for `range` estimates. `reverseIncomeReceipt`
+restores balances (originals preserved). Duplicate/concurrent receipt blocked (status guard).
+
+**Next-payday wording** — `resolveHorizon`/`nextIncome`: `Until next expected payday` only when an
+active recurring payday occurrence (scheduleId + isPayday) is next; `Until next scheduled income` for a
+one-time/non-payroll income; deterministic 14-day fallback when nothing is upcoming (no false "payday").
+
+**Concurrency/idempotency strategy** — generation is idempotent (existing-date check + partial unique
+index + ON CONFLICT). Receipt/reversal reuse the 1A.2 ledger guards (status-guarded, `reversal_of_id`
+unique index). Schedule edits delete + regenerate FUTURE scheduled occurrences only.
+
+**Exact files changed**
+- `db/schema.ts` (enums + 2 tables + income columns + unique index); `db/migrations/0009_loud_nightmare.sql`
+  (+ `meta/0009_snapshot.json`, `_journal.json`).
+- New `lib/finance-recurrence.ts` (pure dates); new `lib/services/income-schedules.ts` (CRUD +
+  generation + edit rule); `lib/services/finances.ts` (`toIncomeViews` +estimate/variance fields,
+  `setIncomeStatus`, `INCOME_CADENCES`/`ESTIMATE_TYPES`); `lib/services/finance-projection.ts`
+  (`nextIncome`, `estimatedProjectionAmount`, estimate-mode amounts + wording); `lib/services/home.ts`
+  (next-income label); `lib/types.ts` (`IncomeView` + `IncomeScheduleView` + projection/home fields).
+- API: new `app/api/finances/income-schedules/route.ts` + `[id]/route.ts`; `app/api/finances/income/[id]/route.ts`
+  (occurrence skip/cancel via `status`).
+- UI: new `components/finances/schedule-manager.tsx`; `components/finances/income-manager.tsx` (estimate
+  labels, variance, skip/cancel, unconfirmed warning); `app/finances/page.tsx` (replenish + Recurring
+  section); `components/home/sections.tsx` (next-payday wording); `app/globals.css`.
+- Tests: new `scripts/verify-finance1a4.ts`; `scripts/verify-finance1a3b.ts` (IncomeView builder updated). Docs.
+
+**`/finances`, Home, `/manage` behavior** — `/finances` adds a **Recurring income** section (create/edit/
+pause/delete schedules with cadence-specific + estimate-specific fields, split or single destination,
+end date, payday toggle) above the **Income** section, which now shows upcoming occurrences with estimate
+labels + skip/cancel + an "expected income has not been confirmed" warning for past scheduled
+occurrences, and received occurrences with variance + an out-of-range flag. Home Money awareness shows
+**Next expected payday / Next scheduled income** + an estimate label + an unconfirmed-income flag, never
+"safe to spend". `/manage` is unchanged (summary + link).
+
+**Testing completed** — `npm run typecheck` ✓; `npm run build` ✓. **`scripts/verify-finance1a4.ts` —
+65/65**: recurrence dates (weekly/biweekly/monthly/last-day/twice-monthly/short-month/leap/endDate/tz),
+generation (bounded window, idempotent, no-dup, owner standalone, edit-one vs edit-schedule rule),
+estimates (fixed/typical/range-min/unknown-$0/labeled/variance), receipt+split (single + split snapshot,
+exact allocation, balances once, reversal, duplicate blocked, originals preserved), statuses/warnings
+(skip/cancel excluded, received not re-projected, unconfirmed + out-of-range + late), wording (payday vs
+scheduled vs none + 14-day fallback), **schedule history safety (unused → hard-delete; history →
+archive; archiving stops generation; occurrences/income/reversal movements + historical variance
+preserved; FK no-cascade to income/movements), individual overrides (override retains custom date+amount,
+untouched future follow the new rule, received/skipped/cancelled/reversed unchanged, idempotent, no
+duplicate on original/moved date, unrelated schedules untouched)**, safety (no Plaid, no AI/usage log,
+no owner conversion, no fabricated movements). **End-to-end through the running server (authenticated
+HTTP):** created weekly/
+biweekly/twice-monthly/unknown schedules → 14 weekly + 7 biweekly occurrences with 14-day biweekly
+spacing, unknown contributing $0; received a weekly occurrence at $850 (expected $900) → balance $850 +
+variance shown → duplicate 409 → reverse → $0 → skipped one occurrence; Home showed "Next expected
+payday" + an estimate label. Temp records removed by exact id. **Regressions:** Finance 1A.1 68 / 1A.3A
+63 / 1A.2 72 / 1A.3B 57 / Home 1A 56 / Manage-tasks 27 / Build 2A 136 / 2B.1 126 / 2B.2 60 — all green.
+**`npm run lint` not run** (interactive-only). **No AI/Anthropic call.**
+
+**Known issues / not tested**
+- The **pixel** preview browser wasn't driven for mutations (the dev server requires the owner password
+  and entering it in a browser tool call would expose the secret); verified end-to-end through the
+  running Next.js server over authenticated HTTP + the deterministic harness.
+- **(Corrected post-review)** Schedule edits now preserve **individually-overridden** future
+  occurrences (explicit `is_overridden` flag + `scheduled_for` claim); only future, still-scheduled,
+  non-overridden occurrences are regenerated. Received/skipped/cancelled/reversed/past are always
+  preserved. Removing a schedule with history **archives** it (FK no-cascade) rather than destroying
+  occurrences/movements.
+- Occurrences are replenished on page load (a bounded, idempotent write during a GET); there is no
+  background job. A schedule with no future occurrences in the window simply shows none.
+- Archived schedules disappear from the schedule list (their occurrences remain in the Income section);
+  there is no un-archive in this build (use Pause for a reversible stop).
+- `scripts/verify-finance1a3b.ts` got a one-line builder update (new IncomeView fields); it stays 57/57.
+
+**Decisions needed** — owner review before commit. Finance 1B requires separate authorization.
+**Recommended next step** — owner reviews Finance 1A.4; if approved, authorize the commit, then the
+Finance 1B (read-only bank connections + transaction/occurrence matching) bounded task can be prepared.
 
 ### Finance 1A.3B — reconciliation + projected balances — implemented — 2026-06-25
 

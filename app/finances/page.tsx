@@ -24,12 +24,20 @@ import {
   getReconcilableAccountIds,
 } from "@/lib/services/finances";
 import { listTransfers, toTransferViews } from "@/lib/services/transfers";
+import {
+  replenishOccurrences,
+  listSchedules,
+  listScheduleAllocations,
+  scheduleAllocationsBySchedule,
+  toScheduleViews,
+} from "@/lib/services/income-schedules";
 import { computeProjection } from "@/lib/services/finance-projection";
 import { isAuthConfigured } from "@/lib/session";
 import { LogoutButton } from "@/components/logout-button";
 import { AccountManager } from "@/components/finances/account-manager";
 import { BillManager } from "@/components/finances/bill-manager";
 import { IncomeManager } from "@/components/finances/income-manager";
+import { ScheduleManager } from "@/components/finances/schedule-manager";
 import { TransferManager } from "@/components/finances/transfer-manager";
 import type { MovementView, ProjectionHorizon, ForecastItem } from "@/lib/types";
 
@@ -109,23 +117,30 @@ export default async function FinancesPage({
   const horizon: ProjectionHorizon =
     sp.horizon === "7d" ? "7d" : sp.horizon === "30d" ? "30d" : "payday";
 
-  let accounts, bills, income, transfers, movements, reconcilableIds;
+  const today = localToday();
+  let accounts, bills, income, transfers, movements, reconcilableIds, schedules;
   try {
-    const [accts, billRows, incomeRows, allocRows, transferRows, movementRows, recIds] = await Promise.all([
-      listAccounts(userId).then(toAccountViews),
-      listBills(userId).then(toBillViews),
-      listIncome(userId),
-      listAllocations(userId),
-      listTransfers(userId).then(toTransferViews),
-      listMovements(userId, 12).then(toMovementViews),
-      getReconcilableAccountIds(userId),
-    ]);
+    // Replenish the rolling occurrence window for active schedules (idempotent).
+    await replenishOccurrences(userId, today);
+    const [accts, billRows, incomeRows, allocRows, transferRows, movementRows, recIds, scheduleRows, schedAllocRows] =
+      await Promise.all([
+        listAccounts(userId).then(toAccountViews),
+        listBills(userId).then(toBillViews),
+        listIncome(userId),
+        listAllocations(userId),
+        listTransfers(userId).then(toTransferViews),
+        listMovements(userId, 12).then(toMovementViews),
+        getReconcilableAccountIds(userId),
+        listSchedules(userId),
+        listScheduleAllocations(userId),
+      ]);
     accounts = accts;
     bills = billRows;
     income = toIncomeViews(incomeRows, allocationsByIncome(allocRows));
     transfers = transferRows;
     movements = movementRows;
     reconcilableIds = recIds;
+    schedules = toScheduleViews(scheduleRows, scheduleAllocationsBySchedule(schedAllocRows), today);
   } catch (err) {
     // Explicit error state — never fabricate placeholder balances.
     console.error("FinancesPage: load failed.", err);
@@ -142,7 +157,7 @@ export default async function FinancesPage({
   }
 
   const summary = computeCashSummary(accounts);
-  const projection = computeProjection({ accounts, bills, income, transfers, horizon, today: localToday() });
+  const projection = computeProjection({ accounts, bills, income, transfers, horizon, today });
   const accountOptions = accounts
     .filter((a) => a.active)
     .map((a) => ({ id: a.id, name: a.name, linked: a.balanceSource !== "manual" }));
@@ -351,14 +366,24 @@ export default async function FinancesPage({
         <BillManager bills={bills} accounts={accountOptions} />
       </section>
 
-      {/* 4 — Income (single destination or split), received into your accounts */}
+      {/* 4a — Recurring income schedules (estimated paychecks) */}
+      <section className="tier">
+        <div className="tier-head">
+          <span className="tier-tick" style={{ background: "var(--good)" }} />
+          <span className="tier-name">Recurring income</span>
+          <span className="tier-sub">estimated paydays — amounts confirmed only when received</span>
+        </div>
+        <ScheduleManager schedules={schedules} accounts={cashAccountOptions} />
+      </section>
+
+      {/* 4b — Income occurrences (single destination or split), received into accounts */}
       <section className="tier">
         <div className="tier-head">
           <span className="tier-tick" style={{ background: "var(--good)" }} />
           <span className="tier-name">Income</span>
-          <span className="tier-sub">assign to one account or split; receive to credit balances</span>
+          <span className="tier-sub">upcoming estimates + confirmed receipts (with variance)</span>
         </div>
-        <IncomeManager income={income} accounts={cashAccountOptions} />
+        <IncomeManager income={income} accounts={cashAccountOptions} today={today} />
       </section>
 
       {/* 5 — Transfers between owned accounts */}

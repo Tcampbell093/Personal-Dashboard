@@ -117,10 +117,25 @@ export function MoneyAwareness({ section }: { section: HomeSection<HomeMoney> })
         <>
           <div className="home-figure num">{money(section.data!.manualActualCash)}</div>
           <div className="home-figure-note">Manual actual cash (entered, now)</div>
+          {section.data!.nextIncomeDate && (
+            <div className="home-statline num">
+              <span>
+                {section.data!.nextIncomeKind === "payday" ? "Next expected payday" : "Next scheduled income"}
+                {" · "}{shortDate(section.data!.nextIncomeDate)}
+              </span>
+              <span>{section.data!.nextIncomeText ?? "—"}</span>
+            </div>
+          )}
           <div className="home-statline num">
             <span>{section.data!.projectionHorizonLabel} (projected)</span>
             <span>{money(section.data!.projectedCash)}</span>
           </div>
+          {section.data!.hasUnconfirmedIncome && (
+            <div className="home-statline num">
+              <span className="act">⚠ Expected income unconfirmed</span>
+              <span className="act">see /finances</span>
+            </div>
+          )}
           <div className="home-statline num">
             <span>Bills before payday</span>
             <span>{money(section.data!.billsDueBeforePayday)}</span>

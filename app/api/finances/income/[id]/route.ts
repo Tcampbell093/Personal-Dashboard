@@ -11,6 +11,8 @@ import {
   deleteIncome,
   setIncomeDestination,
   setIncomeAllocations,
+  setIncomeStatus,
+  OCCURRENCE_STATUSES,
   FinanceError,
   type AllocationInput,
   type NewIncome,
@@ -76,6 +78,22 @@ export async function PATCH(request: Request, { params }: Ctx) {
   }
   const b = body as Record<string, unknown>;
 
+  // Finance 1A.4: skip / cancel / un-skip one occurrence (not received → use /receive).
+  if (typeof b.status === "string") {
+    if (!(OCCURRENCE_STATUSES as readonly string[]).includes(b.status)) {
+      return NextResponse.json(
+        { error: "Status must be scheduled, skipped, or cancelled (receive via the receive action)." },
+        { status: 400 },
+      );
+    }
+    try {
+      const row = await setIncomeStatus(CURRENT_USER_ID, id, b.status as (typeof OCCURRENCE_STATUSES)[number]);
+      return NextResponse.json({ income: row });
+    } catch (err) {
+      return financeErr(err);
+    }
+  }
+
   // Split allocations (sets split mode) take precedence over a single destination.
   if ("allocations" in b) {
     const allocs = parseAllocations(b.allocations);
@@ -130,10 +148,16 @@ export async function PATCH(request: Request, { params }: Ctx) {
     patch.payDate = b.payDate;
   }
   if (b.isPayday !== undefined) patch.isPayday = Boolean(b.isPayday);
+  if ("estimateType" in b && typeof b.estimateType === "string") patch.estimateType = b.estimateType as NewIncome["estimateType"];
+  if ("expectedMin" in b) patch.expectedMin = b.expectedMin == null || b.expectedMin === "" ? null : String(Number(b.expectedMin));
+  if ("expectedMax" in b) patch.expectedMax = b.expectedMax == null || b.expectedMax === "" ? null : String(Number(b.expectedMax));
 
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
   }
+  // Finance 1A.4 correction: a field edit overrides this individual occurrence so
+  // a later schedule edit never overwrites it.
+  patch.isOverridden = true;
 
   try {
     const row = await updateIncome(CURRENT_USER_ID, id, patch);

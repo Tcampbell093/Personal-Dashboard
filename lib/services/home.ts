@@ -151,14 +151,28 @@ async function loadMoney(userId: number): Promise<HomeMoney> {
   ]);
   const income = toIncomeViews(incomeRows, allocationsByIncome(allocRows));
   const cash = computeCashSummary(accounts);
+  const today = localToday();
   // Default Home horizon: "until next payday" (falls back to 14 days when none).
-  const projection = computeProjection({
-    accounts, bills, income, transfers, horizon: "payday", today: localToday(),
-  });
+  const projection = computeProjection({ accounts, bills, income, transfers, horizon: "payday", today });
   const dueBills = bills
     .filter((b) => b.status !== "paid")
     .sort((a, b) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"))
     .slice(0, 3);
+
+  // Next expected income's estimate label (truthful — never a guaranteed amount).
+  const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+  const nextOcc = income
+    .filter((i) => i.status === "scheduled" && i.payDate === projection.nextIncomeDate)
+    .sort((a, b) => (b.isPayday ? 1 : 0) - (a.isPayday ? 1 : 0))[0];
+  let nextIncomeText: string | null = null;
+  if (nextOcc) {
+    if (nextOcc.estimateType === "unknown") nextIncomeText = "Amount unknown";
+    else if (nextOcc.estimateType === "range")
+      nextIncomeText = `Estimated ${money(nextOcc.expectedMin ?? 0)}–${money(nextOcc.expectedMax ?? 0)}`;
+    else nextIncomeText = `Estimated ${money(nextOcc.expectedAmount)}`;
+  }
+  const hasUnconfirmedIncome = income.some((i) => i.status === "scheduled" && i.payDate < today);
+
   return {
     estimatedRemaining: outlook.estimatedRemaining,
     accountsTotal: outlook.accountsTotal,
@@ -172,6 +186,10 @@ async function loadMoney(userId: number): Promise<HomeMoney> {
     projectedCash: projection.totals.totalProjectedCash,
     projectionHorizonLabel: projection.horizonLabel,
     hasShortfall: projection.warnings.some((w) => w.code === "shortfall"),
+    nextIncomeKind: projection.nextIncomeKind,
+    nextIncomeDate: projection.nextIncomeDate,
+    nextIncomeText,
+    hasUnconfirmedIncome,
   };
 }
 

@@ -142,6 +142,11 @@ export interface FinanceProjection {
   horizonLabel: string;
   horizonDate: string;
   nextPaydayDate: string | null;
+  // Finance 1A.4: truthful next-income wording. `payday` only when an active
+  // recurring payday schedule's occurrence is next; `scheduled` for a one-time /
+  // non-payroll income; `none` when there is no upcoming income.
+  nextIncomeKind: "payday" | "scheduled" | "none";
+  nextIncomeDate: string | null;
   accounts: AccountProjection[];
   items: ForecastItem[];
   totals: {
@@ -175,11 +180,39 @@ export interface IncomeView {
   payDate: string;
   isPayday: boolean;
   // Finance 1A.2: receipt lifecycle + destination(s).
-  status: string; // scheduled | received | cancelled
+  status: string; // scheduled | received | cancelled | skipped
   actualAmount: number | null; // confirmed gross at receipt
   receivedAt: string | null;
   destinationAccountId: number | null; // single-destination mode (null = unassigned/split)
   allocations: AllocationView[]; // split mode (empty = single/unassigned)
+  // Finance 1A.4: estimate modes + recurring linkage + variance.
+  scheduleId: number | null; // recurring occurrence (null = standalone one-time)
+  estimateType: string; // fixed | typical | range | unknown
+  expectedMin: number | null;
+  expectedMax: number | null;
+  variance: number | null; // actual − expected (after receipt)
+  variancePct: number | null; // variance / expected × 100 (when expected > 0)
+}
+
+/** Finance 1A.4: a recurring income schedule (the reusable payday rule). */
+export interface IncomeScheduleView {
+  id: number;
+  source: string;
+  cadence: string; // one_time | weekly | biweekly | semimonthly | monthly
+  anchorDate: string;
+  expectedAmount: number;
+  estimateType: string; // fixed | typical | range | unknown
+  expectedMin: number | null;
+  expectedMax: number | null;
+  destinationAccountId: number | null;
+  dayOfMonth: number | null;
+  dayA: number | null;
+  dayB: number | null;
+  isPayday: boolean;
+  active: boolean;
+  endDate: string | null;
+  nextDate: string | null; // next upcoming occurrence date (computed)
+  allocations: AllocationView[]; // schedule-level split snapshot
 }
 
 /** Finance 1A.2: a transfer between two owned accounts. */
@@ -367,6 +400,11 @@ export interface HomeMoney {
   projectedCash: number;
   projectionHorizonLabel: string;
   hasShortfall: boolean;
+  // Finance 1A.4: next expected income (payday vs one-time) + estimate label.
+  nextIncomeKind: "payday" | "scheduled" | "none";
+  nextIncomeDate: string | null;
+  nextIncomeText: string | null; // e.g. "Estimated $900" | "Amount unknown" | "Estimated $800–$1,200"
+  hasUnconfirmedIncome: boolean; // an expected occurrence whose date has passed
 }
 
 export interface HomeMomentum {
