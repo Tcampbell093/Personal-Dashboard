@@ -213,6 +213,18 @@ section lists the append-only ledger — payments (negative, urgency red `var(--
 (positive, emerald `var(--good)`), each with a `+`/`−` sign and the kind spelled out in text, so
 direction is never conveyed by color alone. The pay form stacks to a single column at ≤640px.
 
+**Money — actual vs projected + reconciliation (Finance 1A.3B).** Projection is visually separated from
+actual: a **Projected balances** section with a pill **horizon selector** (7 days / Until next payday /
+30 days, the active pill in `--explore`), actual-vs-projected total cards (actual in emerald `--good`,
+projected in neutral with a "forecast — not available-now" note), and per-account cards showing actual +
+projected with `+in` (good) / `−out` (act) tags and a "Projected shortfall" tag (act) when below $0.
+A compact **Forecast timeline** lists dated scheduled items with their resulting projected balance, and a
+**Not included in projections** panel lists unassigned/linked items. Warnings are text rows (act for
+shortfall, aware for unassigned/linked) that each explain themselves — never color alone. **Reconcile**
+is an inline per-account panel (app balance, real-balance input, live signed adjustment preview, optional
+note, confirm) with a "Last reconciled <date>" / "Not yet reconciled" label and an Undo control. A
+projected figure is **never** styled or labeled as a current/live/available/safe-to-spend balance.
+
 **Money — income splits + transfers (Finance 1A.2).** Income uses a compact panel with a Single /
 Split toggle; split rows are `account · type (Fixed $ / % of remaining / Remainder) · value` with a
 live **dollar preview** that re-sums on every keystroke and shows the validation error inline before

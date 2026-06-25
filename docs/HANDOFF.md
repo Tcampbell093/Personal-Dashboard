@@ -12,26 +12,26 @@
 
 ## Next approved task
 
-### Finance 1A.2 — income splits + account transfers
+### Finance 1A.3B — reconciliation + projected balances
 
 - **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** See the latest handoff report
-  below. Income can go to one account or be **split** (fixed → percent-of-remaining → remainder,
-  integer-cent, exact); **receiving** credits each manual destination + writes positive movements,
-  **undo** restores. **Transfers** between owned accounts: scheduled changes no balance; **complete**
-  moves both balances + paired movements; **reverse** restores. Duplicate/concurrent receipt,
-  completion, reversal all single-effect (409 + unique index). Linked accounts never manually mutated;
-  total owned cash invariant under transfers. Income management **moved to `/finances`**; activity
-  labels income/transfer movements. Additive migration `0007` (reviewed, applied). (Finance 1A.3A
-  committed `b6d7c6f`; 1A.1 `726c3e8`; Home 1A `405fd45`.)
-- **No further build is currently authorized.** Remaining finance gates, each requiring explicit
-  approval: **Finance 1A.3 (remainder)** (reconciliation + audit adjustment; account-aware projection
-  replacing the legacy `estimatedRemaining`) and **Finance 1B** (read-only bank connections —
-  `financial_connections`, `balanceSource = linked` — and **matching the 1A.2 manual movements against
-  imported bank transactions**). Other separately-gated directions remain: **Home 1B** (owner-triggered
-  AI daily brief); a settings UI for `intelligence_settings`; a close/archive workflow
-  (`experience_request_status = closed`); rule-based fallback recommendations; the application-wide
-  visual redesign; a live Sonnet/Haiku smoke test once the owner deliberately enables a key. None may
-  begin without explicit approval.
+  below. **Reconciliation:** enter the real bank balance → atomic set + `lastReconciledAt` + an
+  auditable `reconcile_adjustment` (zero-delta = timestamp only); manual-only; duplicate/concurrent
+  applies once; **Undo** restores the prior balance + appends `reconcile_reversal` (double-undo
+  blocked). **Projection** (pure engine) = actual + scheduled inflows − outflows by horizon (7d /
+  until-payday / 30d); never overwrites actual; only scheduled items project; received/paid/completed
+  never double-counted; unassigned + linked items surfaced/warned, never guessed; credit kept separate.
+  `/finances` gained actual-vs-projected cards + horizon selector + Forecast timeline + Reconcile panel;
+  Home shows Manual actual cash + projected + shortfall; `/manage` stays summary-only. Additive
+  migration `0008` (reviewed, applied). (Finance 1A.2 committed `22f5024`; 1A.3A `b6d7c6f`; 1A.1 `726c3e8`.)
+- **No further build is currently authorized.** The next finance gate is **Finance 1B** (read-only bank
+  connections — `financial_connections`, `balanceSource = linked` — replacing manual reconciliation, and
+  **matching manual movements against imported bank transactions** with owner approval for uncertain
+  matches). Other separately-gated directions remain: **Home 1B** (owner-triggered AI daily brief); a
+  settings UI for `intelligence_settings`; a close/archive workflow (`experience_request_status =
+  closed`); rule-based fallback recommendations; the application-wide visual redesign; a live
+  Sonnet/Haiku smoke test once the owner deliberately enables a key. None may begin without explicit
+  approval.
 
 > **Status note (verbatim, required while no live key is configured):** "Anthropic adapter
 > implemented and deterministically verified; live Anthropic invocation pending owner
@@ -108,6 +108,118 @@ specific build. Builds are ordered so the manual loop works end-to-end before an
 ---
 
 ## Latest handoff
+
+### Finance 1A.3B — reconciliation + projected balances — implemented — 2026-06-25
+
+**Task Completed**
+Implemented Finance 1A.3B on top of the finance ledger: manual-account reconciliation with an auditable
+adjustment + undo, and a deterministic account-aware projection (actual vs projected) with truthful
+forecast views. **No** Plaid / bank login / imported transactions / discretionary spending /
+recurring-bill materialization / credit-score / investments / tax / AI / automatic money movement. Not
+committed — awaiting owner review.
+
+**Repository state confirmed before implementing** — HEAD `22f5024` (Finance 1A.2), tree clean,
+`account_movements` present (bill/income/transfer ledger), no reconciliation workflow, no projection
+engine.
+
+**Schema & migration changes** — migration `0008_useful_vapor.sql` (additive only): `ALTER TYPE
+movement_kind ADD VALUE` `reconcile_adjustment` + `reconcile_reversal`; nullable `ADD COLUMN`
+`account_movements.prior_balance` + `new_balance`; nullable `financial_accounts.last_reconciled_at`.
+No `DROP`/`ALTER COLUMN TYPE`/rewrite/backfill/balance change. Reconciliation lives in the existing
+ledger (no new table) — the smallest auditable + reversible model.
+
+**Reconciliation & reversal lifecycle** — `reconcileAccount` (manual only; linked/inactive/foreign →
+FinanceError): reads the prior balance, and in ONE writable-CTE statement sets `current_balance` to the
+entered real balance + stamps `last_reconciled_at` + (when delta ≠ 0) appends a `reconcile_adjustment`
+movement (signed delta, `prior_balance`, `new_balance`). An **optimistic guard** (`WHERE current_balance
+= prior`) makes a duplicate/concurrent reconcile apply at most once (loser → 409). A zero delta only
+refreshes the timestamp. `reverseReconciliation` undoes the **latest unreversed** reconcile **while the
+balance is unchanged**: restores `prior_balance`, re-derives `last_reconciled_at` from the remaining
+unreversed reconciles, and appends a `reconcile_reversal` (original preserved; `reversal_of_id` unique
+index blocks double-undo).
+
+**Projection formulas & horizon rules** — pure `lib/services/finance-projection.ts`:
+`projectedBalance = actualBalance + Σ scheduled inflows − Σ scheduled outflows` within the horizon,
+all in integer-cent-safe arithmetic. Open bills reduce their **source** account; scheduled income
+increases its **single destination** or its **fixed→percent-of-remaining→remainder** split (same engine
+as receipt); scheduled **manual↔manual** transfers reduce source + increase destination (net zero). A
+per-account running "resulting balance" is computed in date order for the timeline. Horizons: **7d**,
+**until next payday** (soonest upcoming payday-flagged scheduled income, else soonest; **14-day
+deterministic fallback** when none), **30d**; default = until next payday. Totals: actual + projected
+cash, spendable actual + projected, savings/emergency actual + projected, credit liabilities (separate).
+
+**No-double-counting rules** — only `scheduled` income, `scheduled` transfers, and OPEN bills
+(scheduled/due/overdue) project. **Received** income, **paid** bills, and **completed/reversed**
+transfers already changed the actual balance and are excluded from the forecast.
+
+**Linked & unassigned-item behavior** — unassigned bills/income are listed in a "Not included in
+projections" panel + a warning, and never reduce/increase a guessed account. Linked-account scheduled
+items (linked source/destination) are excluded with an "awaiting future bank sync" warning. Credit
+liabilities stay separate from cash totals.
+
+**Concurrency/idempotency strategy** — single-statement writable CTEs on Neon HTTP. Reconcile uses an
+optimistic `current_balance = prior` guard; undo uses a balance-unchanged guard + the `reversal_of_id`
+unique index. Verified with real wall-clock `Promise.allSettled` races (reconcile + undo each apply
+once). Projection is pure and never writes, so it is inherently safe.
+
+**Exact files changed**
+- `db/schema.ts` (movement_kind values + `prior_balance`/`new_balance` + `last_reconciled_at`);
+  `db/migrations/0008_useful_vapor.sql` (+ `meta/0008_snapshot.json`, `_journal.json`).
+- `lib/types.ts` (`AccountView.lastReconciledAt`, `MovementView` prior/new, projection read-models +
+  `HomeMoney` actual/projected fields); `lib/services/finances.ts` (`reconcileAccount`,
+  `reverseReconciliation`, mapper updates); new `lib/services/finance-projection.ts` (pure engine).
+- API: new `app/api/finances/accounts/[id]/reconcile/route.ts` + `…/reconcile/undo/route.ts`.
+- UI: `components/finances/account-manager.tsx` (reconcile panel + last-reconciled + undo);
+  `app/finances/page.tsx` (Projected balances section + horizon selector + timeline + warnings);
+  `lib/services/home.ts` + `components/home/sections.tsx` (Manual actual cash + projected + shortfall);
+  `app/globals.css`.
+- Tests: new `scripts/verify-finance1a3b.ts`; updated `scripts/verify-finance1a.ts`,
+  `scripts/verify-finance1a3a.ts`, `scripts/verify-home1a.ts` (stale exclusions — see Known issues). Docs.
+
+**`/finances`, Home, and `/manage` behavior** — `/finances` shows a **Projected balances** section
+(horizon selector 7d / until-payday / 30d; actual-vs-projected totals + per-account cards with
+inflows/outflows + shortfall tags; a dated **Forecast timeline** with resulting projected balances; a
+**Not included in projections** panel for unassigned/linked items) and a per-account **Reconcile** panel
+(app balance, real-balance input, live adjustment preview, optional note, Undo). Home Money awareness
+shows **Manual actual cash** + **Projected (until next payday)** + bills-before-payday + overdue + a
+projected-shortfall flag, linking to `/finances` (never "safe to spend"). `/manage` Money remains a
+compact summary + link (no full finance management).
+
+**Testing completed** — `npm run typecheck` ✓; `npm run build` ✓ (incl. the reconcile routes).
+**`scripts/verify-finance1a3b.ts` — 46/46**: reconciliation (one adjustment + balance set + delta ±
+correct + prior/new auditable + timestamp + zero-delta truthful + linked/inactive/foreign rejected +
+duplicate/concurrent applies once + undo restores + double-undo blocked + originals preserved + control
+account untouched); projection (actual unchanged + open bill reduces source + paid not projected +
+unassigned not guessed + single & split income + received not projected + transfer source/dest + total
+cash invariant + completed not projected + linked excluded/warned + credit separate + 7d/payday/30d
+horizons + date math + shortfall + unassigned-risk warnings); UI/safety scans + no AI/usage log + owner
+data + no fabricated reconciliation + request 222 untouched + exact-ID cleanup. **End-to-end through the
+running server (authenticated HTTP):** seeded accounts/income/bills/transfer → projection HTML showed
+the section, actual-vs-projected totals, a $1,000 projected chk figure, the Forecast timeline, a
+projected-shortfall warning, and the unassigned bill in "Not included"; **actual balances unchanged**
+(500/1000/100); reconcile chk 500→480 (200, timestamp set) → undo → 500 (timestamp cleared) → duplicate
+undo 409. Temp records removed by exact id. **Regressions:** Finance 1A.1 68 / 1A.3A 63 / 1A.2 72 /
+Home 1A 56 / Manage-tasks 27 / Build 2A 136 / 2B.1 126 / 2B.2 60 — all green. **`npm run lint` not run**
+(interactive-only). **No AI/Anthropic call.**
+
+**Known issues / not tested**
+- The **pixel** preview browser wasn't driven for mutations (the dev server requires the owner password
+  and entering it in a browser tool call would expose the secret); verified end-to-end through the
+  running Next.js server over authenticated HTTP (projection SSR HTML + reconcile/undo API) + the
+  deterministic harness.
+- Updated stale assertions in three committed suites (disclosed): `verify-finance1a` (reconciliation
+  field/route + projected-balance "exclusions" removed — now added by 1A.3B; owner-bill check no longer
+  assumes ≥1 live bill), `verify-finance1a3a` (reconciliation "no kind/field" exclusions removed),
+  `verify-home1a` (Home money wording updated to "Manual actual cash" + projected). All three remain green.
+- A failed early smoke run left three "SM …" accounts in a prior build; this build's audit confirms **no
+  test-prefixed records remain** (only owner data: accounts #198/#199, both `lastReconciledAt=never`).
+- Linked-account reconciliation/projection are intentionally excluded (future bank sync); the
+  reconcile-undo restores the prior balance only while the balance is unchanged (an intervening ledger
+  event blocks the undo, by design).
+
+**Decisions needed** — owner review before commit. Finance 1B requires separate authorization.
+**Recommended next step** — owner reviews Finance 1A.3B; if approved, authorize the commit, then the
+Finance 1B (read-only bank connections + transaction matching) bounded task can be prepared.
 
 ### Finance 1A.2 — income splits + account transfers — implemented — 2026-06-25
 

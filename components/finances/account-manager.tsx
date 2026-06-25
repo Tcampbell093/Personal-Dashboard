@@ -46,8 +46,15 @@ const EMPTY: Draft = {
   active: true,
 };
 
-export function AccountManager({ accounts }: { accounts: AccountView[] }) {
+export function AccountManager({
+  accounts,
+  reconcilableIds = [],
+}: {
+  accounts: AccountView[];
+  reconcilableIds?: number[];
+}) {
   const router = useRouter();
+  const reconcilable = new Set(reconcilableIds);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [adding, setAdding] = useState(false);
@@ -103,11 +110,22 @@ export function AccountManager({ accounts }: { accounts: AccountView[] }) {
             <AccountCard
               key={a.id}
               account={a}
+              reversible={reconcilable.has(a.id)}
               pending={pending}
               onEdit={() => {
                 setEditingId(a.id);
                 setAdding(false);
               }}
+              onReconcile={(realBalance, note) =>
+                mutate(`/api/finances/accounts/${a.id}/reconcile`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ realBalance, note }),
+                })
+              }
+              onUndoReconcile={() =>
+                mutate(`/api/finances/accounts/${a.id}/reconcile/undo`, { method: "POST" })
+              }
               onDelete={() => {
                 if (
                   confirm(
@@ -150,18 +168,31 @@ export function AccountManager({ accounts }: { accounts: AccountView[] }) {
   );
 }
 
+function reconciledLabel(iso: string | null): string {
+  if (!iso) return "Not yet reconciled";
+  return `Last reconciled ${new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+}
+
 function AccountCard({
   account: a,
+  reversible,
   pending,
   onEdit,
+  onReconcile,
+  onUndoReconcile,
   onDelete,
 }: {
   account: AccountView;
+  reversible: boolean;
   pending: boolean;
   onEdit: () => void;
+  onReconcile: (realBalance: number, note: string | null) => Promise<boolean>;
+  onUndoReconcile: () => void;
   onDelete: () => void;
 }) {
+  const [reconciling, setReconciling] = useState(false);
   const balanceLabel = a.isLiability ? "Manual balance owed" : "Manual balance";
+  const isManual = a.balanceSource === "manual";
   return (
     <div className={`fin-acct${a.active ? "" : " inactive"}`}>
       <div className="fin-acct-top">
@@ -190,13 +221,85 @@ function AccountCard({
           <span className="fin-tag">{cap(a.balanceSource)}</span>
         )}
       </div>
+      <div className="fin-acct-reconciled sub">{reconciledLabel(a.lastReconciledAt)}</div>
       <div className="fin-acct-actions">
         <button className="linkbtn" onClick={onEdit} disabled={pending}>
           Edit
         </button>
+        {isManual && a.active && (
+          <button className="linkbtn" onClick={() => setReconciling((v) => !v)} disabled={pending}>
+            {reconciling ? "Close" : "Reconcile"}
+          </button>
+        )}
+        {isManual && reversible && (
+          <button className="linkbtn" onClick={onUndoReconcile} disabled={pending}
+            title="Undo the latest reconciliation and restore the prior balance">
+            Undo reconcile
+          </button>
+        )}
         <button className="linkbtn danger" onClick={onDelete} disabled={pending}>
           Remove
         </button>
+      </div>
+      {reconciling && (
+        <ReconcilePanel
+          account={a}
+          pending={pending}
+          onCancel={() => setReconciling(false)}
+          onConfirm={async (real, note) => {
+            if (await onReconcile(real, note)) setReconciling(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ReconcilePanel({
+  account: a,
+  pending,
+  onConfirm,
+  onCancel,
+}: {
+  account: AccountView;
+  pending: boolean;
+  onConfirm: (realBalance: number, note: string | null) => void;
+  onCancel: () => void;
+}) {
+  const [real, setReal] = useState<string>(String(a.currentBalance));
+  const [note, setNote] = useState("");
+  const realNum = Number(real);
+  const valid = real !== "" && Number.isFinite(realNum);
+  const delta = valid ? Math.round((realNum - a.currentBalance) * 100) / 100 : 0;
+  return (
+    <div className="fin-reconcile">
+      <div className="fin-reconcile-row">
+        <span className="k">App balance</span>
+        <span className="num">{money(a.currentBalance)}</span>
+      </div>
+      <label className="fin-field">
+        <span>Real bank balance</span>
+        <input type="number" step="0.01" value={real} onChange={(e) => setReal(e.target.value)} disabled={pending} />
+      </label>
+      <div className="fin-reconcile-row">
+        <span className="k">Adjustment</span>
+        <span className={`num ${delta < 0 ? "liab" : delta > 0 ? "good" : "muted"}`}>
+          {delta > 0 ? "+" : ""}{money(delta)}
+        </span>
+      </div>
+      <label className="fin-field">
+        <span>Note (optional)</span>
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. bank fee" disabled={pending} />
+      </label>
+      <div className="fin-form-actions">
+        <button className="btn" disabled={pending || !valid} onClick={() => onConfirm(realNum, note || null)}>
+          Confirm reconciliation
+        </button>
+        <button className="linkbtn" onClick={onCancel} disabled={pending}>Cancel</button>
+      </div>
+      <div className="fin-form-note">
+        Reconciling records an auditable adjustment and updates the manual actual
+        balance — it never overwrites your ledger history.
       </div>
     </div>
   );

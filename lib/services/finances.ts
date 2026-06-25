@@ -149,6 +149,7 @@ export function toAccountViews(
       active: r.active ?? true,
       isCash: isCashType(type),
       isLiability: isLiabilityType(type),
+      lastReconciledAt: r.lastReconciledAt ? r.lastReconciledAt.toISOString() : null,
     };
   });
 }
@@ -541,6 +542,8 @@ export async function listMovements(userId: number, limit = 12) {
       transferId: accountMovements.transferId,
       kind: accountMovements.kind,
       amount: accountMovements.amount,
+      priorBalance: accountMovements.priorBalance,
+      newBalance: accountMovements.newBalance,
       occurredAt: accountMovements.occurredAt,
     })
     .from(accountMovements)
@@ -566,6 +569,8 @@ export function toMovementViews(
     transferId: r.transferId ?? null,
     kind: r.kind,
     amount: num(r.amount),
+    priorBalance: r.priorBalance != null ? num(r.priorBalance) : null,
+    newBalance: r.newBalance != null ? num(r.newBalance) : null,
     occurredAt:
       r.occurredAt instanceof Date ? r.occurredAt.toISOString() : String(r.occurredAt),
   }));
@@ -861,6 +866,160 @@ export async function reverseIncomeReceipt(userId: number, id: number) {
 }
 
 export { requireCashAccount };
+
+/* ============================ Finance 1A.3B: reconciliation ledger ========== */
+
+/** Account ids whose latest reconciliation is CURRENTLY reversible — i.e. there
+ * is an unreversed `reconcile_adjustment` whose `occurred_at` still equals the
+ * account's `lastReconciledAt` and whose `new_balance` still equals the current
+ * balance (exactly the reverseReconciliation guard). A later reconcile (incl. a
+ * zero-delta verification) advances `lastReconciledAt` and drops the account, so
+ * the UI never offers Undo for an event the server would reject. */
+export async function getReconcilableAccountIds(userId: number): Promise<number[]> {
+  const res = await db.execute(sql`
+    SELECT m.account_id AS id
+      FROM account_movements m
+      JOIN financial_accounts fa ON fa.id = m.account_id
+     WHERE m.user_id = ${userId} AND m.kind = 'reconcile_adjustment'
+       AND fa.user_id = ${userId} AND fa.deleted_at IS NULL AND fa.balance_source = 'manual'
+       AND fa.last_reconciled_at = m.occurred_at
+       AND fa.current_balance = m.new_balance
+       AND NOT EXISTS (SELECT 1 FROM account_movements r WHERE r.reversal_of_id = m.id)
+  `);
+  return (res.rows ?? []).map((r) => Number((r as { id: unknown }).id));
+}
+
+/**
+ * Reconcile a manual account to the real bank balance. Atomically sets the
+ * actual balance to `realBalance`, stamps `lastReconciledAt`, and — when the
+ * delta is non-zero — appends ONE append-only `reconcile_adjustment` movement
+ * recording the signed delta + prior/new balance. A zero delta updates only the
+ * timestamp (no meaningless movement). Optimistic guard (`current_balance =
+ * prior`) makes a duplicate/concurrent reconcile apply at most once: the loser
+ * matches 0 rows. Never deletes or rewrites prior movements.
+ *
+ * Returns the updated account, or null on a stale/concurrent conflict. Throws
+ * FinanceError for linked/inactive/missing accounts.
+ */
+export async function reconcileAccount(
+  userId: number,
+  id: number,
+  realBalance: number,
+  note?: string | null,
+) {
+  const account = await getAccount(userId, id);
+  if (!account) throw new FinanceError(404, "Account not found.");
+  if (account.balanceSource !== "manual")
+    throw new FinanceError(
+      400,
+      "Only manual accounts can be reconciled — a linked balance is bank-authoritative.",
+    );
+  if (account.active === false) throw new FinanceError(400, "That account is inactive.");
+
+  const prior = num(account.currentBalance);
+  const real = Math.round(realBalance * 100) / 100;
+  const delta = Math.round((real - prior) * 100) / 100;
+  const priorStr = prior.toFixed(2), realStr = real.toFixed(2), deltaStr = delta.toFixed(2);
+  const noteVal = note && note.trim() ? note.trim() : null;
+
+  const res = await db.execute(sql`
+    WITH upd AS (
+      UPDATE financial_accounts
+         SET current_balance = ${realStr}::numeric, last_reconciled_at = now(),
+             balance_updated_at = now(), updated_at = now()
+       WHERE id = ${id} AND user_id = ${userId} AND deleted_at IS NULL
+         AND balance_source = 'manual' AND active = true
+         AND current_balance = ${priorStr}::numeric
+      RETURNING id
+    ),
+    mov AS (
+      INSERT INTO account_movements
+        (user_id, account_id, kind, amount, prior_balance, new_balance, note, occurred_at, created_at)
+      SELECT ${userId}, ${id}, 'reconcile_adjustment', ${deltaStr}::numeric,
+             ${priorStr}::numeric, ${realStr}::numeric, ${noteVal}, now(), now()
+       WHERE EXISTS (SELECT 1 FROM upd) AND ${deltaStr}::numeric <> 0
+      RETURNING id
+    )
+    SELECT (SELECT id FROM upd) AS acct, (SELECT id FROM mov) AS mov
+  `);
+  const row = (res.rows ?? [])[0] as { acct: unknown } | undefined;
+  if (!row || row.acct == null) return null; // stale prior / concurrent change
+  return getAccount(userId, id);
+}
+
+/**
+ * Undo the LATEST unreversed reconciliation for a manual account: restores the
+ * prior balance, restores `lastReconciledAt` to the previous unreversed
+ * reconcile (or null), and appends an equal-and-opposite `reconcile_reversal`
+ * movement pointing at the original (never deleted). Only allowed while it is
+ * the latest reconcile AND the balance still equals the reconciled value (so an
+ * intervening ledger event blocks the undo). The `reversal_of_id` unique index
+ * makes a duplicate/concurrent undo impossible.
+ *
+ * Returns the restored account, or null if there is nothing safely reversible.
+ */
+export async function reverseReconciliation(userId: number, id: number) {
+  const account = await getAccount(userId, id);
+  if (!account) throw new FinanceError(404, "Account not found.");
+  if (account.balanceSource !== "manual")
+    throw new FinanceError(400, "Only manual accounts can be reconciled.");
+  const note = "Reconciliation undone";
+  try {
+    const res = await db.execute(sql`
+      WITH target AS (
+        SELECT m.id, m.amount, m.prior_balance, m.new_balance, m.occurred_at
+          FROM account_movements m
+         WHERE m.account_id = ${id} AND m.user_id = ${userId} AND m.kind = 'reconcile_adjustment'
+           AND NOT EXISTS (SELECT 1 FROM account_movements r WHERE r.reversal_of_id = m.id)
+         ORDER BY m.id DESC LIMIT 1
+      ),
+      guard AS (
+        -- Reversible only when the adjustment is the latest unreversed one AND the
+        -- balance is unchanged AND lastReconciledAt still points at THIS adjustment
+        -- (so a later reconcile — including a zero-delta verification — makes it
+        -- ineligible). Timestamps are compared in SQL: both were written from the
+        -- same statement now(), so equality is exact and serialization-robust.
+        SELECT t.* FROM target t
+         WHERE EXISTS (
+           SELECT 1 FROM financial_accounts fa
+            WHERE fa.id = ${id} AND fa.user_id = ${userId} AND fa.deleted_at IS NULL
+              AND fa.balance_source = 'manual' AND fa.current_balance = t.new_balance
+              AND fa.last_reconciled_at = t.occurred_at
+         )
+      ),
+      restore AS (
+        UPDATE financial_accounts fa
+           SET current_balance = (SELECT prior_balance FROM guard),
+               last_reconciled_at = (
+                 SELECT m2.occurred_at FROM account_movements m2
+                  WHERE m2.account_id = ${id} AND m2.user_id = ${userId}
+                    AND m2.kind = 'reconcile_adjustment' AND m2.id <> (SELECT id FROM guard)
+                    AND NOT EXISTS (SELECT 1 FROM account_movements r WHERE r.reversal_of_id = m2.id)
+                  ORDER BY m2.id DESC LIMIT 1
+               ),
+               balance_updated_at = now(), updated_at = now()
+         WHERE fa.id = ${id} AND EXISTS (SELECT 1 FROM guard)
+        RETURNING fa.id
+      ),
+      rev AS (
+        INSERT INTO account_movements
+          (user_id, account_id, kind, amount, prior_balance, new_balance, reversal_of_id, note, occurred_at, created_at)
+        SELECT ${userId}, ${id}, 'reconcile_reversal', -(SELECT amount FROM guard),
+               (SELECT new_balance FROM guard), (SELECT prior_balance FROM guard),
+               (SELECT id FROM guard), ${note}, now(), now()
+         WHERE EXISTS (SELECT 1 FROM guard) AND EXISTS (SELECT 1 FROM restore)
+        RETURNING id
+      )
+      SELECT (SELECT id FROM restore) AS acct, (SELECT id FROM rev) AS rev
+    `);
+    const row = (res.rows ?? [])[0] as { acct: unknown } | undefined;
+    if (!row || row.acct == null) return null;
+    return getAccount(userId, id);
+  } catch (err) {
+    if (String(err).includes("account_movements_reversal_uq")) return null;
+    throw err;
+  }
+}
 
 export async function createIncome(input: NewIncome) {
   const [row] = await db.insert(incomeEntries).values(input).returning();

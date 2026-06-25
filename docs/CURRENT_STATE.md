@@ -4,7 +4,7 @@
 > after every substantive change (see `CLAUDE.md`). For the durable product vision, see
 > `docs/PRODUCT_VISION.md`.
 
-**Last updated:** 2026-06-25 · **Reflects branch:** `main` (Finance 1A.2 implemented, uncommitted)
+**Last updated:** 2026-06-25 · **Reflects branch:** `main` (Finance 1A.3B implemented, uncommitted)
 
 ## Status legend
 
@@ -241,9 +241,37 @@ spendable). `/manage`
   transactions / discretionary spending / reconciliation / projection / AI. **Owner data untouched**;
   ID-scoped cleanup; request 222 untouched; no usage log. Finance 1A.1 (76) / 1A.3A (70) / Home 1A
   (56) / Manage-tasks (27) / Build 2A (136) / 2B.1 (126) / 2B.2 (60) regress green.
+- **Finance 1A.3B — reconciliation + projected balances**, verified **deterministically**
+  (`scripts/verify-finance1a3b.ts`, **46/46**, reconciliation via real routes + services vs real
+  Neon incl. concurrency; projection via the pure engine with constructed views) and **end-to-end
+  through the running server** (authenticated HTTP: projection HTML across horizons + reconcile/undo).
+  **Reconciliation:** the owner enters the real bank balance; the app atomically sets the manual
+  actual balance, stamps `lastReconciledAt`, and appends one append-only **`reconcile_adjustment`**
+  movement recording the signed delta + prior/new balance (a zero-delta only refreshes the timestamp).
+  Manual accounts only (linked/inactive/foreign rejected); an optimistic balance guard makes a
+  duplicate/concurrent reconcile apply at most once. **Undo** restores the prior balance + prior
+  timestamp and appends a **`reconcile_reversal`** (original never deleted; double-undo blocked).
+  **Projection** (pure `lib/services/finance-projection.ts`) = actual + scheduled inflows − scheduled
+  outflows within a horizon (**7 days / until next payday / 30 days**, default *until next payday* with
+  a 14-day fallback). It **never** overwrites actual balances and a projected figure is never called
+  current/live/available/safe-to-spend. Only **scheduled** items project; paid bills, received income,
+  and completed/reversed transfers are already in actual and are **never counted twice**. Unassigned
+  bills/income are surfaced (never guessed into an account); linked-account items are excluded with a
+  truthful warning; credit liabilities stay separate from cash; internal transfers net to zero.
+  Deterministic warnings (projected shortfall, unassigned bill/income, linked-not-projected) each
+  explain themselves. `/finances` gained per-account **actual vs projected** cards + a horizon
+  selector + a **Forecast timeline** + a **Reconcile** panel (with adjustment preview + Undo); Home
+  Money awareness now shows **Manual actual cash** + a **projected** figure + a shortfall flag (never
+  "safe to spend"); `/manage` stays summary-only. Additive migration `0008_useful_vapor.sql`
+  (`ALTER TYPE ADD VALUE` ×2 + 3 nullable `ADD COLUMN`; no rewrite, no backfill, no balance change).
+  **No** Plaid / bank login / imported transactions / discretionary spending / recurring-bill
+  materialization / AI. **Owner data untouched** (no fabricated reconciliation); ID-scoped cleanup;
+  request 222 untouched; no usage log. Finance 1A.1 (68) / 1A.3A (63) / 1A.2 (72) / Home 1A (56) /
+  Manage-tasks (27) / Build 2A (136) / 2B.1 (126) / 2B.2 (60) regress green.
 - **`npm run typecheck` and `npm run build`** pass on the current code (the build includes the
   Home `/`, `/manage`, `/finances`, the bill `pay`/`reverse` routes, the income `receive`/`reverse`
-  + `transfers` routes, and the `/interpret`, `/recommend`, `/select-recommendation` routes).
+  + `transfers` routes, the account `reconcile`/`reconcile/undo` routes, and the `/interpret`,
+  `/recommend`, `/select-recommendation` routes).
 
 ## 🟡 Partially implemented
 

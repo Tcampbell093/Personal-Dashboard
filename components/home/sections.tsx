@@ -115,17 +115,15 @@ export function MoneyAwareness({ section }: { section: HomeSection<HomeMoney> })
         <Unavailable note="Money awareness is temporarily unavailable." />
       ) : (
         <>
-          <div className="home-figure num">{money(section.data!.estimatedRemaining)}</div>
-          <div className="home-figure-note">
-            Estimated remaining from manually entered balances
+          <div className="home-figure num">{money(section.data!.manualActualCash)}</div>
+          <div className="home-figure-note">Manual actual cash (entered, now)</div>
+          <div className="home-statline num">
+            <span>{section.data!.projectionHorizonLabel} (projected)</span>
+            <span>{money(section.data!.projectedCash)}</span>
           </div>
           <div className="home-statline num">
             <span>Bills before payday</span>
             <span>{money(section.data!.billsDueBeforePayday)}</span>
-          </div>
-          <div className="home-statline num">
-            <span>Due in 30 days</span>
-            <span>{money(section.data!.due30)}</span>
           </div>
           <div className="home-statline num">
             <span>Overdue bills</span>
@@ -133,6 +131,12 @@ export function MoneyAwareness({ section }: { section: HomeSection<HomeMoney> })
               {section.data!.overdueCount}
             </span>
           </div>
+          {section.data!.hasShortfall && (
+            <div className="home-statline num">
+              <span className="act">⚠ Projected account shortfall</span>
+              <span className="act">see /finances</span>
+            </div>
+          )}
           {section.data!.dueBills.length > 0 && (
             <ul className="home-list home-bills">
               {section.data!.dueBills.map((b) => (

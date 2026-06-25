@@ -53,6 +53,7 @@ export interface AccountView {
   // True for checking/savings/cash; false for credit (a liability) and other.
   isCash: boolean;
   isLiability: boolean; // true for credit accounts
+  lastReconciledAt: string | null; // Finance 1A.3B: when last verified vs the bank (ISO)
 }
 
 /** Finance 1A.1 cash/liability rollups. Every figure is from manually entered
@@ -92,9 +93,70 @@ export interface MovementView {
   incomeId: number | null;
   incomeSource: string | null;
   transferId: number | null;
-  kind: string; // bill_payment(_reversal) | income_received | income_reversal | transfer_(out|in)(_reversal)
+  kind: string; // bill_payment(_reversal) | income_received | income_reversal | transfer_(out|in)(_reversal) | reconcile_(adjustment|reversal)
   amount: number; // signed
+  priorBalance: number | null; // Finance 1A.3B: reconcile audit (balance before)
+  newBalance: number | null; // Finance 1A.3B: reconcile audit (balance after)
   occurredAt: string; // ISO
+}
+
+/* --- Finance 1A.3B: account-aware projection (deterministic forecast) -------- */
+
+export type ProjectionHorizon = "7d" | "payday" | "30d";
+
+/** Per-account actual vs projected balance within the selected horizon. */
+export interface AccountProjection {
+  accountId: number;
+  name: string;
+  type: string;
+  balanceSource: string;
+  isCash: boolean;
+  isLiability: boolean;
+  includeInSpendable: boolean;
+  purpose: string;
+  actualBalance: number;
+  scheduledInflows: number; // within horizon (manual accounts only)
+  scheduledOutflows: number;
+  projectedBalance: number; // actual + inflows − outflows
+  belowZero: boolean; // projected < 0
+}
+
+/** One dated event in the forecast timeline. `amount` is signed for the account. */
+export interface ForecastItem {
+  date: string | null;
+  kind: string; // income | bill | transfer_out | transfer_in
+  accountId: number | null;
+  accountName: string | null;
+  amount: number;
+  label: string;
+  resultingBalance: number | null; // running projected balance for that account, if computable
+}
+
+export interface ProjectionWarning {
+  code: string;
+  message: string;
+}
+
+export interface FinanceProjection {
+  horizon: ProjectionHorizon;
+  horizonLabel: string;
+  horizonDate: string;
+  nextPaydayDate: string | null;
+  accounts: AccountProjection[];
+  items: ForecastItem[];
+  totals: {
+    totalActualCash: number;
+    totalProjectedCash: number;
+    spendableActualCash: number;
+    spendableProjectedCash: number;
+    savingsEmergencyActual: number;
+    savingsEmergencyProjected: number;
+    creditLiabilities: number;
+  };
+  warnings: ProjectionWarning[];
+  unassignedBills: { id: number; name: string; amount: number; dueDate: string | null }[];
+  unassignedIncome: { id: number; source: string; amount: number; payDate: string }[];
+  linkedSkipped: { kind: string; label: string }[];
 }
 
 export interface AllocationView {
@@ -300,6 +362,11 @@ export interface HomeMoney {
   nextPaydayDate: string | null;
   /** Next few unpaid bills (for the one direct action: mark paid). */
   dueBills: BillView[];
+  // Finance 1A.3B: truthful actual vs projected for the default horizon.
+  manualActualCash: number;
+  projectedCash: number;
+  projectionHorizonLabel: string;
+  hasShortfall: boolean;
 }
 
 export interface HomeMomentum {

@@ -19,9 +19,18 @@ import { localToday } from "@/lib/time";
 import { listObligations, toObligationViews } from "@/lib/services/obligations";
 import {
   computeFinancialOutlook,
+  listAccounts,
+  toAccountViews,
+  computeCashSummary,
   listBills,
   toBillViews,
+  listIncome,
+  toIncomeViews,
+  listAllocations,
+  allocationsByIncome,
 } from "@/lib/services/finances";
+import { listTransfers, toTransferViews } from "@/lib/services/transfers";
+import { computeProjection } from "@/lib/services/finance-projection";
 import {
   listPlanned,
   listHistory,
@@ -132,10 +141,20 @@ async function loadComingUp(userId: number): Promise<HomeComingItem[]> {
 }
 
 async function loadMoney(userId: number): Promise<HomeMoney> {
-  const [outlook, bills] = await Promise.all([
+  const [outlook, accounts, bills, incomeRows, allocRows, transfers] = await Promise.all([
     computeFinancialOutlook(userId),
+    listAccounts(userId).then(toAccountViews),
     listBills(userId).then(toBillViews),
+    listIncome(userId),
+    listAllocations(userId),
+    listTransfers(userId).then(toTransferViews),
   ]);
+  const income = toIncomeViews(incomeRows, allocationsByIncome(allocRows));
+  const cash = computeCashSummary(accounts);
+  // Default Home horizon: "until next payday" (falls back to 14 days when none).
+  const projection = computeProjection({
+    accounts, bills, income, transfers, horizon: "payday", today: localToday(),
+  });
   const dueBills = bills
     .filter((b) => b.status !== "paid")
     .sort((a, b) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"))
@@ -149,6 +168,10 @@ async function loadMoney(userId: number): Promise<HomeMoney> {
     due30: outlook.due30,
     nextPaydayDate: outlook.nextPaydayDate,
     dueBills,
+    manualActualCash: cash.totalActualCash,
+    projectedCash: projection.totals.totalProjectedCash,
+    projectionHorizonLabel: projection.horizonLabel,
+    hasShortfall: projection.warnings.some((w) => w.code === "shortfall"),
   };
 }
 

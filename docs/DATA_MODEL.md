@@ -21,7 +21,8 @@
 `importance`, `bill_status`, `balance_source` (Finance 1A.1: `manual`|`linked`),
 `movement_kind` (Finance 1A.3A: `bill_payment`|`bill_payment_reversal`; Finance 1A.2 adds
 `income_received`|`income_reversal`|`transfer_out`|`transfer_in`|`transfer_out_reversal`|
-`transfer_in_reversal`), `income_status` (1A.2: `scheduled`|`received`|`cancelled`),
+`transfer_in_reversal`; Finance 1A.3B adds `reconcile_adjustment`|`reconcile_reversal`),
+`income_status` (1A.2: `scheduled`|`received`|`cancelled`),
 `allocation_type` (1A.2: `fixed`|`percent`|`remainder`), `transfer_status` (1A.2:
 `scheduled`|`completed`|`reversed`|`cancelled`), `signal_type`,
 `signal_status`, `opportunity_category`,
@@ -114,9 +115,24 @@
   Source ≠ destination, amount > 0, both owned/active/non-credit; an internal transfer is never income
   or spending and **never changes total owned cash**.
 - **`account_movements`** also gained **`incomeId`** + **`transferId`** FK references (1A.2) alongside
-  the existing `billId` — exactly one is set per row, matching `kind`. Income receipt and transfer
-  completion/reversal append rows here exactly like bill payments; reversals link via `reversalOfId`
-  and the partial unique index still guarantees no double credit/debit.
+  the existing `billId` — exactly one is set per row (or none, for reconciliation), matching `kind`.
+  Income receipt and transfer completion/reversal append rows here exactly like bill payments;
+  reversals link via `reversalOfId` and the partial unique index still guarantees no double credit/debit.
+  **Finance 1A.3B** added **`priorBalance`** + **`newBalance`** (set only on `reconcile_*` rows — the
+  manual actual balance before/after the adjustment, enabling a safe reversal); `financial_accounts`
+  gained **`lastReconciledAt`** (when the manual balance was last verified vs the bank; null = never).
+  Reconciliation is modeled in this one ledger (no separate table) — the smallest auditable, reversible
+  model: a `reconcile_adjustment` carries the signed delta + prior/new balance; its `reconcile_reversal`
+  restores `priorBalance` and re-derives `lastReconciledAt` from the remaining unreversed reconciles.
+
+**Account-aware projection (Finance 1A.3B) — read-model, NO schema.** `lib/services/finance-projection.ts`
+is a pure function: `projected = actual + scheduled inflows − scheduled outflows` within a horizon
+(`7d` / `payday` / `30d`). It NEVER writes the DB or overwrites `currentBalance`. Only **scheduled**
+items project (open bills by source account; scheduled income via single destination or the
+fixed→percent-of-remaining→remainder split used at receipt; scheduled manual↔manual transfers, net
+zero). Paid bills, received income, and completed/reversed transfers are already in the actual balance
+and are never counted again. Unassigned bills/income are surfaced (never guessed into an account);
+linked-account items are excluded with a warning; credit liabilities stay separate from cash.
 
 **Finance roadmap:**
 - **1A.2 — DONE** — account-linked & **split income** (fixed → percent-of-remaining → remainder,
@@ -127,9 +143,15 @@
 - **1A.3A — DONE** — the **manual bill-payment ledger** (`account_movements`): paying a bill from a
   manual account atomically deducts it + appends a movement; reversal credits it back + appends an
   equal positive movement; idempotent/concurrency-safe; no double spend or double credit.
-- **1A.3 (remainder)** — extend the ledger so **receiving income** and **completing a transfer** also
-  move actual balances; **reconciliation** (set actual to the real balance, with an audit adjustment);
-  and **account-aware projection** replacing the legacy `estimatedRemaining`.
+- **1A.3A — DONE** — manual bill-payment ledger (see above).
+- **1A.3B — DONE** — manual-account **reconciliation** (set actual to the real bank balance with an
+  auditable `reconcile_adjustment` + undo) and deterministic **account-aware projection** (actual +
+  scheduled inflows − scheduled outflows by horizon). The legacy `estimatedRemaining` remains as a
+  compatibility figure on `/manage`; Home + `/finances` now lead with truthful actual-vs-projected.
+- **1B (future)** — read-only bank connections (`balanceSource = linked`) **replace manual
+  reconciliation**; imported transactions confirm bills/income/transfers; manual movements must not
+  duplicate imported transactions; matching attaches evidence to scheduled records, with owner
+  approval for uncertain matches.
 - **1B** — a separate **`financial_connections`** model for read-only bank links (`balanceSource =
   linked`); connection health lives there, not on the account row.
 
@@ -248,9 +270,10 @@ The UI never depends on Drizzle row types. View models live in `lib/types.ts`
 (`TaskView`, `ObligationView`, `FinancialOutlook`, `AccountView` (Finance 1A.1: +institution,
 purpose, balanceSource, includeInSpendable, active, isCash, isLiability), `CashSummary`,
 `BillView` (+sourceAccountId, paidAccountId, and Finance 1A.3A: actualAmount, paidAt),
-`MovementView` (1A.3A; 1A.2 adds incomeId/incomeSource/transferId), `IncomeView` (1A.2:
-+status/actualAmount/receivedAt/destinationAccountId/allocations), `AllocationView` + `TransferView`
-(1A.2), `SignalView`, `OpportunityView`,
+`MovementView` (1A.3A; 1A.2 adds incomeId/incomeSource/transferId; 1A.3B adds priorBalance/newBalance),
+`IncomeView` (1A.2: +status/actualAmount/receivedAt/destinationAccountId/allocations), `AllocationView`
++ `TransferView` (1A.2), `AccountView.lastReconciledAt` + the projection read-models `FinanceProjection`
+/ `AccountProjection` / `ForecastItem` / `ProjectionWarning` (1A.3B), `SignalView`, `OpportunityView`,
 `JobView`, `InterestItemView`,
 `ExperienceRequestView`, `ExperienceView`, `ExperienceXpSummary`, `Briefing`,
 `DashboardData`). Service-layer `to*Views()` functions map rows → view models.

@@ -373,6 +373,48 @@
   scheduled→complete→reverse transfer, SSR HTML confirmed). No AI / no usage log. Finance 1A.1 / 1A.3A
   / Home 1A / Manage-tasks / Build 2A / 2B.1 / 2B.2 regress green.
 
+### ADR-024 — Finance 1A.3B: reconciliation + deterministic projection (actual vs projected)
+- **Classification:** Owner-approved decision (owner approved the Finance 1A.3B scope and behavior).
+- **Detail:** Adds manual-account reconciliation and a separate, deterministic projection. Scope
+  excludes Plaid, bank login, imported transactions, discretionary spending, recurring-bill
+  materialization, credit-score/investments/tax, AI, and automatic money movement.
+  - **Reconciliation model (smallest auditable):** kept in the one `account_movements` ledger — a
+    `reconcile_adjustment` row carries the signed delta + `prior_balance`/`new_balance`;
+    `financial_accounts.last_reconciled_at` records the verify time. No separate reconciliation table.
+    Reconcile atomically sets the actual balance to the entered real balance, stamps the timestamp, and
+    appends the adjustment (a **zero delta** only refreshes the timestamp — no meaningless movement).
+    Manual accounts only (linked/inactive/foreign rejected); an **optimistic balance guard**
+    (`current_balance = prior`) makes a duplicate/concurrent reconcile apply at most once. **Undo**
+    (only the latest unreversed reconcile, and only while the balance is unchanged) restores
+    `prior_balance`, re-derives `last_reconciled_at` from the remaining unreversed reconciles, and
+    appends a `reconcile_reversal` (original never deleted; `reversal_of_id` unique index blocks
+    double-undo). Never fabricates reconciliation for historical balance edits.
+  - **Actual vs projected:** projection is a **pure read-model** (`lib/services/finance-projection.ts`),
+    never writes the DB and never overwrites `currentBalance`. `projected = actual + scheduled inflows −
+    scheduled outflows` within a horizon. A projected figure is never labeled current/live/available/
+    safe-to-spend.
+  - **No double-counting:** only SCHEDULED items project. Paid bills, received income, and
+    completed/reversed transfers already live in the actual balance and are excluded. Internal
+    manual↔manual transfers net to zero across owned cash.
+  - **Unassigned + linked:** unassigned bills/income are surfaced (warnings) and never guessed into an
+    account; linked-account scheduled items are excluded with a truthful "awaiting bank sync" warning;
+    credit liabilities stay separate from cash; scheduled credit-card payments reduce the paying cash
+    account, not a credit "available" figure.
+  - **Horizons:** 7 days / until next payday / 30 days; default **until next payday** (deterministic
+    14-day fallback when no future payday). The chosen horizon is visible and switchable.
+  - **Warnings:** deterministic + self-explaining (projected shortfall / below $0, unassigned bill,
+    income destination not assigned, transfer involving linked account) — no AI ranking or advice.
+  - **Migration:** additive only (`0008_useful_vapor.sql` — `ALTER TYPE ADD VALUE` ×2 + 3 nullable
+    `ADD COLUMN`; no rewrite/backfill/balance change).
+  - **Future (recorded, not implemented):** linked-account balances will replace manual reconciliation;
+    imported transactions will confirm bills/income/transfers; manual movements must not duplicate
+    imported transactions; matching attaches evidence to scheduled records; uncertain matches require
+    owner approval.
+- **Evidence:** `scripts/verify-finance1a3b.ts` (46/46, reconciliation via real routes + services incl.
+  concurrency; projection via the pure engine) + authenticated end-to-end HTTP (projection HTML across
+  horizons, reconcile/undo, actual balances unchanged by projection). No AI / no usage log. Finance
+  1A.1 / 1A.3A / 1A.2 / Home 1A / Manage-tasks / Build 2A / 2B.1 / 2B.2 regress green.
+
 ---
 
 ## Open decisions — `[DECISION NEEDED]`

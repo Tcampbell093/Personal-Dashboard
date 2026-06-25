@@ -178,7 +178,8 @@ async function main() {
   /* ---- 5. Wording + truthfulness (text scans) ----------------------- */
   console.log("\n[5] wording + truthfulness");
   const forbidden = ["safe to spend", "disposable income", "available balance", "live balance"];
-  ok("[5] money wording present ('manually entered balances')", /manually entered balances/i.test(sectionsSrc));
+  // Finance 1A.3B updated Home Money to actual + projected (truthful wording).
+  ok("[5] money wording present ('Manual actual cash' + projected)", /manual actual cash/i.test(sectionsSrc) && /projected/i.test(sectionsSrc));
   ok("[5] no forbidden money labels", forbidden.every((p) => !sectionsSrc.toLowerCase().includes(p)));
   const homeSrc = readFileSync("lib/services/home.ts", "utf8");
   ok("[5] Home excludes experimental verticals in code", !/\b(signals?|opportunit|jobs?|interest)\b/i.test(sectionsSrc + homeSrc));

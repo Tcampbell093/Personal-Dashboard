@@ -1,13 +1,14 @@
-/* /finances — the dedicated money workspace (Finance 1A.1 + 1A.3A + 1A.2).
+/* /finances — the dedicated money workspace (Finance 1A.1 + 1A.3A + 1A.2 + 1A.3B).
  *
- * Account-aware manual finance: accounts with truthful cash/liability totals,
- * bills grouped by paying account, income (single or split) you receive into
- * your accounts, transfers between owned accounts, and an append-only activity
- * ledger. Every figure comes from manually entered actual balances. This page
- * never presents a projected number as if it were a current or spendable-now
- * balance — account-aware projection arrives in a later Finance build. */
+ * Account-aware manual finance: accounts with truthful cash/liability totals +
+ * manual reconciliation, bills grouped by paying account, income (single or
+ * split), transfers, an append-only activity ledger, and a DETERMINISTIC
+ * projection (actual + scheduled inflows − scheduled outflows within a horizon).
+ * Actual balances are always manually entered; projected balances are clearly
+ * separate and are never called current / live / available / safe-to-spend. */
 
 import { getCurrentUserId } from "@/lib/auth";
+import { localToday } from "@/lib/time";
 import {
   listAccounts,
   toAccountViews,
@@ -20,15 +21,29 @@ import {
   computeCashSummary,
   listMovements,
   toMovementViews,
+  getReconcilableAccountIds,
 } from "@/lib/services/finances";
 import { listTransfers, toTransferViews } from "@/lib/services/transfers";
+import { computeProjection } from "@/lib/services/finance-projection";
 import { isAuthConfigured } from "@/lib/session";
 import { LogoutButton } from "@/components/logout-button";
 import { AccountManager } from "@/components/finances/account-manager";
 import { BillManager } from "@/components/finances/bill-manager";
 import { IncomeManager } from "@/components/finances/income-manager";
 import { TransferManager } from "@/components/finances/transfer-manager";
-import type { MovementView } from "@/lib/types";
+import type { MovementView, ProjectionHorizon, ForecastItem } from "@/lib/types";
+
+const HORIZONS: { key: ProjectionHorizon; label: string }[] = [
+  { key: "7d", label: "7 days" },
+  { key: "payday", label: "Until next payday" },
+  { key: "30d", label: "30 days" },
+];
+const FORECAST_LABEL: Record<string, string> = {
+  income: "Income",
+  bill: "Bill",
+  transfer_out: "Transfer out",
+  transfer_in: "Transfer in",
+};
 
 const MOVEMENT_LABEL: Record<string, string> = {
   bill_payment: "Bill payment",
@@ -55,6 +70,10 @@ export const dynamic = "force-dynamic";
 function money(n: number): string {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
+function dayLabel(iso: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
 function whenLabel(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {
     month: "short",
@@ -80,24 +99,33 @@ function Header() {
   );
 }
 
-export default async function FinancesPage() {
+export default async function FinancesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ horizon?: string }>;
+}) {
   const userId = await getCurrentUserId();
+  const sp = await searchParams;
+  const horizon: ProjectionHorizon =
+    sp.horizon === "7d" ? "7d" : sp.horizon === "30d" ? "30d" : "payday";
 
-  let accounts, bills, income, transfers, movements;
+  let accounts, bills, income, transfers, movements, reconcilableIds;
   try {
-    const [accts, billRows, incomeRows, allocRows, transferRows, movementRows] = await Promise.all([
+    const [accts, billRows, incomeRows, allocRows, transferRows, movementRows, recIds] = await Promise.all([
       listAccounts(userId).then(toAccountViews),
       listBills(userId).then(toBillViews),
       listIncome(userId),
       listAllocations(userId),
       listTransfers(userId).then(toTransferViews),
       listMovements(userId, 12).then(toMovementViews),
+      getReconcilableAccountIds(userId),
     ]);
     accounts = accts;
     bills = billRows;
     income = toIncomeViews(incomeRows, allocationsByIncome(allocRows));
     transfers = transferRows;
     movements = movementRows;
+    reconcilableIds = recIds;
   } catch (err) {
     // Explicit error state — never fabricate placeholder balances.
     console.error("FinancesPage: load failed.", err);
@@ -114,6 +142,7 @@ export default async function FinancesPage() {
   }
 
   const summary = computeCashSummary(accounts);
+  const projection = computeProjection({ accounts, bills, income, transfers, horizon, today: localToday() });
   const accountOptions = accounts
     .filter((a) => a.active)
     .map((a) => ({ id: a.id, name: a.name, linked: a.balanceSource !== "manual" }));
@@ -187,7 +216,129 @@ export default async function FinancesPage() {
           <span className="tier-name">Accounts</span>
           <span className="tier-sub">manual balances you keep up to date</span>
         </div>
-        <AccountManager accounts={accounts} />
+        <AccountManager accounts={accounts} reconcilableIds={reconcilableIds} />
+      </section>
+
+      {/* 2b — Projected balances (deterministic forecast, separate from actual) */}
+      <section className="tier">
+        <div className="tier-head">
+          <span className="tier-tick" style={{ background: "var(--explore)" }} />
+          <span className="tier-name">Projected balances</span>
+          <span className="tier-sub">
+            actual + scheduled inflows − scheduled outflows · a forecast, not a current balance
+          </span>
+        </div>
+
+        <div className="fin-horizon">
+          <span className="sub">Horizon:</span>
+          {HORIZONS.map((h) => (
+            <a key={h.key} href={`/finances?horizon=${h.key}`}
+              className={`fin-horizon-btn${horizon === h.key ? " on" : ""}`}>
+              {h.label}
+            </a>
+          ))}
+          <span className="sub">
+            · {projection.horizonLabel} (through {dayLabel(projection.horizonDate)})
+          </span>
+        </div>
+
+        <div className="fin-summary">
+          <div className="fin-stat">
+            <div className="fin-stat-k">Total actual cash</div>
+            <div className="fin-stat-v num good">{money(projection.totals.totalActualCash)}</div>
+            <div className="fin-stat-note">manually entered, now</div>
+          </div>
+          <div className="fin-stat">
+            <div className="fin-stat-k">Total projected cash</div>
+            <div className="fin-stat-v num">{money(projection.totals.totalProjectedCash)}</div>
+            <div className="fin-stat-note">forecast for {projection.horizonLabel.toLowerCase()} — not available-now</div>
+          </div>
+          <div className="fin-stat">
+            <div className="fin-stat-k">Spendable projected</div>
+            <div className="fin-stat-v num">{money(projection.totals.spendableProjectedCash)}</div>
+            <div className="fin-stat-note">spendable accounts only</div>
+          </div>
+          {hasCredit && (
+            <div className="fin-stat">
+              <div className="fin-stat-k">Credit liabilities</div>
+              <div className="fin-stat-v num liab">{money(projection.totals.creditLiabilities)}</div>
+              <div className="fin-stat-note">kept separate — never cash</div>
+            </div>
+          )}
+        </div>
+
+        {projection.warnings.length > 0 && (
+          <ul className="fin-warnings">
+            {projection.warnings.map((w, i) => (
+              <li key={i} className={`fin-warning ${w.code === "shortfall" ? "act" : "aware"}`}>
+                ⚠ {w.message}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div className="fin-acct-grid">
+          {projection.accounts.filter((p) => p.isCash || p.isLiability).map((p) => (
+            <div className={`fin-acct${p.belowZero ? " shortfall" : ""}`} key={p.accountId}>
+              <div className="fin-acct-top">
+                <div>
+                  <div className="fin-acct-name">{p.name}</div>
+                  <div className="fin-acct-meta">
+                    actual <span className="num">{money(p.actualBalance)}</span>
+                  </div>
+                </div>
+                <div className={`fin-acct-bal num${p.belowZero ? " liab" : ""}`}>
+                  {money(p.projectedBalance)}
+                </div>
+              </div>
+              <div className="fin-acct-tags">
+                <span className="fin-tag muted">Projected ({HORIZONS.find((h) => h.key === horizon)!.label})</span>
+                {p.scheduledInflows > 0 && <span className="fin-tag good">+{money(p.scheduledInflows)} in</span>}
+                {p.scheduledOutflows > 0 && <span className="fin-tag liab">−{money(p.scheduledOutflows)} out</span>}
+                {p.belowZero && <span className="fin-tag liab">Projected shortfall</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Forecast timeline */}
+        <div className="fin-bill-grouphead" style={{ marginTop: 12 }}>Forecast timeline</div>
+        {projection.items.length === 0 ? (
+          <div className="empty">No scheduled items within this horizon.</div>
+        ) : (
+          <div className="fin-activity">
+            {projection.items.map((it: ForecastItem, i) => (
+              <div className="fin-activity-row" key={i}>
+                <div>
+                  <div className="main">{FORECAST_LABEL[it.kind] ?? it.kind}: {it.label.replace(/^(Bill|Income|Transfer[^:]*): /, "")}</div>
+                  <div className="sub">
+                    {it.accountName ?? "unassigned"} · {dayLabel(it.date)}
+                    {it.resultingBalance != null ? ` · → ${money(it.resultingBalance)} projected` : ""}
+                  </div>
+                </div>
+                <span className={`num ${it.amount >= 0 ? "good" : "liab"}`}>
+                  {it.amount >= 0 ? "+" : ""}{money(it.amount)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Unassigned + unsupported items (never guessed into an account) */}
+        {(projection.unassignedBills.length > 0 || projection.unassignedIncome.length > 0 || projection.linkedSkipped.length > 0) && (
+          <div className="fin-unassigned">
+            <div className="fin-bill-grouphead unassigned" style={{ marginTop: 12 }}>Not included in projections</div>
+            {projection.unassignedBills.map((b) => (
+              <div className="sub" key={`ub${b.id}`}>• Unassigned bill: {b.name} ({money(b.amount)}, due {dayLabel(b.dueDate)}) — no payment account.</div>
+            ))}
+            {projection.unassignedIncome.map((i) => (
+              <div className="sub" key={`ui${i.id}`}>• Income with no destination: {i.source} ({money(i.amount)}, {dayLabel(i.payDate)}).</div>
+            ))}
+            {projection.linkedSkipped.map((l, i) => (
+              <div className="sub" key={`ls${i}`}>• {l.label} — awaiting future bank sync.</div>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* 3 — Bills, grouped by the account that pays them */}

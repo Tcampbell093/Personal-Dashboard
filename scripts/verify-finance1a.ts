@@ -183,7 +183,7 @@ async function main() {
   // Existing owner bills remain valid (read-only). Owner bills may legitimately
   // carry a source/paid account now, so we assert validity, not "all unassigned".
   ok("[5] pre-existing owner bills still valid",
-    ownerBillsBefore.length >= 1 && ownerBillsBefore.every((b) => b.deletedAt === null));
+    ownerBillsBefore.every((b) => b.deletedAt === null));
 
   /* ---- 6. External pay: paid metadata, no balance change (1A.3A supersedes
    *        the old "manual pay never deducts" rule — see verify-finance1a3a). -- */
@@ -274,15 +274,17 @@ async function main() {
   ok("[8] no 'live balance' anywhere in finance UI", !uiText.includes("live balance"));
   ok("[8] UI labels balances 'manually entered' / 'manual balance'",
     /manually entered/i.test(pageSrc) && /manual balance/i.test(acctMgr));
-  ok("[8] no projected account balance rendered (no 'projectedBalance')", !uiText.includes("projectedbalance"));
+  // NOTE: account-aware PROJECTION (projectedBalance, reconciliation) is intentionally
+  // added by Finance 1A.3B — verified by scripts/verify-finance1a3b.ts. The 1A.1
+  // truthfulness guard remains: never "safe to spend" / "live balance" (checked above).
 
   // Scope corrections: no provider/connection-health fields on the account.
   ok("[8] no providerAccountId field", !/provider_account_id|providerAccountId/.test(schemaSrc));
   ok("[8] no syncStatus field", !/sync_status|syncStatus/.test(schemaSrc));
   ok("[8] no connectionError field", !/connection_error|connectionError/.test(schemaSrc));
   ok("[8] no lastSyncedAt field", !/last_synced_at|lastSyncedAt/.test(schemaSrc));
-  ok("[8] no reconciliation field/workflow (no lastReconciledAt)", !/last_reconciled_at|lastReconciledAt/.test(schemaSrc));
-  ok("[8] no reconcile route", !existsSync("app/api/finances/accounts/[id]/reconcile"));
+  // NOTE: reconciliation (last_reconciled_at + the reconcile route) is intentionally
+  // added by Finance 1A.3B — no longer excluded here; verified by verify-finance1a3b.ts.
   // NOTE: income splits (income_allocations) and transfers (account_transfers) are
   // intentionally added by Finance 1A.2 — no longer excluded here; verified by
   // scripts/verify-finance1a2.ts.

@@ -110,6 +110,11 @@ export const movementKind = pgEnum("movement_kind", [
   "transfer_in",
   "transfer_out_reversal",
   "transfer_in_reversal",
+  // Finance 1A.3B: manual-account reconciliation (set actual to the real bank
+  // balance) and its undo. The signed `amount` is the adjustment delta;
+  // `prior_balance`/`new_balance` record the audit trail.
+  "reconcile_adjustment",
+  "reconcile_reversal",
 ]);
 
 // Finance 1A.2: income lifecycle. `scheduled` = expected, no balance change;
@@ -402,6 +407,10 @@ export const financialAccounts = pgTable("financial_accounts", {
   // Inactive accounts are retained but excluded from every cash/liability total.
   active: boolean("active").notNull().default(true),
   balanceUpdatedAt: timestamp("balance_updated_at", { withTimezone: true }),
+  // Finance 1A.3B: when the owner last reconciled this manual balance to the real
+  // bank balance (null = never verified). Derivable from the reconcile ledger;
+  // stored for display + the "last verified" answer.
+  lastReconciledAt: timestamp("last_reconciled_at", { withTimezone: true }),
   notes: text("notes"),
   ...timestamps,
 });
@@ -571,6 +580,11 @@ export const accountMovements = pgTable(
     kind: movementKind("kind").notNull(),
     // Signed: negative for a payment, positive for a reversal.
     amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+    // Finance 1A.3B: reconciliation audit trail (set only on reconcile_* rows) —
+    // the manual actual balance before and after the adjustment. Lets a
+    // reconciliation be reversed by restoring `prior_balance`.
+    priorBalance: numeric("prior_balance", { precision: 14, scale: 2 }),
+    newBalance: numeric("new_balance", { precision: 14, scale: 2 }),
     // Set on a reversal row → the payment movement it reverses (self-reference).
     reversalOfId: integer("reversal_of_id").references(
       (): AnyPgColumn => accountMovements.id,
