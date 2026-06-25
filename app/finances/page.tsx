@@ -1,10 +1,11 @@
-/* /finances — the dedicated money workspace (Finance 1A.1).
+/* /finances — the dedicated money workspace (Finance 1A.1 + 1A.3A + 1A.2).
  *
- * Account-aware manual finance: multiple accounts with truthful cash and
- * liability totals, plus bills grouped by the account that pays them. Every
- * figure here comes from manually entered actual balances. This page never
- * presents a projected number as if it were a current or spendable-now balance
- * — account-aware projection arrives in Finance 1A.3. */
+ * Account-aware manual finance: accounts with truthful cash/liability totals,
+ * bills grouped by paying account, income (single or split) you receive into
+ * your accounts, transfers between owned accounts, and an append-only activity
+ * ledger. Every figure comes from manually entered actual balances. This page
+ * never presents a projected number as if it were a current or spendable-now
+ * balance — account-aware projection arrives in a later Finance build. */
 
 import { getCurrentUserId } from "@/lib/auth";
 import {
@@ -12,14 +13,40 @@ import {
   toAccountViews,
   listBills,
   toBillViews,
+  listIncome,
+  toIncomeViews,
+  listAllocations,
+  allocationsByIncome,
   computeCashSummary,
   listMovements,
   toMovementViews,
 } from "@/lib/services/finances";
+import { listTransfers, toTransferViews } from "@/lib/services/transfers";
 import { isAuthConfigured } from "@/lib/session";
 import { LogoutButton } from "@/components/logout-button";
 import { AccountManager } from "@/components/finances/account-manager";
 import { BillManager } from "@/components/finances/bill-manager";
+import { IncomeManager } from "@/components/finances/income-manager";
+import { TransferManager } from "@/components/finances/transfer-manager";
+import type { MovementView } from "@/lib/types";
+
+const MOVEMENT_LABEL: Record<string, string> = {
+  bill_payment: "Bill payment",
+  bill_payment_reversal: "Reversed bill payment",
+  income_received: "Income received",
+  income_reversal: "Reversed income",
+  transfer_out: "Transfer out",
+  transfer_in: "Transfer in",
+  transfer_out_reversal: "Reversed transfer out",
+  transfer_in_reversal: "Reversed transfer in",
+};
+
+function movementContext(m: MovementView): string {
+  if (m.billName) return ` · ${m.billName}`;
+  if (m.incomeSource) return ` · ${m.incomeSource}`;
+  if (m.transferId) return ` · transfer #${m.transferId}`;
+  return "";
+}
 
 // Always render fresh; this page reflects live database state and never serves
 // cached or mock personal finance data.
@@ -56,13 +83,21 @@ function Header() {
 export default async function FinancesPage() {
   const userId = await getCurrentUserId();
 
-  let accounts, bills, movements;
+  let accounts, bills, income, transfers, movements;
   try {
-    [accounts, bills, movements] = await Promise.all([
+    const [accts, billRows, incomeRows, allocRows, transferRows, movementRows] = await Promise.all([
       listAccounts(userId).then(toAccountViews),
       listBills(userId).then(toBillViews),
-      listMovements(userId, 8).then(toMovementViews),
+      listIncome(userId),
+      listAllocations(userId),
+      listTransfers(userId).then(toTransferViews),
+      listMovements(userId, 12).then(toMovementViews),
     ]);
+    accounts = accts;
+    bills = billRows;
+    income = toIncomeViews(incomeRows, allocationsByIncome(allocRows));
+    transfers = transferRows;
+    movements = movementRows;
   } catch (err) {
     // Explicit error state — never fabricate placeholder balances.
     console.error("FinancesPage: load failed.", err);
@@ -81,7 +116,11 @@ export default async function FinancesPage() {
   const summary = computeCashSummary(accounts);
   const accountOptions = accounts
     .filter((a) => a.active)
-    .map((a) => ({ id: a.id, name: a.name }));
+    .map((a) => ({ id: a.id, name: a.name, linked: a.balanceSource !== "manual" }));
+  // Income/transfer destinations are cash accounts (not credit liabilities).
+  const cashAccountOptions = accounts
+    .filter((a) => a.active && a.type !== "credit")
+    .map((a) => ({ id: a.id, name: a.name, linked: a.balanceSource !== "manual" }));
   const hasCredit = summary.creditAccountCount > 0;
   const hasSavings = summary.savingsEmergency !== 0;
 
@@ -161,32 +200,52 @@ export default async function FinancesPage() {
         <BillManager bills={bills} accounts={accountOptions} />
       </section>
 
-      {/* 4 — Recent activity: the manual bill-payment ledger (append-only) */}
+      {/* 4 — Income (single destination or split), received into your accounts */}
+      <section className="tier">
+        <div className="tier-head">
+          <span className="tier-tick" style={{ background: "var(--good)" }} />
+          <span className="tier-name">Income</span>
+          <span className="tier-sub">assign to one account or split; receive to credit balances</span>
+        </div>
+        <IncomeManager income={income} accounts={cashAccountOptions} />
+      </section>
+
+      {/* 5 — Transfers between owned accounts */}
+      <section className="tier">
+        <div className="tier-head">
+          <span className="tier-tick" style={{ background: "var(--good)" }} />
+          <span className="tier-name">Transfers</span>
+          <span className="tier-sub">move money between your accounts — never income or spending</span>
+        </div>
+        <TransferManager transfers={transfers} accounts={cashAccountOptions} />
+      </section>
+
+      {/* 6 — Recent activity: the append-only account-movements ledger */}
       <section className="tier">
         <div className="tier-head">
           <span className="tier-tick" style={{ background: "var(--good)" }} />
           <span className="tier-name">Recent activity</span>
-          <span className="tier-sub">recorded bill payments &amp; reversals</span>
+          <span className="tier-sub">recorded payments, income receipts &amp; transfers</span>
         </div>
         {movements.length === 0 ? (
-          <div className="empty">No recorded payments yet.</div>
+          <div className="empty">No recorded activity yet.</div>
         ) : (
           <div className="fin-activity">
             {movements.map((m) => {
-              const reversal = m.kind === "bill_payment_reversal";
+              const positive = m.amount >= 0;
               return (
                 <div className="fin-activity-row" key={m.id}>
                   <div>
                     <div className="main">
-                      {reversal ? "Reversed payment" : "Bill payment"}
-                      {m.billName ? ` · ${m.billName}` : ""}
+                      {MOVEMENT_LABEL[m.kind] ?? m.kind}
+                      {movementContext(m)}
                     </div>
                     <div className="sub">
                       {m.accountName ?? `Account #${m.accountId}`} · {whenLabel(m.occurredAt)}
                     </div>
                   </div>
-                  <span className={`num ${reversal ? "good" : "liab"}`}>
-                    {reversal ? "+" : ""}
+                  <span className={`num ${positive ? "good" : "liab"}`}>
+                    {positive ? "+" : ""}
                     {money(m.amount)}
                   </span>
                 </div>

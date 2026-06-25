@@ -13,7 +13,6 @@ import { tierForTask, tierForOpportunity } from "@/lib/briefing";
 import { localDaysUntil } from "@/lib/time";
 import { AddTaskForm, TaskActions, ReopenTask } from "@/components/tasks";
 import { AddObligationForm, ObligationActions } from "@/components/obligations";
-import { FinanceManager } from "@/components/finances";
 import { computeCashSummary } from "@/lib/services/finances";
 import { RowActions } from "@/components/row-actions";
 import { AddSignalForm } from "@/components/signals";
@@ -231,23 +230,18 @@ export async function ManageDashboard() {
               remaining from manually entered balances.
             </div>
             <div style={{ marginTop: 10 }}>
-              <a className="navlink" href="/finances">Manage accounts &amp; bills at /finances →</a>
+              <a className="navlink" href="/finances">
+                Manage accounts, bills, income &amp; transfers at /finances →
+              </a>
             </div>
           </Card>
-          {d.financesLive && (
-            <Card title="Income" edge="aware" className="span-2">
-              <div className="sub" style={{ marginBottom: 8 }}>
-                Income records (kept here for now; account-aware income arrives in a
-                later finance build).
-              </div>
-              <FinanceManager
-                accounts={d.accounts}
-                bills={d.bills}
-                income={d.income}
-                sections={["income"]}
-              />
-            </Card>
-          )}
+          <Card title="Money workspace" edge="aware" className="span-2">
+            <div className="sub">
+              Accounts, bills, <b>income (single or split)</b>, account transfers, and
+              the recorded-activity ledger now live on the dedicated{" "}
+              <a className="navlink" href="/finances">/finances</a> page.
+            </div>
+          </Card>
         </div>
       </section>
 

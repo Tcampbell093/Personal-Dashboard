@@ -189,8 +189,11 @@ async function main() {
   /* ---- 6. /manage preservation + honest experimental labels --------- */
   console.log("\n[6] /manage preservation + experimental labels");
   const manageSrc = readFileSync("components/manage/manage-dashboard.tsx", "utf8");
-  const verticalForms = ["AddTaskForm", "AddObligationForm", "FinanceManager", "AddSignalForm", "AddOpportunityForm", "AddJobForm", "AddInterestForm"];
+  // NOTE: money management (FinanceManager) moved to /finances in Finance 1A.2 —
+  // /manage now links there instead of embedding the finance forms.
+  const verticalForms = ["AddTaskForm", "AddObligationForm", "AddSignalForm", "AddOpportunityForm", "AddJobForm", "AddInterestForm"];
   ok("[6] /manage preserves all vertical forms", verticalForms.every((f) => manageSrc.includes(f)));
+  ok("[6] /manage links the money workspace to /finances", manageSrc.includes("/finances"));
   ok("[6] /manage honestly labels experimental / sample-backed", /experimental \/ sample-backed/i.test(manageSrc));
   ok("[6] /manage route renders the shared component (no duplicate page)", readFileSync("app/manage/page.tsx", "utf8").includes("ManageDashboard"));
 

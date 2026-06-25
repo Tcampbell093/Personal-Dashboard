@@ -329,6 +329,50 @@
   duplicate-pay 409 → reverse → duplicate-reverse 409, SSR HTML confirmed). No AI / no usage log.
   Finance 1A.1 / Home 1A / Manage-tasks / Build 2A / 2B.1 / 2B.2 regress green.
 
+### ADR-023 — Finance 1A.2: income splits + account transfers (ledger-backed, reversible)
+- **Classification:** Owner-approved decision (owner approved the Finance 1A.2 scope and behavior).
+- **Detail:** Extends the 1A.3A account-movements ledger to income receipt and account transfers,
+  reusing its atomicity/idempotency machinery. Scope deliberately excludes Plaid, bank sync, imported
+  transactions, discretionary spending, recurring-bill generation, reconciliation, projection, and AI.
+  - **Split-order rule:** fixed → percent **of the amount remaining after fixed** → one optional
+    remainder. Computed in **integer cents** (no float drift); shares always sum exactly to gross —
+    the remainder row (or, without one, the last share) absorbs the deterministic rounding. Validation:
+    at most one remainder; percent total ≤ 100; no duplicate destination (`unique(incomeId, accountId)`);
+    fixed ≤ gross (at receipt); without a remainder, percents must total exactly 100% (or fixed-only
+    must equal gross). The same pure function (`lib/finance-allocations`) powers the client preview and
+    the server receipt.
+  - **Income receipt/reversal lifecycle:** `scheduled` income changes no balance. Receiving resolves
+    the destination (single or split) against the confirmed gross and, in ONE writable-CTE statement,
+    marks it received + credits each **manual** destination + writes one positive `income_received`
+    movement (guarded by `status='scheduled'`). Undo appends equal negative `income_reversal` movements
+    and restores balances, guarded by `status='received'` + the `reversal_of_id` unique index.
+  - **Transfer completion/reversal lifecycle:** scheduled transfers change no balance. manual→manual
+    completion atomically deducts source, credits destination, writes paired `transfer_out`/`transfer_in`
+    movements; reversal appends opposite movements and restores both. **Total owned cash is invariant.**
+  - **Linked-account limitation (smallest truthful model):** linked destinations/accounts are never
+    manually mutated. Income to a linked destination is marked received with no movement. manual→linked
+    transfer deducts the source only (destination is bank-authoritative); **linked-source completion is
+    rejected** rather than fabricating a deduction of an externally-authoritative balance. Credit
+    accounts are rejected as income/transfer endpoints (they're liabilities, not cash).
+  - **Scheduled-vs-actual:** only received income and completed transfers change manual actual
+    balances; scheduled allocations/transfers are never presented as "projected cash" (no projection
+    engine exists yet).
+  - **Concurrency:** single-statement writable CTEs on Neon HTTP; bill/income/transfer-status guards
+    + row locking serialise racers (loser → 409); the `reversal_of_id` unique index backstops
+    concurrent reversals. Verified with real wall-clock `Promise.allSettled` races.
+  - **Existing data:** the ledger/allocation/transfer tables start empty; **no historical income gets
+    a fabricated allocation or movement**; income without a destination stays valid as "Destination not
+    assigned". Migration `0007_square_marauders.sql` is additive only.
+  - **UI move:** income management moved from `/manage` to `/finances`; `/manage` Money is now a summary
+    + link (verified before the move). Recent activity labels all bill/income/transfer movements and
+    never shows transfers as earnings or spending.
+  - **Future:** matching these manual movements against imported bank transactions is reserved for a
+    later Finance 1B (read-only bank connections).
+- **Evidence:** `scripts/verify-finance1a2.ts` (62/62, real routes + services vs real Neon, incl.
+  concurrency) + authenticated end-to-end HTTP through the running server (split receive/undo +
+  scheduled→complete→reverse transfer, SSR HTML confirmed). No AI / no usage log. Finance 1A.1 / 1A.3A
+  / Home 1A / Manage-tasks / Build 2A / 2B.1 / 2B.2 regress green.
+
 ---
 
 ## Open decisions — `[DECISION NEEDED]`

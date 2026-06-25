@@ -50,6 +50,13 @@
       "when": 1782403881337,
       "tag": "0006_zippy_impossible_man",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1782412710500,
+      "tag": "0007_square_marauders",
+      "breakpoints": true
     }
   ]
 }

@@ -180,9 +180,10 @@ async function main() {
   ok("[5] unassigned bill keeps null source (never guessed)", (await rawBill(B2)).sourceAccountId === null);
   ok("[5] invalid source account → 400", (await postJson(billsPost, { name: "x", expectedAmount: 10, sourceAccountId: 999999 })).status === 400);
 
-  // Existing owner bills remain valid with null source (read-only).
-  ok("[5] pre-existing owner bills still valid + unassigned",
-    ownerBillsBefore.every((b) => b.sourceAccountId === null) && ownerBillsBefore.length >= 1);
+  // Existing owner bills remain valid (read-only). Owner bills may legitimately
+  // carry a source/paid account now, so we assert validity, not "all unassigned".
+  ok("[5] pre-existing owner bills still valid",
+    ownerBillsBefore.length >= 1 && ownerBillsBefore.every((b) => b.deletedAt === null));
 
   /* ---- 6. External pay: paid metadata, no balance change (1A.3A supersedes
    *        the old "manual pay never deducts" rule — see verify-finance1a3a). -- */
@@ -282,8 +283,9 @@ async function main() {
   ok("[8] no lastSyncedAt field", !/last_synced_at|lastSyncedAt/.test(schemaSrc));
   ok("[8] no reconciliation field/workflow (no lastReconciledAt)", !/last_reconciled_at|lastReconciledAt/.test(schemaSrc));
   ok("[8] no reconcile route", !existsSync("app/api/finances/accounts/[id]/reconcile"));
-  ok("[8] no income-splits table", !/income_allocations|incomeAllocations/.test(schemaSrc));
-  ok("[8] no transfers table", !/account_transfers|accountTransfers/.test(schemaSrc));
+  // NOTE: income splits (income_allocations) and transfers (account_transfers) are
+  // intentionally added by Finance 1A.2 — no longer excluded here; verified by
+  // scripts/verify-finance1a2.ts.
   // NOTE: the account-movements ledger is intentionally added by Finance 1A.3A
   // (a separate, approved build) — so it is NO LONGER excluded here. Its own
   // behavior is verified by scripts/verify-finance1a3a.ts.
@@ -294,7 +296,8 @@ async function main() {
   ok("[8] Home money card links to /finances", homeSrc.includes('href="/finances"'));
   ok("[8] Home has no account management", !homeSrc.includes("AccountManager"));
   ok("[8] /manage links to /finances", manageSrc.includes("/finances"));
-  ok("[8] /manage preserves income management", manageSrc.includes('sections={["income"]}'));
+  // Income management moved from /manage to /finances in Finance 1A.2; /manage links there.
+  ok("[8] /manage links money management to /finances", manageSrc.includes("/finances"));
 
   /* ---- 9. No AI / no usage log ------------------------------------------- */
   const logsAfter = (

@@ -19,7 +19,11 @@
 
 `task_status`, `priority`, `recurrence`, `obligation_type`, `obligation_status`,
 `importance`, `bill_status`, `balance_source` (Finance 1A.1: `manual`|`linked`),
-`movement_kind` (Finance 1A.3A: `bill_payment`|`bill_payment_reversal`), `signal_type`,
+`movement_kind` (Finance 1A.3A: `bill_payment`|`bill_payment_reversal`; Finance 1A.2 adds
+`income_received`|`income_reversal`|`transfer_out`|`transfer_in`|`transfer_out_reversal`|
+`transfer_in_reversal`), `income_status` (1A.2: `scheduled`|`received`|`cancelled`),
+`allocation_type` (1A.2: `fixed`|`percent`|`remainder`), `transfer_status` (1A.2:
+`scheduled`|`completed`|`reversed`|`cancelled`), `signal_type`,
 `signal_status`, `opportunity_category`,
 `opportunity_status`, `feedback_kind`, `job_status`, `interest_status`, `run_status`,
 `experience_request_status`, `experience_status`, `experience_energy_level`,
@@ -89,15 +93,37 @@
   payments and payments against `linked` accounts create **no** movement. Scope is the bill-payment
   ledger only — income/transfer/reconciliation movement kinds are deliberately **not** added (future
   Finance 1A.3 / 1A.2).
-- **`income_entries`** — `source`, `expectedAmount`, `actualAmount`, `payDate`,
-  `recurrence`, `isPayday`. (Still managed on `/manage`; account-linked/split income is deferred
-  to Finance 1A.2.)
+- **`income_entries`** — `source`, `expectedAmount`, `actualAmount`, `payDate`, `recurrence`,
+  `isPayday`. **Finance 1A.2**: `destinationAccountId` (single-destination mode; null = unassigned or
+  split), `status` (`income_status`, default `scheduled`), `receivedAt`. A scheduled income changes no
+  balance; receiving it credits its destination(s) and stores `actualAmount` + `receivedAt`. Existing
+  income defaulted to `scheduled` with no destination and shows "Destination not assigned" (never
+  guessed). Managed on **`/finances`** (moved off `/manage` in 1A.2).
+- **`income_allocations`** (Finance 1A.2) — split rows for one income: `incomeId` (FK, cascade),
+  `accountId` (FK), `allocationType` (`fixed`|`percent`|`remainder`), `value` (dollars for fixed,
+  percent for percent, null for remainder), `position`. **Resolution order: fixed → percent OF THE
+  AMOUNT REMAINING AFTER fixed → remainder**, computed in **integer cents** (no float drift); the
+  remainder (or, with no remainder row, the last share) absorbs the deterministic rounding so shares
+  always sum exactly to gross. Constraints: at most one remainder; percent total ≤ 100; **unique
+  `(incomeId, accountId)`** (no duplicate destination); fixed ≤ gross (checked at receipt). Without a
+  remainder, percents must total exactly 100% (or a fixed-only set must equal gross).
+- **`account_transfers`** (Finance 1A.2) — a transfer between two owned accounts: `fromAccountId`,
+  `toAccountId`, `amount`, `scheduledDate`, `status` (`transfer_status`), `completedAt`, `note`,
+  soft-delete. A scheduled transfer changes no balance; **completing** a manual→manual transfer moves
+  both balances + writes paired `transfer_out`/`transfer_in` movements; **reverse** restores them.
+  Source ≠ destination, amount > 0, both owned/active/non-credit; an internal transfer is never income
+  or spending and **never changes total owned cash**.
+- **`account_movements`** also gained **`incomeId`** + **`transferId`** FK references (1A.2) alongside
+  the existing `billId` — exactly one is set per row, matching `kind`. Income receipt and transfer
+  completion/reversal append rows here exactly like bill payments; reversals link via `reversalOfId`
+  and the partial unique index still guarantees no double credit/debit.
 
-**Finance roadmap (recorded; not implemented in 1A.1):**
-- **1A.2** — account-linked & **split income** (resolution order: fixed allocations → percentage
-  **of the remaining** amount → one optional **remainder** account, with deterministic last-cent
-  handling through the remainder) and **transfers** between owned accounts (scheduled + completed;
-  two-leg, net-zero, never income/expense).
+**Finance roadmap:**
+- **1A.2 — DONE** — account-linked & **split income** (fixed → percent-of-remaining → remainder,
+  integer-cent, deterministic rounding to the remainder/last share) and **transfers** between owned
+  accounts (scheduled + completed; two-leg, net-zero, never income/expense), both ledger-backed and
+  reversible. Linked accounts are never manually mutated; **future matching with imported bank
+  transactions** (Finance 1B) will reconcile these manual movements against synced transactions.
 - **1A.3A — DONE** — the **manual bill-payment ledger** (`account_movements`): paying a bill from a
   manual account atomically deducts it + appends a movement; reversal credits it back + appends an
   equal positive movement; idempotent/concurrency-safe; no double spend or double credit.
@@ -222,7 +248,9 @@ The UI never depends on Drizzle row types. View models live in `lib/types.ts`
 (`TaskView`, `ObligationView`, `FinancialOutlook`, `AccountView` (Finance 1A.1: +institution,
 purpose, balanceSource, includeInSpendable, active, isCash, isLiability), `CashSummary`,
 `BillView` (+sourceAccountId, paidAccountId, and Finance 1A.3A: actualAmount, paidAt),
-`MovementView` (Finance 1A.3A), `IncomeView`, `SignalView`, `OpportunityView`,
+`MovementView` (1A.3A; 1A.2 adds incomeId/incomeSource/transferId), `IncomeView` (1A.2:
++status/actualAmount/receivedAt/destinationAccountId/allocations), `AllocationView` + `TransferView`
+(1A.2), `SignalView`, `OpportunityView`,
 `JobView`, `InterestItemView`,
 `ExperienceRequestView`, `ExperienceView`, `ExperienceXpSummary`, `Briefing`,
 `DashboardData`). Service-layer `to*Views()` functions map rows → view models.

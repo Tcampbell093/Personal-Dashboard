@@ -103,6 +103,40 @@ export const balanceSource = pgEnum("balance_source", ["manual", "linked"]);
 export const movementKind = pgEnum("movement_kind", [
   "bill_payment",
   "bill_payment_reversal",
+  // Finance 1A.2: income receipt + transfer movements (and their reversals).
+  "income_received",
+  "income_reversal",
+  "transfer_out",
+  "transfer_in",
+  "transfer_out_reversal",
+  "transfer_in_reversal",
+]);
+
+// Finance 1A.2: income lifecycle. `scheduled` = expected, no balance change;
+// `received` = confirmed, manual destinations credited via the ledger.
+export const incomeStatus = pgEnum("income_status", [
+  "scheduled",
+  "received",
+  "cancelled",
+]);
+
+// Finance 1A.2: how a split-income row computes its share. `fixed` = a dollar
+// amount; `percent` = a percentage OF THE AMOUNT REMAINING AFTER fixed rows;
+// `remainder` = whatever is left (absorbs deterministic rounding).
+export const allocationType = pgEnum("allocation_type", [
+  "fixed",
+  "percent",
+  "remainder",
+]);
+
+// Finance 1A.2: transfer lifecycle between owned accounts. `scheduled` changes
+// no balance; `completed` moves manual balances via the ledger; `reversed`
+// undoes a completed transfer; `cancelled` drops a scheduled one.
+export const transferStatus = pgEnum("transfer_status", [
+  "scheduled",
+  "completed",
+  "reversed",
+  "cancelled",
 ]);
 
 export const signalType = pgEnum("signal_type", [
@@ -438,10 +472,75 @@ export const incomeEntries = pgTable(
     payDate: date("pay_date").notNull(),
     recurrence: recurrence("recurrence").notNull().default("biweekly"),
     isPayday: boolean("is_payday").notNull().default(true),
+    // Finance 1A.2: single-destination account (null = unassigned, or split mode
+    // when income_allocations rows exist). Status drives the receipt lifecycle.
+    destinationAccountId: integer("destination_account_id").references(
+      () => financialAccounts.id,
+    ),
+    status: incomeStatus("status").notNull().default("scheduled"),
+    receivedAt: timestamp("received_at", { withTimezone: true }),
     notes: text("notes"),
     ...timestamps,
   },
   (t) => [index("income_entries_user_date_idx").on(t.userId, t.payDate)],
+);
+
+/* Finance 1A.2 — split-income allocation rows. Each row sends part of one income
+ * entry to an owned account by a `fixed` dollar amount, a `percent` of the amount
+ * remaining after fixed rows, or the `remainder`. Resolution order: fixed →
+ * percent-of-remaining → remainder (which absorbs deterministic rounding). At
+ * most one remainder row; no duplicate destination account per income. */
+export const incomeAllocations = pgTable(
+  "income_allocations",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    incomeId: integer("income_id")
+      .notNull()
+      .references(() => incomeEntries.id, { onDelete: "cascade" }),
+    accountId: integer("account_id")
+      .notNull()
+      .references(() => financialAccounts.id),
+    allocationType: allocationType("allocation_type").notNull(),
+    // fixed → dollar amount; percent → percentage (e.g. 60.00); remainder → null.
+    value: numeric("value", { precision: 14, scale: 2 }),
+    position: integer("position").notNull().default(0),
+    ...timestamps,
+  },
+  (t) => [
+    index("income_allocations_income_idx").on(t.incomeId),
+    // One allocation per destination account per income (no duplicate targets).
+    uniqueIndex("income_allocations_income_account_uq").on(t.incomeId, t.accountId),
+  ],
+);
+
+/* Finance 1A.2 — a transfer of money between two OWNED accounts. `scheduled`
+ * changes no balance; completing a manual→manual transfer atomically moves both
+ * balances and writes paired transfer_out/transfer_in movements. An internal
+ * transfer is never income or spending and never changes total owned cash. */
+export const accountTransfers = pgTable(
+  "account_transfers",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    fromAccountId: integer("from_account_id")
+      .notNull()
+      .references(() => financialAccounts.id),
+    toAccountId: integer("to_account_id")
+      .notNull()
+      .references(() => financialAccounts.id),
+    amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+    scheduledDate: date("scheduled_date"),
+    status: transferStatus("status").notNull().default("scheduled"),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    note: text("note"),
+    ...timestamps,
+  },
+  (t) => [index("account_transfers_user_idx").on(t.userId, t.status)],
 );
 
 /* Finance 1A.3A — manual bill-payment ledger.
@@ -464,8 +563,11 @@ export const accountMovements = pgTable(
     accountId: integer("account_id")
       .notNull()
       .references(() => financialAccounts.id),
-    // The bill this movement relates to (a bill payment / its reversal).
+    // What this movement relates to — exactly one of these is set per row,
+    // matching `kind`: bill payment, income receipt, or transfer.
     billId: integer("bill_id").references(() => financialEntries.id),
+    incomeId: integer("income_id").references(() => incomeEntries.id),
+    transferId: integer("transfer_id").references(() => accountTransfers.id),
     kind: movementKind("kind").notNull(),
     // Signed: negative for a payment, positive for a reversal.
     amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),

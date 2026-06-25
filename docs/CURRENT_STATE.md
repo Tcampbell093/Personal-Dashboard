@@ -4,7 +4,7 @@
 > after every substantive change (see `CLAUDE.md`). For the durable product vision, see
 > `docs/PRODUCT_VISION.md`.
 
-**Last updated:** 2026-06-25 · **Reflects branch:** `main` (Finance 1A.3A implemented, uncommitted)
+**Last updated:** 2026-06-25 · **Reflects branch:** `main` (Finance 1A.2 implemented, uncommitted)
 
 ## Status legend
 
@@ -217,9 +217,33 @@ spendable). `/manage`
   **Owner accounts/bills survived untouched**; ID-scoped cleanup; request 222 untouched; no usage log.
   Finance 1A.1 (74) / Home 1A (55) / Manage-tasks (27) / Build 2A (136) / 2B.1 (126) / 2B.2 (60)
   regress green.
+- **Finance 1A.2 — income splits + account transfers**, verified **deterministically**
+  (`scripts/verify-finance1a2.ts`, **62/62**, real route handlers + services vs real Neon, incl.
+  **real wall-clock concurrency**) and **end-to-end through the running server** (authenticated HTTP:
+  split income receive/undo + scheduled→complete→reverse transfer, SSR HTML confirmed).
+  **Income** can go to one account or be **split** across several by `fixed` → `percent-of-remaining`
+  → `remainder` rows; the split is computed in **integer cents** (no float drift) and always sums
+  exactly to gross (remainder/last-row absorbs rounding). Scheduled income changes no balance;
+  **receiving** it atomically marks it received and, per **manual** destination, credits the account
+  and writes one positive `income_received` movement (linked destinations get none; **undo receipt**
+  appends equal negative `income_reversal` movements and restores balances). **Transfers** between
+  owned accounts: a scheduled transfer changes no balance; completing a **manual→manual** transfer
+  atomically moves both balances + writes paired `transfer_out`/`transfer_in` movements (manual→linked
+  deducts the source only; linked-source is rejected); **reverse** restores both and appends opposite
+  movements. **Total owned cash is invariant** under an internal transfer. Duplicate/concurrent
+  receipt, completion, and reversal are all single-deduction/credit (409 + status guard + the
+  `reversal_of_id` unique index). `/finances` gained **Income** and **Transfers** sections + a live
+  split preview; **Recent activity** now labels all bill/income/transfer movements (transfers are
+  never shown as earnings or spending). **Income management moved from `/manage` to `/finances`**
+  (`/manage` Money is now a summary + link). Additive migration `0007_square_marauders.sql` (reviewed:
+  `CREATE TYPE`/`ALTER TYPE ADD VALUE`/`CREATE TABLE`/nullable `ADD COLUMN`/indexes — no existing
+  table rewritten, `income.status` defaults to `scheduled`). **No** Plaid / bank sync / imported
+  transactions / discretionary spending / reconciliation / projection / AI. **Owner data untouched**;
+  ID-scoped cleanup; request 222 untouched; no usage log. Finance 1A.1 (76) / 1A.3A (70) / Home 1A
+  (56) / Manage-tasks (27) / Build 2A (136) / 2B.1 (126) / 2B.2 (60) regress green.
 - **`npm run typecheck` and `npm run build`** pass on the current code (the build includes the
-  Home `/`, `/manage`, `/finances`, the bill `pay`/`reverse` routes, and the `/interpret`,
-  `/recommend`, `/select-recommendation` routes).
+  Home `/`, `/manage`, `/finances`, the bill `pay`/`reverse` routes, the income `receive`/`reverse`
+  + `transfers` routes, and the `/interpret`, `/recommend`, `/select-recommendation` routes).
 
 ## 🟡 Partially implemented
 

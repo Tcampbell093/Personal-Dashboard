@@ -12,28 +12,26 @@
 
 ## Next approved task
 
-### Finance 1A.3A — manual bill-payment ledger
+### Finance 1A.2 — income splits + account transfers
 
 - **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** See the latest handoff report
-  below. Paying a bill from a **manual** account now atomically marks it paid (with the confirmed
-  actual amount), **deducts** that account, and appends one negative `account_movements` row;
-  **reversal** reopens the bill by its date, **credits** the account back, and appends an equal
-  positive movement (the original is never deleted). Duplicate/concurrent pay or reverse cannot
-  deduct/credit twice (409 + partial unique index). External/cash and `linked` accounts change no
-  balance. `/finances` gained a Recent-activity ledger, an actual-amount/external pay form, and a
-  Reverse action. Additive migration `0006` (reviewed, applied). **Supersedes** the 1A.1 "paying
-  never changes a balance" rule for manual-account payments. (Finance 1A.1 committed `726c3e8`;
-  Manage clarity `1ca6fab`; Home 1A `405fd45`.)
+  below. Income can go to one account or be **split** (fixed → percent-of-remaining → remainder,
+  integer-cent, exact); **receiving** credits each manual destination + writes positive movements,
+  **undo** restores. **Transfers** between owned accounts: scheduled changes no balance; **complete**
+  moves both balances + paired movements; **reverse** restores. Duplicate/concurrent receipt,
+  completion, reversal all single-effect (409 + unique index). Linked accounts never manually mutated;
+  total owned cash invariant under transfers. Income management **moved to `/finances`**; activity
+  labels income/transfer movements. Additive migration `0007` (reviewed, applied). (Finance 1A.3A
+  committed `b6d7c6f`; 1A.1 `726c3e8`; Home 1A `405fd45`.)
 - **No further build is currently authorized.** Remaining finance gates, each requiring explicit
-  approval: **Finance 1A.2** (account-linked & split income — fixed → percent-of-remaining →
-  remainder; and transfers, scheduled + completed) and **Finance 1A.3 (remainder)** (extend the
-  ledger to income receipt + transfer completion; reconciliation + audit adjustment; account-aware
-  projection replacing the legacy `estimatedRemaining`). A future **Finance 1B** adds a separate
-  read-only bank-connection model (`financial_connections`; `balanceSource = linked`). Other
-  separately-gated directions remain: **Home 1B** (owner-triggered AI daily brief); a settings UI for
-  `intelligence_settings`; a close/archive workflow (`experience_request_status = closed`);
-  rule-based fallback recommendations; the application-wide visual redesign; a live Sonnet/Haiku
-  smoke test once the owner deliberately enables a key. None may begin without explicit approval.
+  approval: **Finance 1A.3 (remainder)** (reconciliation + audit adjustment; account-aware projection
+  replacing the legacy `estimatedRemaining`) and **Finance 1B** (read-only bank connections —
+  `financial_connections`, `balanceSource = linked` — and **matching the 1A.2 manual movements against
+  imported bank transactions**). Other separately-gated directions remain: **Home 1B** (owner-triggered
+  AI daily brief); a settings UI for `intelligence_settings`; a close/archive workflow
+  (`experience_request_status = closed`); rule-based fallback recommendations; the application-wide
+  visual redesign; a live Sonnet/Haiku smoke test once the owner deliberately enables a key. None may
+  begin without explicit approval.
 
 > **Status note (verbatim, required while no live key is configured):** "Anthropic adapter
 > implemented and deterministically verified; live Anthropic invocation pending owner
@@ -110,6 +108,111 @@ specific build. Builds are ordered so the manual loop works end-to-end before an
 ---
 
 ## Latest handoff
+
+### Finance 1A.2 — income splits + account transfers — implemented — 2026-06-25
+
+**Task Completed**
+Implemented Finance 1A.2 on top of the 1A.3A ledger: income assigned to one account or split across
+several (fixed / percent-of-remaining / remainder), scheduled + received income with ledger-backed
+balance changes, scheduled + completed transfers between owned accounts, and safe Undo for both. **No**
+Plaid / bank sync / imported transactions / discretionary spending / recurring-bill generation /
+reconciliation / projection / investments / tax / AI. Not committed — awaiting owner review.
+
+**Repository state confirmed before implementing** — HEAD `b6d7c6f` (1A.3A), tree clean, `account_movements`
+present, no income-allocation/transfer tables.
+
+**Schema & migration changes** — migration `0007_square_marauders.sql` (additive only): new enums
+`income_status`, `allocation_type`, `transfer_status`; **6 `ALTER TYPE movement_kind ADD VALUE`**
+(`income_received`, `income_reversal`, `transfer_out`, `transfer_in`, `transfer_out_reversal`,
+`transfer_in_reversal`); new tables **`income_allocations`** and **`account_transfers`**; nullable
+`ADD COLUMN`s `income_id`/`transfer_id` on `account_movements` and `destination_account_id`/`received_at`
+on `income_entries`; `income_entries.status` with a safe `DEFAULT 'scheduled'`; FKs + indexes incl.
+**`unique(income_id, account_id)`**. **No `DROP`/`ALTER COLUMN TYPE`/table rewrite/backfill** — existing
+income defaulted to `scheduled` with no destination, no fabricated allocations/movements.
+
+**Split calculation algorithm (integer cents)** — `lib/finance-allocations.computeAllocationShares`:
+sum fixed cents (≤ gross); `remaining = gross − fixed`; each percent share = `floor(remaining × bps /
+10000)`; the remainder row gets `gross − assigned`; with no remainder, the rounding leftover (percent
+sets validated to total 100%) goes to the last share, while a fixed-only set that misses gross errors.
+Result always sums exactly to gross; no floating-point. The same pure module powers the client preview
+and the server receipt.
+
+**Income receipt/reversal lifecycle** — scheduled income changes no balance. `receiveIncome` resolves
+single/split shares against the confirmed gross and, in ONE writable-CTE statement guarded by
+`status='scheduled'`, marks received + credits each **manual** destination + inserts one positive
+`income_received` movement per destination (linked destinations: received, no mutation, no movement).
+`reverseIncomeReceipt` (guarded by `status='received'` + the `reversal_of_id` unique index) returns it
+to scheduled, debits each manual destination back, and appends equal negative `income_reversal`
+movements (originals preserved).
+
+**Transfer completion/reversal lifecycle** — scheduled transfers change no balance. `completeTransfer`
+(manual→manual) atomically deducts source, credits destination, writes paired `transfer_out`/`transfer_in`
+movements (manual→linked: source deducted only; linked-source: rejected). `reverseTransfer` restores
+both balances and appends `*_reversal` movements (originals preserved). Total owned cash is invariant.
+
+**Linked-account behavior** — never manually mutated. Income to a linked destination = received, no
+movement. manual→linked transfer = source deducted, destination external (one movement). linked→manual /
+linked→linked completion = rejected (won't fabricate a deduction of a bank-authoritative balance).
+Credit accounts rejected as income/transfer endpoints.
+
+**Concurrency/idempotency strategy** — single-statement writable CTEs on Neon HTTP; entity-status guards
+(`scheduled`/`received`/`completed`) + row locking make duplicate/concurrent receipt, completion, and
+reversal no-ops (→ 409); the partial unique index on `reversal_of_id` backstops concurrent reversals.
+Verified with real wall-clock `Promise.allSettled` races for income receipt and transfer completion.
+
+**Exact files changed**
+- `db/schema.ts` (enums + 2 tables + columns), `db/migrations/0007_square_marauders.sql` (+ `meta/0007_snapshot.json`, `_journal.json`).
+- `lib/finance-allocations.ts` (new, pure split math); `lib/types.ts` (`AllocationView`, `TransferView`, `IncomeView` + lifecycle fields, `MovementView` + income/transfer refs).
+- `lib/services/finances.ts` (income allocations + `receiveIncome`/`reverseIncomeReceipt` + `getIncome`/`listAllocations` + `FinanceError`; extended `listMovements`/`toMovementViews`/`toIncomeViews`); new `lib/services/transfers.ts`.
+- API: extended `app/api/finances/income/[id]/route.ts` (destination/split); new `income/[id]/receive`, `income/[id]/reverse`, `transfers` (GET/POST), `transfers/[id]/complete`, `transfers/[id]/reverse`, `transfers/[id]` (DELETE).
+- UI: new `components/finances/income-manager.tsx`, `components/finances/transfer-manager.tsx`; `app/finances/page.tsx` (Income + Transfers sections + generalized activity); `components/manage/manage-dashboard.tsx` (income moved → /finances link; dropped `FinanceManager` import); `app/globals.css`.
+- Tests: new `scripts/verify-finance1a2.ts`; updated `scripts/verify-finance1a.ts`, `scripts/verify-finance1a3a.ts`, `scripts/verify-home1a.ts` (stale exclusions/assumptions — see Known issues). Docs.
+
+**`/finances` and `/manage` behavior** — `/finances` is now the complete account/bill/income/transfer/
+activity workspace: Income (single or split, live dollar preview, receive with confirmed gross, undo),
+Transfers (from→to, schedule, complete, reverse), and a Recent-activity ledger labeling all movement
+kinds. `/manage` Money is a compact summary + a link to `/finances` (income management moved there,
+verified before the move).
+
+**Activity behavior** — Recent activity lists bill payments, income receipts, and transfers with signed
+amounts (positive green, negative red) and the kind spelled out; transfer legs share a `transfer #N`
+context so paired movements read as one transfer, never as unrelated earnings/spending.
+
+**Testing completed** — `npm run typecheck` ✓; `npm run build` ✓. **`scripts/verify-finance1a2.ts` —
+62/62** (split math incl. rounding/limits/duplicates; receipt with exact per-destination credits,
+duplicate+**concurrent** receipt → one set, reversal restoring balances, duplicate reversal blocked,
+originals preserved, linked-destination no-mutation, unrelated accounts unchanged; transfers scheduled-
+no-change, manual→manual two-movement completion, source−/dest+, **total cash invariant**, duplicate+
+**concurrent** completion → once, reversal restoring both, duplicate reversal blocked, same-account/
+inactive/foreign rejected, linked→manual rejected + manual→linked source-only; UI/scope scans; no AI/
+usage log; owner data + 222 untouched; exact-ID cleanup). **End-to-end through the running server
+(authenticated HTTP):** split a $1000 paycheck 200/60%/40% → receive → 200/480/320 → duplicate **409** →
+undo → 0/0/0 → re-receive → schedule chase→boa $150 (no balance change) → complete → 330/470 (total 800
+invariant) → duplicate **409** → reverse → 480/320; SSR HTML showed Income, Transfers, Recent activity,
+"Income received", "Transfer out". Temp records removed by exact id. **Regressions:** Finance 1A.1 76 /
+1A.3A 70 / Home 1A 56 / Manage-tasks 27 / Build 2A 136 / 2B.1 126 / 2B.2 60 — all green. **`npm run lint`
+not run** (interactive-only). **No AI/Anthropic call.**
+
+**Known issues / not tested**
+- The **pixel** preview browser wasn't driven for mutations (the dev server requires the owner password
+  and entering it in a browser tool call would expose the secret); verified end-to-end through the
+  running Next.js server over authenticated HTTP + the deterministic harness instead.
+- I updated stale assertions in three committed suites (disclosed): `verify-finance1a` (income-splits/
+  transfers "no such table" exclusions removed — now added by 1A.2; "/manage preserves income" → links
+  to /finances; owner-bill check no longer assumes all unassigned, since the owner has assigned a source
+  account to a real bill), `verify-finance1a3a` (movement_kind "limited to bill kinds" → now also income/
+  transfer; income/transfer "no table" exclusions removed), `verify-home1a` (/manage no longer embeds
+  FinanceManager — now links to /finances). All three suites remain fully green.
+- A failed early smoke-test run (an `integer = text` VALUES-cast bug, since fixed) leaked three "SM …"
+  accounts + one income; I removed them by exact match and audited that **no test-prefixed records
+  remain** (only owner data: accounts #3/#45, owner income #8, the owner's 2 pre-existing movements).
+- Linked→manual / linked→linked transfer completion is intentionally rejected (no truthful confirmation
+  model yet); manual→linked deducts the source only. Reconciliation/projection are out of scope.
+
+**Decisions needed** — owner review before commit. Finance 1A.3 (remainder) and 1B each require separate
+authorization.
+**Recommended next step** — owner reviews Finance 1A.2; if approved, authorize the commit, then the
+Finance 1A.3 (reconciliation + projection) or 1B (bank connections) bounded task can be prepared.
 
 ### Finance 1A.3A — manual bill-payment ledger — implemented — 2026-06-25
 

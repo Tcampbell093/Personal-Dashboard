@@ -213,6 +213,17 @@ section lists the append-only ledger — payments (negative, urgency red `var(--
 (positive, emerald `var(--good)`), each with a `+`/`−` sign and the kind spelled out in text, so
 direction is never conveyed by color alone. The pay form stacks to a single column at ≤640px.
 
+**Money — income splits + transfers (Finance 1A.2).** Income uses a compact panel with a Single /
+Split toggle; split rows are `account · type (Fixed $ / % of remaining / Remainder) · value` with a
+live **dollar preview** that re-sums on every keystroke and shows the validation error inline before
+save. Receipt confirms the actual gross; received vs scheduled is a text status, and an unassigned
+income reads "Destination not assigned" (amber `var(--aware)`, never guessed). Transfers render as
+`from → to` with a status tag and Complete / Reverse / Delete actions. The shared **Recent activity**
+ledger now labels every movement kind in words (Bill payment, Income received, Transfer out/in, and
+their reversals); paired transfer legs share a `transfer #N` context so they read as one transfer —
+transfers are **never** styled as earnings or spending. Reuses the existing `.fin-*` primitives;
+split/transfer forms stack to one column at ≤640px.
+
 **Experiences palette note.** Experiences uses a restrained gradient from cyan toward violet
 (suggesting discovery, scenery, nightlife, creativity, and possibility) rather than a generic
 informational blue. It must remain **distinct from the urgency colors** (`act`/`aware`/

@@ -13,11 +13,13 @@ import {
   financialAccounts,
   financialEntries,
   incomeEntries,
+  incomeAllocations,
   accountMovements,
 } from "@/db/schema";
 import { localDaysUntil } from "@/lib/time";
 import type {
   AccountView,
+  AllocationView,
   BillView,
   CashSummary,
   IncomeView,
@@ -204,13 +206,21 @@ export function computeCashSummary(accounts: AccountView[]): CashSummary {
 
 export function toIncomeViews(
   rows: Awaited<ReturnType<typeof listIncome>>,
+  allocationsByIncome?: Map<number, AllocationView[]>,
 ): IncomeView[] {
   return rows.map((r) => ({
     id: r.id,
     source: r.source,
+    // The outlook keeps using actual ?? expected; the receipt lifecycle uses the
+    // explicit status/actualAmount fields below.
     expectedAmount: num(r.actualAmount ?? r.expectedAmount),
     payDate: r.payDate,
     isPayday: r.isPayday,
+    status: r.status ?? "scheduled",
+    actualAmount: r.actualAmount != null ? num(r.actualAmount) : null,
+    receivedAt: r.receivedAt ? r.receivedAt.toISOString() : null,
+    destinationAccountId: r.destinationAccountId ?? null,
+    allocations: allocationsByIncome?.get(r.id) ?? [],
   }));
 }
 
@@ -516,8 +526,9 @@ export async function reverseBillPayment(userId: number, id: number) {
   }
 }
 
-/** Recent bill-payment ledger movements (newest first) with account + bill names. */
-export async function listMovements(userId: number, limit = 8) {
+/** Recent ledger movements (newest first) with account + bill + income names.
+ * Covers bill-payment (1A.3A) and income/transfer (1A.2) movement kinds. */
+export async function listMovements(userId: number, limit = 12) {
   return db
     .select({
       id: accountMovements.id,
@@ -525,6 +536,9 @@ export async function listMovements(userId: number, limit = 8) {
       accountName: financialAccounts.name,
       billId: accountMovements.billId,
       billName: financialEntries.name,
+      incomeId: accountMovements.incomeId,
+      incomeSource: incomeEntries.source,
+      transferId: accountMovements.transferId,
       kind: accountMovements.kind,
       amount: accountMovements.amount,
       occurredAt: accountMovements.occurredAt,
@@ -532,6 +546,7 @@ export async function listMovements(userId: number, limit = 8) {
     .from(accountMovements)
     .leftJoin(financialAccounts, eq(accountMovements.accountId, financialAccounts.id))
     .leftJoin(financialEntries, eq(accountMovements.billId, financialEntries.id))
+    .leftJoin(incomeEntries, eq(accountMovements.incomeId, incomeEntries.id))
     .where(eq(accountMovements.userId, userId))
     .orderBy(desc(accountMovements.occurredAt), desc(accountMovements.id))
     .limit(limit);
@@ -546,6 +561,9 @@ export function toMovementViews(
     accountName: r.accountName ?? null,
     billId: r.billId ?? null,
     billName: r.billName ?? null,
+    incomeId: r.incomeId ?? null,
+    incomeSource: r.incomeSource ?? null,
+    transferId: r.transferId ?? null,
     kind: r.kind,
     amount: num(r.amount),
     occurredAt:
@@ -556,6 +574,293 @@ export function toMovementViews(
 export async function deleteBill(userId: number, id: number) {
   return updateBill(userId, id, { deletedAt: new Date() } as Partial<NewBill>);
 }
+
+/* ============================ Finance 1A.2: income splits + receipt ledger === */
+
+/** Typed error so routes can map validation problems to specific HTTP codes. */
+export class FinanceError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+    this.name = "FinanceError";
+  }
+}
+
+// Pure split-allocation math lives in lib/finance-allocations (no DB) so the
+// client preview and the server receipt share exactly one implementation.
+import {
+  validateAllocationSet,
+  computeAllocationShares,
+} from "@/lib/finance-allocations";
+import type { AllocationInput, AllocationShare } from "@/lib/finance-allocations";
+export { validateAllocationSet, computeAllocationShares };
+export type { AllocationInput, AllocationShare };
+
+/** A single live income entry owned by this user, or null. */
+export async function getIncome(userId: number, id: number) {
+  const [row] = await db
+    .select()
+    .from(incomeEntries)
+    .where(and(eq(incomeEntries.id, id), eq(incomeEntries.userId, userId), isNull(incomeEntries.deletedAt)))
+    .limit(1);
+  return row ?? null;
+}
+
+/** All allocation rows for the user, joined with destination account names. */
+export async function listAllocations(userId: number) {
+  return db
+    .select({
+      id: incomeAllocations.id,
+      incomeId: incomeAllocations.incomeId,
+      accountId: incomeAllocations.accountId,
+      accountName: financialAccounts.name,
+      allocationType: incomeAllocations.allocationType,
+      value: incomeAllocations.value,
+      position: incomeAllocations.position,
+    })
+    .from(incomeAllocations)
+    .leftJoin(financialAccounts, eq(incomeAllocations.accountId, financialAccounts.id))
+    .where(eq(incomeAllocations.userId, userId))
+    .orderBy(asc(incomeAllocations.incomeId), asc(incomeAllocations.position));
+}
+
+export function allocationsByIncome(
+  rows: Awaited<ReturnType<typeof listAllocations>>,
+): Map<number, AllocationView[]> {
+  const m = new Map<number, AllocationView[]>();
+  for (const r of rows) {
+    const v: AllocationView = {
+      id: r.id,
+      accountId: r.accountId,
+      accountName: r.accountName ?? null,
+      allocationType: r.allocationType,
+      value: r.value != null ? num(r.value) : null,
+      position: r.position,
+    };
+    if (!m.has(r.incomeId)) m.set(r.incomeId, []);
+    m.get(r.incomeId)!.push(v);
+  }
+  return m;
+}
+
+/** Validate a destination/transfer account: owned, live, active, not credit. */
+async function requireCashAccount(userId: number, accountId: number) {
+  const a = await getAccount(userId, accountId);
+  if (!a) throw new FinanceError(400, "Account not found.");
+  if (a.active === false) throw new FinanceError(400, "That account is inactive.");
+  if (a.type === "credit")
+    throw new FinanceError(400, "Credit accounts can't be an income or transfer destination.");
+  return a;
+}
+
+/** Set a single destination account for a scheduled income (clears any split). */
+export async function setIncomeDestination(
+  userId: number,
+  incomeId: number,
+  accountId: number | null,
+) {
+  const inc = await getIncome(userId, incomeId);
+  if (!inc) throw new FinanceError(404, "Income not found.");
+  if (inc.status !== "scheduled")
+    throw new FinanceError(409, "Only scheduled income can be re-assigned.");
+  if (accountId != null) await requireCashAccount(userId, accountId);
+  await db.delete(incomeAllocations).where(eq(incomeAllocations.incomeId, incomeId));
+  return updateIncome(userId, incomeId, { destinationAccountId: accountId } as Partial<NewIncome>);
+}
+
+/** Replace the split allocations for a scheduled income (sets split mode). */
+export async function setIncomeAllocations(
+  userId: number,
+  incomeId: number,
+  allocations: AllocationInput[],
+) {
+  const inc = await getIncome(userId, incomeId);
+  if (!inc) throw new FinanceError(404, "Income not found.");
+  if (inc.status !== "scheduled")
+    throw new FinanceError(409, "Only scheduled income can be re-allocated.");
+  const structural = validateAllocationSet(allocations);
+  if (structural) throw new FinanceError(400, structural);
+  for (const a of allocations) await requireCashAccount(userId, a.accountId);
+
+  // Replace wholesale; clear single-destination so split mode is unambiguous.
+  await db.delete(incomeAllocations).where(eq(incomeAllocations.incomeId, incomeId));
+  await db.insert(incomeAllocations).values(
+    allocations.map((a, i) => ({
+      userId,
+      incomeId,
+      accountId: a.accountId,
+      allocationType: a.allocationType,
+      value: a.allocationType === "remainder" || a.value == null ? null : String(a.value),
+      position: i,
+    })),
+  );
+  return updateIncome(userId, incomeId, { destinationAccountId: null } as Partial<NewIncome>);
+}
+
+/**
+ * Finance 1A.2 — receive a scheduled income.
+ *
+ * Resolves the destination (single account or split allocations) against the
+ * confirmed gross, then atomically marks the income received and, for every
+ * MANUAL destination, increases that account's balance and appends one positive
+ * `income_received` movement — all in one writable-CTE statement, guarded by
+ * `status='scheduled'` so a duplicate/concurrent receipt does nothing. LINKED
+ * destinations are not mutated and get no movement (bank-authoritative).
+ *
+ * Returns the updated income row, or null if it was not scheduled (not found /
+ * already received). Throws FinanceError(400) for an unresolvable destination.
+ */
+export async function receiveIncome(
+  userId: number,
+  id: number,
+  actualAmount?: number,
+  receivedDate?: string,
+) {
+  const inc = await getIncome(userId, id);
+  if (!inc) return null;
+  if (inc.status !== "scheduled") return null;
+
+  const gross = actualAmount != null ? actualAmount : num(inc.expectedAmount);
+  if (!(gross > 0)) throw new FinanceError(400, "Received amount must be positive.");
+
+  // Resolve shares.
+  const allocRows = await db
+    .select()
+    .from(incomeAllocations)
+    .where(and(eq(incomeAllocations.incomeId, id), eq(incomeAllocations.userId, userId)))
+    .orderBy(asc(incomeAllocations.position));
+  let shares: AllocationShare[];
+  if (allocRows.length) {
+    const res = computeAllocationShares(
+      gross,
+      allocRows.map((a) => ({
+        accountId: a.accountId,
+        allocationType: a.allocationType as AllocationInput["allocationType"],
+        value: a.value != null ? num(a.value) : null,
+      })),
+    );
+    if (res.error) throw new FinanceError(400, res.error);
+    shares = res.shares;
+  } else if (inc.destinationAccountId != null) {
+    shares = [{ accountId: inc.destinationAccountId, cents: Math.round(gross * 100), type: "single" }];
+  } else {
+    throw new FinanceError(400, "Assign a destination account or split before receiving this income.");
+  }
+
+  // Linked-account income cannot be confirmed manually yet (no bank sync). If ANY
+  // destination is linked, reject the WHOLE receipt — never partially credit and
+  // never mark a record received it cannot truthfully confirm. The scheduled
+  // income is left untouched (no balance change, no movement).
+  const accounts = await listAccounts(userId);
+  const acctById = new Map(accounts.map((a) => [a.id, a]));
+  for (const s of shares) {
+    const a = acctById.get(s.accountId);
+    if (!a) throw new FinanceError(400, "A destination account no longer exists.");
+    if (a.balanceSource === "linked")
+      throw new FinanceError(
+        400,
+        "Linked-account income must be confirmed through a future bank sync. Use a manual account for now.",
+      );
+  }
+  // Every destination is a live manual account.
+  const manualShares = shares;
+  const note = `Income received: ${inc.source}`;
+  const grossStr = gross.toFixed(2);
+  const receivedAtSql = receivedDate ? sql`${receivedDate}::date` : sql`now()`;
+
+  // Cast the VALUES columns explicitly — untyped bound params default to text,
+  // which won't compare against the integer account id / numeric balance.
+  const valueRows = manualShares.map(
+    (s) => sql`(${s.accountId}::int, ${(s.cents / 100).toFixed(2)}::numeric)`,
+  );
+  const res = await db.execute(sql`
+    WITH recv AS (
+      UPDATE income_entries
+         SET status = 'received', received_at = ${receivedAtSql},
+             actual_amount = ${grossStr}::numeric, updated_at = now()
+       WHERE id = ${id} AND user_id = ${userId} AND deleted_at IS NULL AND status = 'scheduled'
+      RETURNING id
+    ),
+    alloc (account_id, amt) AS ( VALUES ${sql.join(valueRows, sql`, `)} ),
+    upd AS (
+      UPDATE financial_accounts fa
+         SET current_balance = fa.current_balance + a.amt,
+             balance_updated_at = now(), updated_at = now()
+        FROM alloc a
+       WHERE fa.id = a.account_id AND fa.user_id = ${userId} AND fa.deleted_at IS NULL
+         AND fa.balance_source = 'manual' AND EXISTS (SELECT 1 FROM recv)
+      RETURNING fa.id
+    ),
+    ins AS (
+      INSERT INTO account_movements
+        (user_id, account_id, income_id, kind, amount, note, occurred_at, created_at)
+      SELECT ${userId}, a.account_id, ${id}, 'income_received', a.amt, ${note}, now(), now()
+        FROM alloc a WHERE EXISTS (SELECT 1 FROM recv)
+      RETURNING id
+    )
+    SELECT (SELECT id FROM recv) AS income_id, (SELECT count(*)::int FROM ins) AS n
+  `);
+  const row = (res.rows ?? [])[0] as { income_id: unknown } | undefined;
+  if (!row || row.income_id == null) return null;
+  return getIncome(userId, id);
+}
+
+/**
+ * Finance 1A.2 — undo an income receipt.
+ *
+ * Returns the income to `scheduled` and, for every MANUAL `income_received`
+ * movement, atomically decreases the account back and appends one negative
+ * `income_reversal` movement pointing at the original (which is never deleted).
+ * Guarded by `status='received'` + the partial unique index on `reversal_of_id`
+ * so a duplicate/concurrent reversal cannot subtract twice.
+ */
+export async function reverseIncomeReceipt(userId: number, id: number) {
+  const inc = await getIncome(userId, id);
+  if (!inc) return null;
+  if (inc.status !== "received") return null;
+  const note = `Income receipt reversed: ${inc.source}`;
+  try {
+    const res = await db.execute(sql`
+      WITH reopened AS (
+        UPDATE income_entries
+           SET status = 'scheduled', received_at = NULL, actual_amount = NULL, updated_at = now()
+         WHERE id = ${id} AND user_id = ${userId} AND deleted_at IS NULL AND status = 'received'
+        RETURNING id
+      ),
+      orig AS (
+        SELECT m.id, m.account_id, m.amount
+          FROM account_movements m
+         WHERE m.income_id = ${id} AND m.user_id = ${userId} AND m.kind = 'income_received'
+           AND NOT EXISTS (SELECT 1 FROM account_movements r WHERE r.reversal_of_id = m.id)
+           AND EXISTS (SELECT 1 FROM reopened)
+      ),
+      dec AS (
+        UPDATE financial_accounts fa
+           SET current_balance = fa.current_balance - s.amt,
+               balance_updated_at = now(), updated_at = now()
+          FROM (SELECT account_id, sum(amount) AS amt FROM orig GROUP BY account_id) s
+         WHERE fa.id = s.account_id AND fa.user_id = ${userId} AND fa.deleted_at IS NULL
+           AND fa.balance_source = 'manual' AND EXISTS (SELECT 1 FROM orig)
+        RETURNING fa.id
+      ),
+      rev AS (
+        INSERT INTO account_movements
+          (user_id, account_id, income_id, kind, amount, reversal_of_id, note, occurred_at, created_at)
+        SELECT ${userId}, o.account_id, ${id}, 'income_reversal', -o.amount, o.id, ${note}, now(), now()
+          FROM orig o WHERE EXISTS (SELECT 1 FROM reopened)
+        RETURNING id
+      )
+      SELECT (SELECT id FROM reopened) AS income_id
+    `);
+    const row = (res.rows ?? [])[0] as { income_id: unknown } | undefined;
+    if (!row || row.income_id == null) return null;
+    return getIncome(userId, id);
+  } catch (err) {
+    if (String(err).includes("account_movements_reversal_uq")) return null;
+    throw err;
+  }
+}
+
+export { requireCashAccount };
 
 export async function createIncome(input: NewIncome) {
   const [row] = await db.insert(incomeEntries).values(input).returning();

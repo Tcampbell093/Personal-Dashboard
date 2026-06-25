@@ -1260,6 +1260,28 @@ textarea.taskadd-field:focus {
   border: 1px solid var(--line);
   border-radius: 8px;
 }
+/* income + transfers (1A.2) */
+.fin-income-row, .fin-transfers .fin-bill-row { padding: 8px 0; border-top: 1px solid var(--line); }
+.fin-income-row:first-of-type { border-top: none; }
+.fin-income-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.unassigned-text { color: var(--aware); }
+.fin-arrow { color: var(--muted); }
+.fin-dest-editor {
+  margin-top: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 8px;
+}
+.fin-mode-toggle { display: flex; gap: 8px; margin-bottom: 10px; }
+.fin-mode-toggle .linkbtn.on { color: var(--good); font-weight: 600; }
+.fin-split-row { display: flex; gap: 8px; margin-bottom: 6px; align-items: center; }
+.fin-split-row select, .fin-split-row input {
+  background: var(--ink); border: 1px solid var(--line); border-radius: 8px;
+  color: inherit; padding: 6px 8px; font: inherit; min-width: 0;
+}
+.fin-split-row select { flex: 1; }
+.fin-split-row input { width: 90px; }
+.fin-split-preview { margin: 8px 0; }
+.fin-preview-list { list-style: none; margin: 4px 0 0; padding: 0; }
+.fin-preview-list li { display: flex; justify-content: space-between; padding: 2px 0; font-size: 13px; }
+
 /* recent-activity ledger */
 .fin-activity { display: flex; flex-direction: column; }
 .fin-activity-row {

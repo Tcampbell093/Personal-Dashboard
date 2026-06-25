@@ -270,9 +270,11 @@ async function main() {
   /* ---- 12. Scope exclusions (schema + filesystem) ------------------------- */
   console.log("\n[12] scope exclusions");
   const schemaSrc = readFileSync("db/schema.ts", "utf8");
-  ok("[12] movement_kind limited to bill_payment + reversal only", /movement_kind[\s\S]*?bill_payment[\s\S]*?bill_payment_reversal/.test(schemaSrc) && !/income_movement|transfer_in|transfer_out|reconcile/.test(schemaSrc));
-  ok("[12] no income splits", !/income_allocations|incomeAllocations/.test(schemaSrc));
-  ok("[12] no transfers", !/account_transfers|accountTransfers/.test(schemaSrc));
+  // movement_kind still carries the bill kinds (income/transfer kinds were added
+  // by Finance 1A.2; reconciliation is still out of scope everywhere).
+  ok("[12] movement_kind still has the bill-payment kinds", /movement_kind[\s\S]*?bill_payment[\s\S]*?bill_payment_reversal/.test(schemaSrc));
+  ok("[12] no reconciliation movement kind", !/reconcile/.test(schemaSrc));
+  // NOTE: income_allocations + account_transfers are intentionally added by Finance 1A.2.
   ok("[12] no reconciliation field/route", !/last_reconciled_at|lastReconciledAt/.test(schemaSrc));
   ok("[12] no discretionary spending/transactions table", !/spending_entries|discretionary|"transactions"|\btransactions\b/.test(schemaSrc));
   ok("[12] no Plaid", !/plaid/i.test(schemaSrc + pageSrc + billMgr));

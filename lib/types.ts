@@ -80,17 +80,30 @@ export interface BillView {
   paidAt: string | null; // Finance 1A.3A: when it was marked paid (ISO)
 }
 
-/** Finance 1A.3A: one append-only entry in the manual bill-payment ledger.
- * `amount` is signed — negative for a payment, positive for a reversal. */
+/** One append-only entry in the account-movements ledger. `amount` is signed
+ * (negative = money left the account, positive = money entered). Finance 1A.2
+ * adds income receipt + transfer kinds and their income/transfer references. */
 export interface MovementView {
   id: number;
   accountId: number;
   accountName: string | null;
   billId: number | null;
   billName: string | null;
-  kind: string; // bill_payment | bill_payment_reversal
+  incomeId: number | null;
+  incomeSource: string | null;
+  transferId: number | null;
+  kind: string; // bill_payment(_reversal) | income_received | income_reversal | transfer_(out|in)(_reversal)
   amount: number; // signed
   occurredAt: string; // ISO
+}
+
+export interface AllocationView {
+  id: number;
+  accountId: number;
+  accountName: string | null;
+  allocationType: string; // fixed | percent | remainder
+  value: number | null; // dollars (fixed) | percent (percent) | null (remainder)
+  position: number;
 }
 
 export interface IncomeView {
@@ -99,6 +112,26 @@ export interface IncomeView {
   expectedAmount: number;
   payDate: string;
   isPayday: boolean;
+  // Finance 1A.2: receipt lifecycle + destination(s).
+  status: string; // scheduled | received | cancelled
+  actualAmount: number | null; // confirmed gross at receipt
+  receivedAt: string | null;
+  destinationAccountId: number | null; // single-destination mode (null = unassigned/split)
+  allocations: AllocationView[]; // split mode (empty = single/unassigned)
+}
+
+/** Finance 1A.2: a transfer between two owned accounts. */
+export interface TransferView {
+  id: number;
+  fromAccountId: number;
+  fromName: string | null;
+  toAccountId: number;
+  toName: string | null;
+  amount: number;
+  scheduledDate: string | null;
+  status: string; // scheduled | completed | reversed | cancelled
+  completedAt: string | null;
+  note: string | null;
 }
 
 export interface SignalView {
