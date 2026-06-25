@@ -43,6 +43,13 @@
       "when": 1782243574698,
       "tag": "0005_concerned_colossus",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1782403881337,
+      "tag": "0006_zippy_impossible_man",
+      "breakpoints": true
     }
   ]
 }

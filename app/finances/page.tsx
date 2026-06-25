@@ -13,6 +13,8 @@ import {
   listBills,
   toBillViews,
   computeCashSummary,
+  listMovements,
+  toMovementViews,
 } from "@/lib/services/finances";
 import { isAuthConfigured } from "@/lib/session";
 import { LogoutButton } from "@/components/logout-button";
@@ -25,6 +27,14 @@ export const dynamic = "force-dynamic";
 
 function money(n: number): string {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+function whenLabel(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function Header() {
@@ -46,11 +56,12 @@ function Header() {
 export default async function FinancesPage() {
   const userId = await getCurrentUserId();
 
-  let accounts, bills;
+  let accounts, bills, movements;
   try {
-    [accounts, bills] = await Promise.all([
+    [accounts, bills, movements] = await Promise.all([
       listAccounts(userId).then(toAccountViews),
       listBills(userId).then(toBillViews),
+      listMovements(userId, 8).then(toMovementViews),
     ]);
   } catch (err) {
     // Explicit error state — never fabricate placeholder balances.
@@ -148,6 +159,41 @@ export default async function FinancesPage() {
           <span className="tier-sub">grouped by the account they’re paid from</span>
         </div>
         <BillManager bills={bills} accounts={accountOptions} />
+      </section>
+
+      {/* 4 — Recent activity: the manual bill-payment ledger (append-only) */}
+      <section className="tier">
+        <div className="tier-head">
+          <span className="tier-tick" style={{ background: "var(--good)" }} />
+          <span className="tier-name">Recent activity</span>
+          <span className="tier-sub">recorded bill payments &amp; reversals</span>
+        </div>
+        {movements.length === 0 ? (
+          <div className="empty">No recorded payments yet.</div>
+        ) : (
+          <div className="fin-activity">
+            {movements.map((m) => {
+              const reversal = m.kind === "bill_payment_reversal";
+              return (
+                <div className="fin-activity-row" key={m.id}>
+                  <div>
+                    <div className="main">
+                      {reversal ? "Reversed payment" : "Bill payment"}
+                      {m.billName ? ` · ${m.billName}` : ""}
+                    </div>
+                    <div className="sub">
+                      {m.accountName ?? `Account #${m.accountId}`} · {whenLabel(m.occurredAt)}
+                    </div>
+                  </div>
+                  <span className={`num ${reversal ? "good" : "liab"}`}>
+                    {reversal ? "+" : ""}
+                    {money(m.amount)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </section>
     </div>
   );

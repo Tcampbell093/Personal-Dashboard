@@ -184,18 +184,19 @@ async function main() {
   ok("[5] pre-existing owner bills still valid + unassigned",
     ownerBillsBefore.every((b) => b.sourceAccountId === null) && ownerBillsBefore.length >= 1);
 
-  /* ---- 6. Mark paid records account but does NOT change balance ----------- */
-  console.log("\n[6] mark paid: metadata only, no balance mutation");
-  const a2BalBefore = (await rawAccount(A2)).currentBalance;
+  /* ---- 6. External pay: paid metadata, no balance change (1A.3A supersedes
+   *        the old "manual pay never deducts" rule — see verify-finance1a3a). -- */
+  console.log("\n[6] external pay: paid metadata, no balance change");
   const a1BalBefore = (await rawAccount(A1)).currentBalance;
-  const pay = await patchJson(billPatch, B1, { status: "paid", paidAccountId: A2 });
-  ok("[6] mark paid → 200", pay.status === 200);
+  const a2BalBefore = (await rawAccount(A2)).currentBalance;
+  const pay = await patchJson(billPatch, B1, { status: "paid" }); // external (no account)
+  ok("[6] mark paid (external) → 200", pay.status === 200);
   const paidRow = await rawBill(B1);
   ok("[6] status=paid", paidRow.status === "paid");
   ok("[6] paidAt stamped", paidRow.paidAt !== null);
-  ok("[6] paidAccountId recorded", paidRow.paidAccountId === A2);
-  ok("[6] paid-from account balance UNCHANGED", (await rawAccount(A2)).currentBalance === a2BalBefore);
-  ok("[6] source account balance UNCHANGED", (await rawAccount(A1)).currentBalance === a1BalBefore);
+  ok("[6] external pay → paidAccountId null", paidRow.paidAccountId === null);
+  ok("[6] external pay changes no balance (A1)", (await rawAccount(A1)).currentBalance === a1BalBefore);
+  ok("[6] external pay changes no balance (A2)", (await rawAccount(A2)).currentBalance === a2BalBefore);
   ok("[6] invalid paid account → 400", (await patchJson(billPatch, B2, { status: "paid", paidAccountId: 999999 })).status === 400);
 
   /* ---- 7. Income management remains accessible --------------------------- */
@@ -283,7 +284,9 @@ async function main() {
   ok("[8] no reconcile route", !existsSync("app/api/finances/accounts/[id]/reconcile"));
   ok("[8] no income-splits table", !/income_allocations|incomeAllocations/.test(schemaSrc));
   ok("[8] no transfers table", !/account_transfers|accountTransfers/.test(schemaSrc));
-  ok("[8] no movements ledger", !/account_movements|accountMovements/.test(schemaSrc));
+  // NOTE: the account-movements ledger is intentionally added by Finance 1A.3A
+  // (a separate, approved build) — so it is NO LONGER excluded here. Its own
+  // behavior is verified by scripts/verify-finance1a3a.ts.
   ok("[8] balance_source enum present (manual|linked, future-ready)", /balance_source/.test(schemaSrc));
   ok("[8] no Plaid references", !/plaid/i.test(schemaSrc + pageSrc + acctMgr + billMgr));
 
@@ -308,8 +311,17 @@ async function main() {
   }
   for (const b of ownerBillsBefore) {
     const now = await rawBill(b.id);
-    ok(`[10] owner bill #${b.id} survives unchanged`,
-      !!now && now.deletedAt === null && now.status === b.status && now.paidAccountId === null);
+    // Compare against the BEFORE snapshot (not a hardcoded null) — owner bills may
+    // legitimately carry a paid/source account; we assert they are UNCHANGED.
+    const unchanged =
+      !!now &&
+      now.deletedAt === null &&
+      now.status === b.status &&
+      now.paidAccountId === b.paidAccountId &&
+      now.sourceAccountId === b.sourceAccountId &&
+      now.actualAmount === b.actualAmount &&
+      now.expectedAmount === b.expectedAmount;
+    ok(`[10] owner bill #${b.id} survives unchanged`, unchanged);
   }
 }
 

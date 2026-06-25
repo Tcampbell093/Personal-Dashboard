@@ -4,7 +4,7 @@
 > after every substantive change (see `CLAUDE.md`). For the durable product vision, see
 > `docs/PRODUCT_VISION.md`.
 
-**Last updated:** 2026-06-23 · **Reflects branch:** `main` (Finance 1A.1 implemented, uncommitted)
+**Last updated:** 2026-06-25 · **Reflects branch:** `main` (Finance 1A.3A implemented, uncommitted)
 
 ## Status legend
 
@@ -192,9 +192,34 @@ spendable). `/manage`
   no destructive ops) applied; **owner accounts/bills survived untouched**. **No AI / no usage log**,
   ID-scoped cleanup, request 222 + owner data untouched. Build 1 / 2A (136) / 2B.1 (126) / 2B.2 (60)
   / Home 1A (55) / Manage-tasks (27) regress green.
+- **Finance 1A.3A — manual bill-payment ledger**, verified **deterministically**
+  (`scripts/verify-finance1a3a.ts`, **67/67**, real pay/reverse/PATCH route handlers + services vs
+  real Neon, incl. **real wall-clock concurrency**) and **end-to-end through the running server**
+  (authenticated HTTP: login → pay → duplicate-pay 409 → reverse → duplicate-reverse 409, with the
+  rendered `/finances` SSR HTML confirmed). Paying a bill from a **manual** account now **atomically**
+  (single writable-CTE statement) marks it paid with the **confirmed actual amount**, **deducts that
+  amount** from the account, and appends **one negative** `account_movements` row. The transition is
+  guarded by the bill's open status, so a **duplicate or concurrent payment cannot deduct twice**
+  (the second gets 409, no second deduction). An **external/cash** payment (no account) marks the
+  bill paid and changes no balance / writes no movement; a **`linked`** account is marked paid but
+  **never receives a manual deduction** (and no movement). **Reversal** reopens the bill to
+  scheduled/due/overdue **by its due date**, atomically **credits the account back** and appends an
+  equal **positive** reversal movement that references the original; the **original payment movement
+  is never deleted**, and a **partial unique index on `reversal_of_id`** plus the paid-status guard
+  make a **duplicate/concurrent reversal unable to credit twice** (409). **Existing/historical paid
+  bills get no fabricated movement** (the ledger starts empty; reversing a pre-ledger paid bill
+  reopens it with no credit). `/finances` gained a **Recent activity** ledger view, an actual-amount
+  + paid-from/external **pay form**, paid-confirmation labels, and a **Reverse** action. This
+  **supersedes** the Finance 1A.1 rule "marking paid never changes a balance" **for manual-account
+  payments** (external/linked still change nothing). Additive migration `0006_zippy_impossible_man.sql`
+  (reviewed: only `CREATE TYPE` + `CREATE TABLE` + FKs/indexes, no change to any existing table)
+  applied. **No** Plaid / income splits / transfers / discretionary spending / reconciliation / AI.
+  **Owner accounts/bills survived untouched**; ID-scoped cleanup; request 222 untouched; no usage log.
+  Finance 1A.1 (74) / Home 1A (55) / Manage-tasks (27) / Build 2A (136) / 2B.1 (126) / 2B.2 (60)
+  regress green.
 - **`npm run typecheck` and `npm run build`** pass on the current code (the build includes the
-  Home `/`, `/manage`, `/finances`, and the `/interpret`, `/recommend`, `/select-recommendation`
-  routes).
+  Home `/`, `/manage`, `/finances`, the bill `pay`/`reverse` routes, and the `/interpret`,
+  `/recommend`, `/select-recommendation` routes).
 
 ## 🟡 Partially implemented
 

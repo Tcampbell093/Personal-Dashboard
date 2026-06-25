@@ -13,6 +13,7 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import type { ExperienceRecommendation } from "@/lib/types";
 
@@ -93,6 +94,16 @@ export const billStatus = pgEnum("bill_status", [
 // `financial_connections` model later — NOT on the account row — because one
 // connection may back several accounts.
 export const balanceSource = pgEnum("balance_source", ["manual", "linked"]);
+
+// Finance 1A.3A: kinds of recorded account-balance movement. Scoped to the
+// manual bill-payment ledger only — a `bill_payment` is a negative movement
+// (money left the account); a `bill_payment_reversal` is the equal positive
+// movement that undoes it. Income/transfer/reconciliation kinds are deliberately
+// NOT added here (Finance 1A.3 proper / 1A.2) — they can be appended later.
+export const movementKind = pgEnum("movement_kind", [
+  "bill_payment",
+  "bill_payment_reversal",
+]);
 
 export const signalType = pgEnum("signal_type", [
   "weather",
@@ -431,6 +442,51 @@ export const incomeEntries = pgTable(
     ...timestamps,
   },
   (t) => [index("income_entries_user_date_idx").on(t.userId, t.payDate)],
+);
+
+/* Finance 1A.3A — manual bill-payment ledger.
+ * Append-only record of every change a recorded bill payment makes to a MANUAL
+ * account balance. A `bill_payment` is negative (money left the account); its
+ * `bill_payment_reversal` is the equal positive entry. Rows are NEVER updated or
+ * deleted (no updatedAt/deletedAt) — corrections are made by appending a
+ * reversal. `reversalOfId` points a reversal at the payment it undoes; a partial
+ * unique index on it makes a second reversal of the same payment impossible
+ * (no double credit). External/cash payments and payments against `linked`
+ * accounts create NO movement (no manual balance is changed). */
+export const accountMovements = pgTable(
+  "account_movements",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // The manual account whose balance this movement changed.
+    accountId: integer("account_id")
+      .notNull()
+      .references(() => financialAccounts.id),
+    // The bill this movement relates to (a bill payment / its reversal).
+    billId: integer("bill_id").references(() => financialEntries.id),
+    kind: movementKind("kind").notNull(),
+    // Signed: negative for a payment, positive for a reversal.
+    amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+    // Set on a reversal row → the payment movement it reverses (self-reference).
+    reversalOfId: integer("reversal_of_id").references(
+      (): AnyPgColumn => accountMovements.id,
+    ),
+    note: text("note"),
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("account_movements_user_idx").on(t.userId, t.occurredAt),
+    index("account_movements_bill_idx").on(t.billId),
+    // At most one reversal per payment movement — blocks a double credit.
+    uniqueIndex("account_movements_reversal_uq")
+      .on(t.reversalOfId)
+      .where(sqlNotNull(t.reversalOfId)),
+  ],
 );
 
 /* -------------------------------------------------------------- signals --- */

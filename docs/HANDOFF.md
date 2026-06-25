@@ -12,20 +12,22 @@
 
 ## Next approved task
 
-### Finance 1A.1 — account-aware manual finance (accounts + bills)
+### Finance 1A.3A — manual bill-payment ledger
 
 - **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** See the latest handoff report
-  below. Adds richer accounts (institution, validated type + purpose, `balanceSource`,
-  `includeInSpendable`, `active`), account-linked bills (`sourceAccountId`, `paidAccountId`), a
-  dedicated **`/finances`** page with truthful cash/spendable/savings/credit-liability rollups, and a
-  reduced `/manage` Money summary that links to `/finances` (income management preserved on
-  `/manage`). **Marking a bill paid records metadata only and never changes an account balance.**
-  Additive migration `0005` (reviewed, applied). (Manage clarity committed `1ca6fab`; Home 1A
-  `405fd45`; Build 2B.2 `ef08dd2`.)
-- **No further build is currently authorized.** The next finance gates, each requiring explicit
-  approval, are **Finance 1A.2** (account-linked & split income — fixed → percent-of-remaining →
-  remainder; and transfers, scheduled + completed) and **Finance 1A.3** (recorded movements ledger
-  so pay/receive/transfer update actual balances; reconciliation + audit adjustment; account-aware
+  below. Paying a bill from a **manual** account now atomically marks it paid (with the confirmed
+  actual amount), **deducts** that account, and appends one negative `account_movements` row;
+  **reversal** reopens the bill by its date, **credits** the account back, and appends an equal
+  positive movement (the original is never deleted). Duplicate/concurrent pay or reverse cannot
+  deduct/credit twice (409 + partial unique index). External/cash and `linked` accounts change no
+  balance. `/finances` gained a Recent-activity ledger, an actual-amount/external pay form, and a
+  Reverse action. Additive migration `0006` (reviewed, applied). **Supersedes** the 1A.1 "paying
+  never changes a balance" rule for manual-account payments. (Finance 1A.1 committed `726c3e8`;
+  Manage clarity `1ca6fab`; Home 1A `405fd45`.)
+- **No further build is currently authorized.** Remaining finance gates, each requiring explicit
+  approval: **Finance 1A.2** (account-linked & split income — fixed → percent-of-remaining →
+  remainder; and transfers, scheduled + completed) and **Finance 1A.3 (remainder)** (extend the
+  ledger to income receipt + transfer completion; reconciliation + audit adjustment; account-aware
   projection replacing the legacy `estimatedRemaining`). A future **Finance 1B** adds a separate
   read-only bank-connection model (`financial_connections`; `balanceSource = linked`). Other
   separately-gated directions remain: **Home 1B** (owner-triggered AI daily brief); a settings UI for
@@ -108,6 +110,111 @@ specific build. Builds are ordered so the manual loop works end-to-end before an
 ---
 
 ## Latest handoff
+
+### Finance 1A.3A — manual bill-payment ledger — implemented — 2026-06-25
+
+**Task Completed**
+Implemented Finance 1A.3A exactly to the approved scope: paying a bill from a **manual** account
+deducts the confirmed actual amount and records an append-only ledger movement, atomically and
+idempotently; reversal restores the balance with an equal positive movement. **No** Plaid / income
+splits / transfers / discretionary spending / reconciliation / AI. Not committed — awaiting owner
+review.
+
+**Repository state confirmed before implementing** — HEAD was `726c3e8…` (Finance 1A.1), tree clean,
+no `account_movements` table, and paying a bill changed no balance. (Did not recreate/amend `726c3e8`.)
+
+**Required behaviors (all implemented + verified)**
+Manual-account payment deducts the confirmed actual amount, atomically with the bill status update;
+one append-only negative movement; duplicate/concurrent payment can't deduct twice (409 + status
+guard); external/cash marks paid with no account change; `linked` accounts never get a manual
+deduction; reversal appends an equal positive movement and restores the balance; the original payment
+movement is never deleted; duplicate/concurrent reversal can't credit twice (409 + partial unique
+index on `reversal_of_id`); the bill reopens as scheduled/due/overdue by its date; `/finances` shows
+payment confirmation, actual amount, paid-from/external status, a Reverse action, and Recent activity;
+historical paid bills get no fabricated movement.
+
+**Payment & reversal lifecycle**
+- **Pay** (`POST .../pay` or `PATCH status:"paid"` for the Home quick-action): a single writable-CTE
+  statement updates the bill → `paid` (`paid_at`, `paid_account_id`, `actual_amount`) **only if it is
+  open**, and — when the account is `manual` — decrements its balance and inserts a `bill_payment`
+  movement (= −amount). External (no account) and `linked` accounts: bill marked paid, no balance
+  change, no movement.
+- **Reverse** (`POST .../reverse`): a single statement reopens the bill (`scheduled`/`due`/`overdue`
+  by due date) **only if it is paid**, clears the paid metadata, and — when an un-reversed payment
+  movement exists — credits the account back and inserts a `bill_payment_reversal` (= +amount,
+  `reversal_of_id` → the payment). The original payment row is retained.
+
+**Concurrency strategy**
+Single-statement writable CTEs on the Neon HTTP driver (same pattern as ADR-017). Row-level locking on
+the bill `UPDATE` (guarded by `status IN open-set` / `status='paid'`) serialises racers so exactly one
+performs the balance change; the loser matches 0 rows → service returns null → route 409. A **partial
+unique index on `reversal_of_id`** backstops concurrent reversals (a second insert violates it → caught
+→ 409, full rollback, no double credit). Verified with real wall-clock `Promise.allSettled` races for
+both pay and reverse.
+
+**Schema & migration**
+New `movement_kind` enum (`bill_payment`, `bill_payment_reversal`) + new **append-only**
+`account_movements` table (`userId`, `accountId` FK, `billId` FK, `kind`, signed `amount`,
+`reversalOfId` self-FK, `note`, `occurredAt`, `createdAt`; **no** `updatedAt`/`deletedAt`); indexes on
+(`userId`,`occurredAt`) and `billId`; **partial unique index on `reversal_of_id`**. Migration
+`0006_zippy_impossible_man.sql` — **creation-only, additive**: `CREATE TYPE` + `CREATE TABLE` + 4 FKs +
+2 indexes + 1 partial unique index; **no `ALTER`/`DROP` on any existing table**, so existing accounts/
+bills are untouched and historical paid bills get no movement. Reviewed for destructive ops before
+applying — none.
+
+**Exact files changed**
+- `db/schema.ts` — `movement_kind` enum + `account_movements` table (+ `AnyPgColumn` import for the
+  self-FK).
+- `db/migrations/0006_zippy_impossible_man.sql` (+ `meta/0006_snapshot.json`, `_journal.json`).
+- `lib/types.ts` — `BillView` +`actualAmount`,`paidAt`; new `MovementView`.
+- `lib/services/finances.ts` — ledger-aware `payBill` (atomic deduct + movement), `reverseBillPayment`,
+  `getBill`, `openStatusForDueDate`, `listMovements`/`toMovementViews`, `toBillViews` +actualAmount/
+  paidAt; imports `desc`,`sql`,`localDaysUntil`,`accountMovements`.
+- New `app/api/finances/bills/[id]/pay/route.ts`; new `app/api/finances/bills/[id]/reverse/route.ts`;
+  `app/api/finances/bills/[id]/route.ts` (PATCH routes `status:"paid"` through the ledger, rejects
+  balance-less status flips, drops standalone `paidAccountId` edits).
+- `components/finances/bill-manager.tsx` — actual-amount/external pay form, paid confirmation, Reverse.
+- `app/finances/page.tsx` — loads movements + renders a **Recent activity** section.
+- `app/globals.css` — activity-row + mobile pay-form styles.
+- New `scripts/verify-finance1a3a.ts`; updated `scripts/verify-finance1a.ts` (section [6] now tests
+  external-pay no-deduction; the "no movements ledger" exclusion removed as 1A.3A adds it; owner-bill
+  preservation compares to the before-snapshot, not a hardcoded null). Docs updated.
+
+**Testing completed**
+`npm run typecheck` ✓; `npm run build` ✓ (incl. `/finances` + the `pay`/`reverse` routes).
+**`scripts/verify-finance1a3a.ts` — 67/67** (real route handlers + services vs real Neon): manual-pay
+deducts confirmed actual + atomic + one −movement; external pay no-change/no-movement; linked never
+deducted; duplicate pay 409 + no second deduction; **concurrent pay race → exactly one 200 + one 409,
+one deduction, one movement**; reversal restores balance + appends equal +movement referencing the
+original (never deleted); reopen status by date (future→scheduled, today→due, past→overdue, none→
+scheduled); duplicate reverse 409 + no second credit; **concurrent reverse race → one 200 + one 409,
+one credit, two movements**; historical paid bill has no movement and reverses without crediting;
+`listMovements` + `/finances` UI surface (Recent activity, actual amount, paid-from/external, Reverse);
+scope exclusions (movement_kind limited to the two bill kinds; no splits/transfers/reconcile/spending/
+Plaid); no usage log; **owner accounts/bills unchanged + no fabricated movements**; request 222
+untouched; exact-ID cleanup. **End-to-end through the running server (authenticated HTTP):** login →
+create temp account+bill → pay (actual 180 from account) → balance 1000→820 → duplicate pay **409**
+(still 820) → reverse → balance →1000, bill reopened `scheduled`, two movements (−180 payment retained
++ +180 reversal) → duplicate reverse **409**; the rendered `/finances` SSR HTML contained Recent
+activity, the Reverse action, the bill, and the actual amount. Temp records removed by exact id.
+**Regressions:** Finance 1A.1 74 / Home 1A 55 / Manage-tasks 27 / Build 2A 136 / 2B.1 126 / 2B.2 60 —
+all green. **`npm run lint` not run** (interactive-only). **No AI/Anthropic call.**
+
+**Known issues / not tested**
+- The **pixel** browser (preview MCP) was not driven for the mutation flow because the dev server
+  requires the owner password and typing it into a browser tool call would expose the secret; instead
+  the flow was verified **end-to-end through the running Next.js server over authenticated HTTP**
+  (middleware + routes + SSR HTML) plus the deterministic harness. The `/finances` page itself was
+  visually rendered during Finance 1A.1.
+- I updated three assertions in the committed `scripts/verify-finance1a.ts` (disclosed above) because
+  1A.3A intentionally changes manual-pay behavior and adds the ledger; the 1A.1 suite remains 74/74.
+- Reversing a bill always recomputes the reopen status from its due date (it does not restore a prior
+  `skipped` state) — out of scope for 1A.3A.
+
+**Decisions needed** — owner review before commit. Finance 1A.2 and the 1A.3 remainder each require
+separate authorization.
+**Recommended next step** — owner reviews Finance 1A.3A; if approved, authorize the commit, then the
+Finance 1A.2 (income splits + transfers) or 1A.3-remainder bounded task can be prepared.
 
 ### Finance 1A.1 — account-aware manual finance (accounts + bills) — implemented — 2026-06-23
 

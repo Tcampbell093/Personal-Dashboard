@@ -1,12 +1,13 @@
 "use client";
 
-/* Bill management island for /finances (Finance 1A.1).
+/* Bill management island for /finances (Finance 1A.1 + 1A.3A).
  *
  * Bills are grouped by the account they are paid from; bills with no account
  * appear under "Payment account not assigned" (never auto-guessed). Supports
- * add, reassign payment account, mark paid (recording the account actually
- * used), and delete. Marking a bill paid does NOT change any account balance —
- * balances stay manually entered until Finance 1A.3. */
+ * add, reassign payment account, pay (recording the confirmed actual amount and
+ * the account used — or external/cash), reverse a payment, and delete. Paying
+ * from a manual account deducts that account's balance and records a ledger
+ * movement; reversing credits it back. */
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -72,13 +73,17 @@ export function BillManager({
 
   return (
     <div className="fin-bills">
-      <AddBill accounts={accounts} pending={pending} onAdd={(body) =>
-        mutate("/api/finances/bills", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        })
-      } />
+      <AddBill
+        accounts={accounts}
+        pending={pending}
+        onAdd={(body) =>
+          mutate("/api/finances/bills", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          })
+        }
+      />
 
       {bills.length === 0 && <div className="empty">No bills yet.</div>}
 
@@ -97,7 +102,10 @@ export function BillManager({
                   <div className="sub">
                     {paid ? (
                       <span className="fin-tag good">
-                        Paid{paidFrom ? ` · from ${paidFrom}` : ""}
+                        Paid
+                        {b.actualAmount != null ? ` · ${money(b.actualAmount)}` : ""}
+                        {" · "}
+                        {paidFrom ? `from ${paidFrom}` : "external / cash"}
                       </span>
                     ) : (
                       <span className="fin-bill-due">due {shortDate(b.dueDate)}</span>
@@ -112,7 +120,19 @@ export function BillManager({
                       onClick={() => setPayingId(b.id)}
                       disabled={pending}
                     >
-                      Mark paid
+                      Pay
+                    </button>
+                  )}
+                  {paid && (
+                    <button
+                      className="linkbtn"
+                      onClick={() =>
+                        mutate(`/api/finances/bills/${b.id}/reverse`, { method: "POST" })
+                      }
+                      disabled={pending}
+                      title="Undo this payment and restore the balance"
+                    >
+                      Reverse
                     </button>
                   )}
                   <button
@@ -129,13 +149,14 @@ export function BillManager({
                   <PayForm
                     accounts={accounts}
                     defaultAccountId={b.sourceAccountId}
+                    defaultAmount={b.expectedAmount}
                     pending={pending}
                     onCancel={() => setPayingId(null)}
-                    onConfirm={async (paidAccountId) => {
-                      const okk = await mutate(`/api/finances/bills/${b.id}`, {
-                        method: "PATCH",
+                    onConfirm={async (body) => {
+                      const okk = await mutate(`/api/finances/bills/${b.id}/pay`, {
+                        method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ status: "paid", paidAccountId }),
+                        body: JSON.stringify(body),
                       });
                       if (okk) setPayingId(null);
                     }}
@@ -148,8 +169,9 @@ export function BillManager({
       ))}
 
       <div className="fin-form-note">
-        Marking a bill paid records the payment and the account used. It does not
-        change any account balance — balances stay as you entered them.
+        Paying from a manual account deducts that account’s balance and records a
+        movement. Reversing restores the balance. External/cash payments change no
+        balance.
       </div>
       {error && <div className="taskadd-error">{error}</div>}
     </div>
@@ -159,25 +181,41 @@ export function BillManager({
 function PayForm({
   accounts,
   defaultAccountId,
+  defaultAmount,
   pending,
   onConfirm,
   onCancel,
 }: {
   accounts: AccountOption[];
   defaultAccountId: number | null;
+  defaultAmount: number;
   pending: boolean;
-  onConfirm: (paidAccountId: number | null) => void;
+  onConfirm: (body: Record<string, unknown>) => void;
   onCancel: () => void;
 }) {
+  // "" = external/cash; otherwise an account id.
   const [sel, setSel] = useState<string>(
     defaultAccountId != null ? String(defaultAccountId) : "",
   );
+  const [amount, setAmount] = useState<string>(defaultAmount ? String(defaultAmount) : "");
+
   return (
     <div className="fin-pay">
       <label className="fin-field">
-        <span>Paid from</span>
+        <span>Actual amount</span>
+        <input
+          type="number"
+          step="0.01"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder="0.00"
+          disabled={pending}
+        />
+      </label>
+      <label className="fin-field">
+        <span>Pay from</span>
         <select value={sel} onChange={(e) => setSel(e.target.value)} disabled={pending}>
-          <option value="">Not recorded</option>
+          <option value="">External / cash (no account)</option>
           {accounts.map((a) => (
             <option key={a.id} value={a.id}>
               {a.name}
@@ -187,10 +225,16 @@ function PayForm({
       </label>
       <button
         className="btn"
-        onClick={() => onConfirm(sel === "" ? null : Number(sel))}
+        onClick={() =>
+          onConfirm(
+            sel === ""
+              ? { external: true, actualAmount: amount === "" ? undefined : Number(amount) }
+              : { paidAccountId: Number(sel), actualAmount: amount === "" ? undefined : Number(amount) },
+          )
+        }
         disabled={pending}
       >
-        Confirm paid
+        Confirm payment
       </button>
       <button className="linkbtn" onClick={onCancel} disabled={pending}>
         Cancel

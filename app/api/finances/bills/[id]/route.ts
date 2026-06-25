@@ -1,16 +1,18 @@
-/* /api/finances/bills/[id] — update, mark paid (status=paid), soft-delete.
+/* /api/finances/bills/[id] — edit fields, mark paid, soft-delete a bill.
  *
- * Finance 1A.1: marking a bill paid records status + paidAt + the account it was
- * actually paid from (`paidAccountId`, optional). It does NOT mutate any account
- * balance — balances stay manually entered until Finance 1A.3. The bill's
- * `sourceAccountId` (normal payment account) can also be (re)assigned or cleared. */
+ * Finance 1A.3A: the bill lifecycle is owned by the ledger. `status:"paid"` is
+ * routed through `payBill` (atomic deduct + movement when paid from a manual
+ * account; external when no account). Reopening a paid bill is NOT a field edit
+ * — it must go through `POST .../reverse` so the deduction is credited back.
+ * PATCH therefore only edits descriptive fields + accepts `status:"paid"`. */
 
 import { NextResponse } from "next/server";
 import {
   updateBill,
   deleteBill,
+  payBill,
+  getBill,
   accountExists,
-  BILL_STATUSES,
   type NewBill,
 } from "@/lib/services/finances";
 import { CURRENT_USER_ID } from "@/lib/auth";
@@ -22,6 +24,12 @@ function readAccountId(v: unknown): number | null | Error {
   if (v === undefined || v === null || v === "") return null;
   const n = Number(v);
   if (!Number.isInteger(n) || n <= 0) return new Error("Invalid account id.");
+  return n;
+}
+function readAmount(v: unknown): number | undefined | Error {
+  if (v === undefined || v === null || v === "") return undefined;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0) return new Error("Amount must be a non-negative number.");
   return n;
 }
 
@@ -45,8 +53,48 @@ export async function PATCH(request: Request, { params }: Ctx) {
     return NextResponse.json({ error: "Body must be valid JSON." }, { status: 400 });
   }
   const b = body as Record<string, unknown>;
-  const patch: Partial<NewBill> = {};
 
+  // --- Lifecycle: paying goes through the ledger; reopening uses /reverse. ---
+  if (b.status !== undefined) {
+    if (b.status !== "paid") {
+      return NextResponse.json(
+        {
+          error:
+            "Bill status is managed by the pay/reverse actions; only status='paid' is accepted here. Reopen a paid bill via POST .../reverse.",
+        },
+        { status: 400 },
+      );
+    }
+    const paid = readAccountId(b.paidAccountId);
+    if (paid instanceof Error) {
+      return NextResponse.json({ error: paid.message }, { status: 400 });
+    }
+    if (paid !== null && !(await accountExists(CURRENT_USER_ID, paid))) {
+      return NextResponse.json({ error: "Payment account not found." }, { status: 400 });
+    }
+    const actual = readAmount(b.actualAmount);
+    if (actual instanceof Error) {
+      return NextResponse.json({ error: actual.message }, { status: 400 });
+    }
+    try {
+      const row = await payBill(CURRENT_USER_ID, id, paid, actual);
+      if (!row) {
+        const exists = await getBill(CURRENT_USER_ID, id);
+        return exists
+          ? NextResponse.json({ error: "Bill is already paid." }, { status: 409 })
+          : NextResponse.json({ error: "Bill not found." }, { status: 404 });
+      }
+      return NextResponse.json({ bill: row });
+    } catch (err) {
+      return NextResponse.json(
+        { error: "Could not record the payment.", detail: String(err) },
+        { status: 500 },
+      );
+    }
+  }
+
+  // --- Descriptive field edits (never touch balances or the ledger). ---
+  const patch: Partial<NewBill> = {};
   if (typeof b.name === "string") {
     const name = b.name.trim();
     if (!name) {
@@ -67,7 +115,6 @@ export async function PATCH(request: Request, { params }: Ctx) {
     }
     patch.dueDate = isDate(b.dueDate) ? b.dueDate : null;
   }
-  // Reassign or clear the normal payment account.
   if ("sourceAccountId" in b) {
     const src = readAccountId(b.sourceAccountId);
     if (src instanceof Error) {
@@ -77,24 +124,6 @@ export async function PATCH(request: Request, { params }: Ctx) {
       return NextResponse.json({ error: "Source account not found." }, { status: 400 });
     }
     patch.sourceAccountId = src;
-  }
-  // The account actually used for payment (recorded, never moves a balance).
-  if ("paidAccountId" in b) {
-    const paid = readAccountId(b.paidAccountId);
-    if (paid instanceof Error) {
-      return NextResponse.json({ error: paid.message }, { status: 400 });
-    }
-    if (paid !== null && !(await accountExists(CURRENT_USER_ID, paid))) {
-      return NextResponse.json({ error: "Payment account not found." }, { status: 400 });
-    }
-    patch.paidAccountId = paid;
-  }
-  if (b.status !== undefined) {
-    if (!BILL_STATUSES.includes(b.status as never)) {
-      return NextResponse.json({ error: "Invalid status." }, { status: 400 });
-    }
-    patch.status = b.status as (typeof BILL_STATUSES)[number];
-    if (b.status === "paid") patch.paidAt = new Date();
   }
 
   if (Object.keys(patch).length === 0) {

@@ -76,6 +76,21 @@ export interface BillView {
   status: string;
   sourceAccountId: number | null; // account normally paid from (null = unassigned)
   paidAccountId: number | null; // account actually used when marked paid
+  actualAmount: number | null; // Finance 1A.3A: confirmed amount actually paid
+  paidAt: string | null; // Finance 1A.3A: when it was marked paid (ISO)
+}
+
+/** Finance 1A.3A: one append-only entry in the manual bill-payment ledger.
+ * `amount` is signed — negative for a payment, positive for a reversal. */
+export interface MovementView {
+  id: number;
+  accountId: number;
+  accountName: string | null;
+  billId: number | null;
+  billName: string | null;
+  kind: string; // bill_payment | bill_payment_reversal
+  amount: number; // signed
+  occurredAt: string; // ISO
 }
 
 export interface IncomeView {

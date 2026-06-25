@@ -293,6 +293,42 @@
   and owner-data preservation. No AI / no usage log. Build 1 / 2A / 2B.1 / 2B.2 / Home 1A /
   Manage-tasks regress green.
 
+### ADR-022 — Finance 1A.3A: manual bill-payment ledger (atomic, append-only, idempotent)
+- **Classification:** Owner-approved decision (owner approved the Finance 1A.3A scope and behavior).
+- **Detail:** Paying a bill is now a balance-changing, ledgered action — but only for **manual**
+  accounts and only for bill payments (this sub-build deliberately excludes income, transfers,
+  discretionary spending, reconciliation, projection, Plaid, and AI).
+  - **New `account_movements` table** (append-only; no `updatedAt`/`deletedAt`) records every change
+    a recorded payment makes to a manual balance: a `bill_payment` is negative, its
+    `bill_payment_reversal` is the equal positive entry, linked by `reversal_of_id`.
+  - **Atomicity:** pay = one writable-CTE statement that flips the bill to paid, deducts the account,
+    and inserts the movement all-or-nothing; reverse = one statement that reopens the bill, credits
+    the account, and inserts the reversal. (Same Neon-HTTP single-statement pattern as ADR-017.)
+  - **Idempotency / concurrency:** the bill-status guard (`WHERE status IN open-set` for pay,
+    `WHERE status='paid'` for reverse) makes a duplicate/concurrent call a no-op (→ 409); a **partial
+    unique index on `reversal_of_id`** backstops concurrent reversals so a payment can be credited
+    back at most once. Verified with real wall-clock `Promise.allSettled` races.
+  - **Confirmed actual amount:** the owner confirms the amount actually paid (defaulting to expected);
+    that amount is what is deducted and recorded, and is stored on the bill (`actual_amount`).
+  - **External/cash + linked:** an external/cash payment (no account) marks the bill paid and changes
+    no balance / writes no movement; a `linked` account is marked paid but **never** receives a manual
+    deduction (no movement) — only its future bank sync may change it.
+  - **Reversal reopen:** reversing reopens the bill to `scheduled`/`due`/`overdue` by its due date
+    (local timezone) and clears `paid_at`/`paid_account_id`/`actual_amount`; the original payment
+    movement is **never deleted**.
+  - **No back-fill:** the ledger starts empty; **existing/historical paid bills get no fabricated
+    movement**, and reversing a pre-ledger paid bill simply reopens it with no credit.
+  - **Supersedes** ADR-021's "marking paid never changes a balance" **for manual-account payments**
+    (external/linked still change nothing). The legacy `estimatedRemaining` is unchanged.
+  - **Lifecycle ownership:** paying/reopening go through dedicated `POST .../pay` and `.../reverse`
+    endpoints (and `PATCH status:"paid"` as the Home quick-action compatibility path); bill PATCH no
+    longer performs balance-less status flips or standalone `paidAccountId` edits, so the ledger can't
+    be bypassed.
+- **Evidence:** `scripts/verify-finance1a3a.ts` (67/67, real route handlers + services vs real Neon,
+  incl. concurrency) + authenticated end-to-end HTTP through the running server (login → pay →
+  duplicate-pay 409 → reverse → duplicate-reverse 409, SSR HTML confirmed). No AI / no usage log.
+  Finance 1A.1 / Home 1A / Manage-tasks / Build 2A / 2B.1 / 2B.2 regress green.
+
 ---
 
 ## Open decisions — `[DECISION NEEDED]`

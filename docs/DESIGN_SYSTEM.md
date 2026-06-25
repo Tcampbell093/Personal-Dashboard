@@ -206,6 +206,13 @@ a projected balance and the strings "safe to spend"/"live balance" appear nowher
 text tags (Spendable / Excluded from spendable / Inactive / Liability — not cash), not color alone, at AA
 contrast; 375px stacks to a single column.
 
+**Money — payment ledger (Finance 1A.3A).** Paying a bill uses an inline form (confirmed actual
+amount + "Pay from" account or "External / cash"); a paid bill shows a text confirmation
+("Paid · $amount · from <account>" / "external / cash") and a **Reverse** action. A **Recent activity**
+section lists the append-only ledger — payments (negative, urgency red `var(--act)`) and reversals
+(positive, emerald `var(--good)`), each with a `+`/`−` sign and the kind spelled out in text, so
+direction is never conveyed by color alone. The pay form stacks to a single column at ≤640px.
+
 **Experiences palette note.** Experiences uses a restrained gradient from cyan toward violet
 (suggesting discovery, scenery, nightlife, creativity, and possibility) rather than a generic
 informational blue. It must remain **distinct from the urgency colors** (`act`/`aware`/

@@ -18,7 +18,8 @@
 ## Enums (Postgres `pgEnum`)
 
 `task_status`, `priority`, `recurrence`, `obligation_type`, `obligation_status`,
-`importance`, `bill_status`, `balance_source` (Finance 1A.1: `manual`|`linked`), `signal_type`,
+`importance`, `bill_status`, `balance_source` (Finance 1A.1: `manual`|`linked`),
+`movement_kind` (Finance 1A.3A: `bill_payment`|`bill_payment_reversal`), `signal_type`,
 `signal_status`, `opportunity_category`,
 `opportunity_status`, `feedback_kind`, `job_status`, `interest_status`, `run_status`,
 `experience_request_status`, `experience_status`, `experience_energy_level`,
@@ -73,10 +74,21 @@
   `paidAt`. **Finance 1A.1**: `sourceAccountId` (account a bill is normally paid from) and
   `paidAccountId` (account actually used when marked paid) — **both nullable FKs to
   `financial_accounts`**; a null `sourceAccountId` renders as "Payment account not assigned"
-  (never auto-guessed or back-filled). **Marking a bill paid records status + `paidAt` +
-  `paidAccountId` and does NOT mutate any account balance** (the recorded-movements ledger that
-  will move balances on pay/receive/transfer arrives in Finance 1A.3). (Finance services use
-  `kind = "bill"` rows for bills.)
+  (never auto-guessed or back-filled). **Finance 1A.3A** makes paying a bill a balance-changing,
+  ledgered action: marking a bill paid records status + `paidAt` + `paidAccountId` + `actualAmount`,
+  and — when paid from a **manual** account — atomically deducts that account and writes one
+  `account_movements` row (external/cash and `linked` accounts change no balance). (Finance services
+  use `kind = "bill"` rows for bills.)
+- **`account_movements`** (Finance 1A.3A) — **append-only** ledger of every change a recorded bill
+  payment makes to a **manual** account balance: `userId`, `accountId` (FK, the account changed),
+  `billId` (FK, nullable), `kind` (`movement_kind`: `bill_payment` = negative, `bill_payment_reversal`
+  = positive), `amount` (signed `numeric(14,2)`), `reversalOfId` (self-FK; set on a reversal →
+  the payment it undoes), `note`, `occurredAt`, `createdAt`. **No `updatedAt`/`deletedAt`** — rows are
+  never updated or deleted; corrections happen by appending a reversal. A **partial unique index on
+  `reversal_of_id`** guarantees at most one reversal per payment (no double credit). External/cash
+  payments and payments against `linked` accounts create **no** movement. Scope is the bill-payment
+  ledger only — income/transfer/reconciliation movement kinds are deliberately **not** added (future
+  Finance 1A.3 / 1A.2).
 - **`income_entries`** — `source`, `expectedAmount`, `actualAmount`, `payDate`,
   `recurrence`, `isPayday`. (Still managed on `/manage`; account-linked/split income is deferred
   to Finance 1A.2.)
@@ -86,10 +98,12 @@
   **of the remaining** amount → one optional **remainder** account, with deterministic last-cent
   handling through the remainder) and **transfers** between owned accounts (scheduled + completed;
   two-leg, net-zero, never income/expense).
-- **1A.3** — a recorded **movements ledger** so paying a bill / receiving income / completing a
-  transfer updates **actual** account balances; **reconciliation** (set actual to the real balance,
-  with an audit adjustment); and **account-aware projection** replacing the legacy
-  `estimatedRemaining`.
+- **1A.3A — DONE** — the **manual bill-payment ledger** (`account_movements`): paying a bill from a
+  manual account atomically deducts it + appends a movement; reversal credits it back + appends an
+  equal positive movement; idempotent/concurrency-safe; no double spend or double credit.
+- **1A.3 (remainder)** — extend the ledger so **receiving income** and **completing a transfer** also
+  move actual balances; **reconciliation** (set actual to the real balance, with an audit adjustment);
+  and **account-aware projection** replacing the legacy `estimatedRemaining`.
 - **1B** — a separate **`financial_connections`** model for read-only bank links (`balanceSource =
   linked`); connection health lives there, not on the account row.
 
@@ -207,7 +221,8 @@ at `/manage` (the relocated dashboard) and still covers every vertical.
 The UI never depends on Drizzle row types. View models live in `lib/types.ts`
 (`TaskView`, `ObligationView`, `FinancialOutlook`, `AccountView` (Finance 1A.1: +institution,
 purpose, balanceSource, includeInSpendable, active, isCash, isLiability), `CashSummary`,
-`BillView` (+sourceAccountId, paidAccountId), `IncomeView`, `SignalView`, `OpportunityView`,
+`BillView` (+sourceAccountId, paidAccountId, and Finance 1A.3A: actualAmount, paidAt),
+`MovementView` (Finance 1A.3A), `IncomeView`, `SignalView`, `OpportunityView`,
 `JobView`, `InterestItemView`,
 `ExperienceRequestView`, `ExperienceView`, `ExperienceXpSummary`, `Briefing`,
 `DashboardData`). Service-layer `to*Views()` functions map rows → view models.
