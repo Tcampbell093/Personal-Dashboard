@@ -38,6 +38,42 @@ writes no account data and a **provider** failure preserves prior rows + `lastSy
 creation is **insert-then-claim** (a guarded `WHERE financial_account_id IS NULL` update; the orphan is
 rolled back on a lost race), so a duplicate/concurrent call yields **exactly one** account.
 
+**Transaction import (Finance 1B.3A — manual, read-only).** A manual **`Sync transactions`** action
+runs Plaid `/transactions/sync` and stores results in `imported_transactions` as **bank EVIDENCE, not
+Xanther commands**: an imported transaction **never** creates an `account_movements` row, mutates a
+provider/manual balance, or confirms a bill/income/transfer. The `/finances` **Imported activity**
+section is kept separate from **Recent activity** (the Xanther/manual-command ledger). Amounts are
+normalized to Xanther's convention (inflow +, outflow −; a **$0** transaction is the documented
+exception — it is skipped, not stored). **No webhooks** in 1B.3A (deferred to 1B.3B); **no matching, no
+money movement.**
+
+- **Atomic fetch → buffer → commit (cursor rule):** the **entire** Plaid page sequence is fetched into
+  memory **first** (no durable writes); the complete aggregated patch (added/modified upserts + removed
+  tombstones), the final cursor, and the success timestamp are then applied **together in one writable-
+  CTE statement** (atomic — rolls back wholesale on any error; neon-http has no interactive
+  transactions). A `TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION` **discards the accumulation and
+  restarts from the original committed cursor** (bounded 5 retries). Reaching the 25-page limit while
+  `has_more` is still true **fails closed** (no patch; cursor preserved). Any provider/normalization/
+  DB-apply failure persists **no** patch and preserves the prior cursor + prior success timestamp; a
+  later retry restarts safely. **No imported-transaction mutation from a failed or abandoned pagination
+  attempt is ever durable.**
+- **Added/modified/removed:** added/modified upsert by `(connection_id, provider_transaction_id)`
+  (`firstSeenAt` preserved); **removed → tombstone** (`status='removed'` + `removedAt`, never
+  hard-deleted, excluded from active views); an **unknown removal is safely ignored and counted** (the
+  documented rule — no invented row).
+- **Pending → posted:** once an active posted transaction references a pending one via
+  `pendingProviderTransactionId`, the pending row is suppressed from active views (Plaid also tombstones
+  it) — **no permanent double-count**; the relationship is preserved; **no guessed** relationship.
+- **Concurrency:** a **per-connection DB lock** (`transaction_sync_locked_at`, claimed atomically with a
+  5-min stale reclaim, released in a finally) + the connection-scoped unique index prevent cursor
+  corruption and duplicate rows — not a button-disable. A token-decryption or provider failure writes
+  nothing and preserves the prior committed cursor.
+- **No secrets / no over-collection:** the access token is decrypted server-side only for the provider
+  call; routes/views expose no token, encryption field, provider transaction id, or full account
+  number; only bounded normalized fields are stored (never the raw Plaid payload). `imported_transactions`
+  cascades when its (deletable, unmapped) connection is removed; its `financial_account_id` is SET NULL
+  on a linked account's deletion (evidence survives as "not added to Xanther").
+
 **No orphaned linked accounts (lifecycle safety):** a financial connection (or provider-account record)
 can **never** be hard-deleted while any provider account is linked to a Xanther account — that would
 leave a `balanceSource='linked'` account with no provider authority. Three layers enforce this: the

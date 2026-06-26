@@ -771,6 +771,17 @@ export const financialConnections = pgTable(
     // Optional explicit disconnect/archive timestamp (soft); `deletedAt` from the
     // shared timestamps helper also soft-archives.
     disconnectedAt: timestamp("disconnected_at", { withTimezone: true }),
+    // Finance 1B.3A — incremental transaction-sync state. The committed Plaid
+    // `/transactions/sync` cursor (null = never synced) advances ONLY after every
+    // page of a sync has been persisted. `transactionSyncLockedAt` is a DB-level
+    // per-connection lock (claimed optimistically, released in a finally) so two
+    // concurrent syncs can't corrupt the cursor. Error fields are bounded/redacted.
+    transactionsCursor: text("transactions_cursor"),
+    lastTransactionSyncAttemptedAt: timestamp("last_transaction_sync_attempted_at", { withTimezone: true }),
+    lastTransactionSyncedAt: timestamp("last_transaction_synced_at", { withTimezone: true }),
+    transactionSyncLockedAt: timestamp("transaction_sync_locked_at", { withTimezone: true }),
+    transactionSyncErrorCode: varchar("transaction_sync_error_code", { length: 80 }),
+    transactionSyncErrorMessage: varchar("transaction_sync_error_message", { length: 300 }),
     ...timestamps,
   },
   (t) => [
@@ -836,6 +847,69 @@ export const providerAccounts = pgTable(
     uniqueIndex("provider_accounts_financial_acct_uq")
       .on(t.financialAccountId)
       .where(sqlNotNull(t.financialAccountId)),
+  ],
+);
+
+// Finance 1B.3A: imported-transaction lifecycle. `active` = currently reported by
+// the provider; `removed` = the provider reported it removed (kept as a tombstone,
+// never hard-deleted).
+export const importedTransactionStatus = pgEnum("imported_transaction_status", ["active", "removed"]);
+
+/* Finance 1B.3A — a transaction imported from a bank provider (Plaid Sandbox).
+ * This is BANK EVIDENCE, NOT a Xanther command: an imported transaction never
+ * creates an `account_movements` row, never mutates a provider/manual balance, and
+ * never confirms a bill/income/transfer. It has its own storage + read model.
+ * Amounts are stored in Xanther's convention (inflow +, outflow −). Identity is
+ * scoped to the connection: a provider transaction id is unique only within its
+ * connection. Removed transactions are tombstoned (status='removed' + removedAt),
+ * never deleted. Only bounded normalized fields are stored — never the raw payload. */
+export const importedTransactions = pgTable(
+  "imported_transactions",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // Connection-scoped evidence: cascades when its (deletable, unmapped) connection
+    // is removed. A connection with a LINKED account can't be deleted (1B.2), so a
+    // mapped connection's transactions are never cascade-removed.
+    connectionId: integer("connection_id")
+      .notNull()
+      .references(() => financialConnections.id, { onDelete: "cascade" }),
+    // Plaid account_id (connection-scoped, non-secret).
+    providerAccountId: varchar("provider_account_id", { length: 255 }).notNull(),
+    // The mapped Xanther account, if the provider account was added (SET NULL on
+    // that account's deletion — the evidence survives as "not added to Xanther").
+    financialAccountId: integer("financial_account_id").references(() => financialAccounts.id, { onDelete: "set null" }),
+    provider: varchar("provider", { length: 40 }).notNull().default("plaid"),
+    // Plaid transaction_id — unique only WITHIN the connection.
+    providerTransactionId: varchar("provider_transaction_id", { length: 255 }).notNull(),
+    // The pending transaction a POSTED transaction replaced (Plaid only; never guessed).
+    pendingProviderTransactionId: varchar("pending_provider_transaction_id", { length: 255 }),
+    status: importedTransactionStatus("status").notNull().default("active"),
+    isPending: boolean("is_pending").notNull().default(false),
+    // Xanther-signed amount: inflow > 0, outflow < 0 (never 0 — $0 are skipped).
+    amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+    currencyCode: varchar("currency_code", { length: 8 }),
+    descriptionOriginal: varchar("description_original", { length: 500 }),
+    descriptionCurrent: varchar("description_current", { length: 500 }).notNull(),
+    merchantName: varchar("merchant_name", { length: 200 }),
+    authorizedDate: date("authorized_date"),
+    postedDate: date("posted_date"),
+    // Bounded provider category (display/later-matching hint only; never the raw payload).
+    categoryPrimary: varchar("category_primary", { length: 120 }),
+    categoryDetailed: varchar("category_detailed", { length: 160 }),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).defaultNow().notNull(),
+    lastUpdatedAt: timestamp("last_updated_at", { withTimezone: true }).defaultNow().notNull(),
+    removedAt: timestamp("removed_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    index("imported_transactions_user_idx").on(t.userId),
+    index("imported_transactions_account_idx").on(t.financialAccountId),
+    index("imported_transactions_conn_status_idx").on(t.connectionId, t.status),
+    // Connection-scoped provider transaction identity → idempotent upsert.
+    uniqueIndex("imported_transactions_conn_txn_uq").on(t.connectionId, t.providerTransactionId),
   ],
 );
 

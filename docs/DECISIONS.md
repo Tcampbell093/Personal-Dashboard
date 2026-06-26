@@ -592,6 +592,59 @@
   + typecheck + build + all regressions green + secret scan clean. Owner's real Sandbox connection
   untouched. Older suites' superseded `!/plaid/i`/migration/scope guards updated (disclosed NOTEs).
 
+### ADR-030 — Finance 1B.3A: Plaid Sandbox transaction import + manual incremental sync
+- **Classification:** Owner-approved decision (owner approved the 1B.3A scope).
+- **Detail:** A manual **`Sync transactions`** action imports fake Plaid Sandbox transactions as
+  **bank EVIDENCE, not Xanther commands** — read-only, owner-only, Sandbox-only, **no matching, no
+  bill/income/transfer confirmation, no AI, no money movement, no webhooks** (webhooks deferred to
+  Finance 1B.3B).
+  - **Evidence vs command ledger:** imported transactions live in their own `imported_transactions`
+    table + read model. They **never** create an `account_movements` row, **never** mutate a provider/
+    manual balance, and **never** confirm a domain record. `/finances` shows a separate **Imported
+    activity** section, distinct from **Recent activity** (the Xanther/manual-command ledger).
+  - **Adapter:** `syncTransactions` (Plaid `/transactions/sync`) + `normalizePlaidTransactionAmount`
+    (Plaid is outflow-positive → Xanther inflow +, outflow −; **$0 is the documented exception — it is
+    skipped**, not stored). Raw Plaid types stay inside `lib/providers/plaid/`.
+  - **Schema:** additive `0014_bouncy_arclight.sql` — `imported_transaction_status` enum (`active|
+    removed`) + `imported_transactions` table (connection-scoped unique `(connection_id,
+    provider_transaction_id)`; FKs: user cascade, connection **cascade**, financial_account **SET NULL**;
+    bounded normalized fields only — **no raw payload, no token, no cursor here**) + 6 nullable
+    transaction-sync columns on `financial_connections` (`transactions_cursor`,
+    `last_transaction_sync_attempted_at`/`_synced_at`, `transaction_sync_locked_at`, error code/message).
+  - **Atomic fetch → buffer → commit (pagination correction):** per Plaid's pagination guidance, the
+    **entire page sequence is fetched into memory FIRST (no durable writes)**, then the complete
+    aggregated patch (added/modified upserts + removed tombstones) is applied together with the final
+    cursor + success timestamp in **ONE writable-CTE statement** (neon-http has no interactive
+    transactions, so a single statement IS the atomic unit — it rolls back wholesale on any error). A
+    `TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION` **discards the in-memory accumulation and restarts
+    from the original committed cursor** (bounded to 5 retries → then a bounded error). Reaching the
+    25-page limit while `has_more` is still true **fails closed** (no patch, cursor preserved). Any
+    provider/normalization/DB-apply failure persists **no** patch and preserves the prior cursor +
+    prior success timestamp. `lastTransactionSyncedAt` advances only when the apply statement commits.
+    Aggregation is deterministic (provider order; last event per id wins; a txn in both upsert+remove
+    categories resolves to its last event, keeping the two CTE sub-updates on disjoint rows).
+  - **Added/modified/removed:** added/modified upsert by `(connection_id, provider_transaction_id)`
+    (`firstSeenAt` preserved, `lastUpdatedAt` bumped); **removed → tombstone** (`status='removed'` +
+    `removedAt`, never hard-deleted, excluded from active); an **unknown removal is safely ignored and
+    counted** (the documented deterministic rule — no invented row).
+  - **Pending → posted:** a pending row is suppressed from active views once an active posted row
+    references it via `pendingProviderTransactionId` (Plaid also tombstones the pending one) — no
+    permanent double-count; the relationship is preserved; **no guessed** relationship is created.
+  - **Concurrency:** a **per-connection DB lock** (`transaction_sync_locked_at`, claimed atomically,
+    5-min stale reclaim, released in a finally) + the connection-scoped unique index prevent cursor
+    corruption + duplicate rows. A decryption/provider failure writes nothing.
+  - **Routes:** `POST /api/finances/connections/[id]/transactions/sync` (manual, nonsecret counts) +
+    `GET /api/finances/transactions` (owner-scoped nonsecret views; no token/provider-txn-id/account
+    number). userId/cursor/token/provider ids are never trusted from the browser.
+- **Evidence:** `scripts/verify-finance1b3a.ts` (93 assertions; live Plaid Sandbox inject→sync +
+  injected-fake-provider for added/modified/removed/pending-posted/concurrency + the **20 atomic
+  fetch→buffer→commit checks** (fetch-before-write, page-2 failure writes no page-1 add/modify/remove,
+  mutation-discard+restart, retry/page-limit fail-closed, DB-apply rollback preserves cursor+timestamp,
+  cross-page pending→posted + add/modify/remove, idempotent replay) + the "no mutation from a
+  failed/abandoned attempt remains durable" invariant; domain separation; UI scope) + authenticated-HTTP
+  browser run + typecheck + build + all regressions green + secret scan clean. Owner's real Sandbox connection + `Plaid Checking` linked account untouched.
+  Superseded scope guards in 1A.3A/1B.0/1B.1/1B.2 updated (disclosed NOTEs).
+
 ### ADR-028 — Finance 1B.1: Plaid Sandbox connection flow
 - **Classification:** Owner-approved decision (owner approved the 1B.1 scope + configured the Plaid
   Sandbox env vars in Netlify).

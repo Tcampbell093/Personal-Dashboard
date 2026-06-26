@@ -9,9 +9,21 @@
 > only; technical identifiers (routes, DB, env vars, the `Personal-Dashboard` repo) keep their
 > original names. See `docs/DECISIONS.md` ADR-026.
 
-**Last updated:** 2026-06-26 · **Reflects branch:** `main` (Finance 1B.1 committed `aa868b5`; Finance 1B.2 uncommitted)
+**Last updated:** 2026-06-26 · **Reflects branch:** `main` (Finance 1B.2 committed `e107322`; Finance 1B.3A uncommitted)
 
-> **Finance 1B.2 — Plaid Sandbox accounts + cached balances — implemented (uncommitted).** From
+> **Finance 1B.3A — Plaid Sandbox transaction import + manual incremental sync — implemented
+> (uncommitted).** A manual **Sync transactions** action imports fake Plaid Sandbox transactions as
+> **bank evidence** into a new `imported_transactions` table + an **Imported activity** `/finances`
+> section, kept **separate** from the Xanther/manual-command ledger (`account_movements`). Amounts are
+> Xanther-signed (inflow +, outflow −; $0 skipped). Cursor-safe incremental sync (the committed cursor
+> advances only after all pages persist), idempotent upserts, removed→tombstone, pending→posted
+> suppression (no double-count), a per-connection DB lock. **Read-only, owner-only, Sandbox-only — no
+> matching, no bill/income/transfer confirmation, no webhooks (deferred to 1B.3B), no AI, no money
+> movement, no balance mutation.** Additive migration `0014`. Verified against **live Plaid Sandbox**
+> (`scripts/verify-finance1b3a.ts`, 93 assertions) + authenticated-HTTP. See `docs/DECISIONS.md` ADR-030
+> + `docs/BANK_INTEGRATION_SECURITY.md`.
+
+> **Finance 1B.2 — Plaid Sandbox accounts + cached balances — committed `e107322`.** From
 > `/finances`, the owner can **Sync accounts** on a Sandbox connection → discovered fake provider
 > accounts render with masked ids, **cached** balances, currency, and truthful freshness → the owner can
 > **Add to Xanther** an unmapped provider account, creating a **new linked account** (`balanceSource =

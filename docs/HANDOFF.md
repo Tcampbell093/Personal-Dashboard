@@ -12,19 +12,21 @@
 
 ## Next approved task
 
-### Finance 1B.2 — Plaid Sandbox accounts and cached balances
+### Finance 1B.3A — Plaid Sandbox transaction import + manual incremental sync
 
 - **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** See the latest handoff report
-  below. Read-only, owner-only, Sandbox: account discovery + **cached** balances + create-a-new-linked-
-  account. New `provider_accounts` table (migration `0012`), adapter `listAccounts`/`getCachedBalances`
-  (cached `/accounts/get`, no paid endpoint), sync/list/create routes, linked-account resolution in
-  totals/projection, expanded Bank-connections + Accounts UI, `scripts/verify-finance1b2.ts` (69
-  assertions, live Sandbox). **No** transactions, webhooks, matching, money movement, manual-account
-  merge/convert.
-  - **The next approved finance build after review is Finance 1B.3** (incremental transaction sync +
-    verified webhooks: `imported_transactions`, the durable pending-sync trigger, `/transactions/sync`
-    cursor loop) — it requires its own explicit owner authorization. The **manual→linked authority-
-    handoff** transition (deferred from 1B.2) and real Production/OAuth are also later owner steps.
+  below. A manual **Sync transactions** action imports fake Plaid Sandbox transactions as **bank
+  evidence** into `imported_transactions` (migration `0014`) + an **Imported activity** `/finances`
+  section, kept separate from the manual-command ledger. Adapter `syncTransactions` +
+  `normalizePlaidTransactionAmount`; cursor-safe service (commit-after-all-pages, per-connection lock,
+  idempotent upserts, removed→tombstone, pending→posted suppression); `POST …/[id]/transactions/sync` +
+  `GET /api/finances/transactions`; `scripts/verify-finance1b3a.ts` (93 assertions, live Sandbox).
+  **Read-only, Sandbox-only — no matching, no bill/income/transfer confirmation, no webhooks, no AI, no
+  money movement, no balance mutation.**
+  - **The next approved finance build after review is Finance 1B.3B** (webhook-triggered automatic sync:
+    the durable pending-sync trigger + verified Plaid webhook) — it requires its own explicit owner
+    authorization. Then transaction matching, the **manual→linked authority-handoff** transition
+    (deferred from 1B.2), and real Production/OAuth are later owner steps.
 
 ### Finance 1A.4 — recurring income + estimate-vs-confirmed paychecks (committed `a15f99f`)
 
@@ -126,6 +128,100 @@ specific build. Builds are ordered so the manual loop works end-to-end before an
 ---
 
 ## Latest handoff
+
+### Finance 1B.3A — Plaid Sandbox transaction import + manual incremental sync — implemented — 2026-06-26
+
+**Task Completed** — manual **Sync transactions** import of fake Plaid Sandbox transactions as **bank
+evidence** (read-only, owner-only, Sandbox-only). Not committed — awaiting owner review.
+
+**Repository state confirmed** — HEAD `e107322` (1B.2); local == `origin/main`; clean tree; 1B.0/1B.1/
+1B.2 present; migrations 0012/0013 present; `.env.local` ignored+unstaged; Sandbox vars present (names
+only); `PLAID_ENV=sandbox`; no imported-transaction table/route; orphan-integrity held (1 linked
+account, 0 orphans).
+
+**Schema & migration** — additive `0014_bouncy_arclight.sql`: `imported_transaction_status` enum
+(`active|removed`) + `imported_transactions` table (connection-scoped unique `(connection_id,
+provider_transaction_id)`; FKs user cascade / connection **cascade** / financial_account **SET NULL**;
+bounded normalized fields only — no raw payload/token/cursor) + 6 nullable transaction-sync columns on
+`financial_connections` (`transactions_cursor`, `last_transaction_sync_attempted_at`/`_synced_at`,
+`transaction_sync_locked_at`, error code/message). **No DROP/owner-ALTER/backfill/balance mutation/
+manual-account conversion.** Applied; owner data unchanged.
+
+**Plaid adapter expansion** — `syncTransactions` (Plaid `/transactions/sync`, one page per call) +
+`normalizePlaidTransactionAmount` (Plaid outflow-positive → Xanther inflow +, outflow −; **$0 →
+skipped**, documented). Raw Plaid types stay in `lib/providers/plaid/`. The `ImportedTransactionDTO`
+gained `descriptionCurrent`. (Plus a Sandbox-only `sandboxCreateTransactions` test helper.)
+
+**Cursor & page-commit lifecycle (atomic fetch→buffer→commit — pagination correction)** —
+`syncConnectionTransactions` fetches the **entire** page sequence into memory **first** (no durable
+writes; bounded 25 pages), aggregates the complete patch deterministically, then applies the **whole
+patch + final cursor + success timestamp in ONE writable-CTE statement** (atomic — neon-http has no
+interactive transactions, so a single statement is the rollback unit). A
+`TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION` **discards the accumulation and restarts from the original
+committed cursor** (bounded 5 retries → bounded error). Reaching the page limit while `has_more` is true
+**fails closed**. Any provider/normalization/DB-apply failure persists **no** patch and preserves the
+prior cursor + prior success timestamp; `lastTransactionSyncedAt` advances only when the apply commits.
+A per-connection **DB lock** (`transaction_sync_locked_at`, atomic claim, 5-min reclaim, released in
+finally) + the connection-scoped unique index prevent cursor corruption + duplicate rows. Token
+decryption / provider failure writes nothing.
+
+**Added/modified/removed** — added/modified upsert by `(connection_id, provider_transaction_id)`
+(`firstSeenAt` preserved, `lastUpdatedAt` bumped); removed → tombstone (`status='removed'` + `removedAt`,
+never hard-deleted, excluded from active); unknown removal safely ignored + counted (documented).
+**Pending → posted** — a pending row is suppressed from active views once an active posted row
+references it (no double-count); relationship preserved; no guessed relationship.
+
+**Domain & ledger separation** — imported transactions create **no** `account_movements`, mutate **no**
+provider/manual balance, and confirm **no** bill/income/transfer. `/finances` shows a separate **Imported
+activity** section vs **Recent activity** (the Xanther ledger). `GET /api/finances/transactions` returns
+nonsecret views (no token, encryption field, provider txn id, or account number).
+
+**Routes** — `POST /api/finances/connections/[id]/transactions/sync` (manual, nonsecret counts) +
+`GET /api/finances/transactions` (owner-scoped nonsecret views, bounded filters). userId/cursor/token/
+provider ids are never trusted from the browser. No webhook route.
+
+**Exact files changed** — new: `lib/services/transactions.ts`, `app/api/finances/connections/[id]/transactions/sync/route.ts`,
+`app/api/finances/transactions/route.ts`, `components/finances/imported-activity.tsx`,
+`scripts/verify-finance1b3a.ts`, `db/migrations/0014_bouncy_arclight.sql` (+ snapshot/journal); modified:
+`db/schema.ts`, `lib/types.ts`, `lib/providers/types.ts`, `lib/providers/plaid/adapter.ts`,
+`lib/services/connections.ts` (ConnectionView + lastTransactionSyncedAt), `app/finances/page.tsx`,
+`app/globals.css`, the six docs, and superseded scope guards in `verify-finance1a3a`/`1b0`/`1b1`/`1b2`
+(disclosed NOTEs).
+
+**`/finances`, Home, `/manage` behavior** — `/finances` gains the **Imported activity** tier (Sync
+transactions per connection, last-sync timestamp, signed `+/−` amounts, account label or "Not added to
+Xanther", Pending/Posted badge, date, truthful empty states), separate from Recent activity. **Home
+unchanged** (compact; no transaction list; ranking untouched). **`/manage` unchanged** (summary-only).
+
+**Testing** — `npm run typecheck` ✓; `npm run build` ✓. **`scripts/verify-finance1b3a.ts` — 93/93**
+(73 base invariants + 20 atomic fetch→buffer→commit checks): normalization, live Sandbox initial sync + added/idempotent, fake-provider
+added/modified (firstSeenAt preserved)/removed-tombstone/unknown-removal/pending-posted suppression,
+cursor advance-after-all-pages + partial-failure-preserves-cursor + provider-failure-preserves-data,
+concurrent-no-duplicates, connection-scoped ids, decryption-failure-writes-nothing, foreign/unauth
+rejected, no-secret-in-responses, domain separation (no movements/balance/bill/income/transfer/match),
+UI scope, owner data + linked-integrity + request 222 untouched, exact-id cleanup. **Browser-equivalent
+(authenticated HTTP):** Imported activity renders + separate from Recent activity, sync route imports
+(nonsecret), list nonsecret signed, re-sync no duplicates, persists across reload, no movements, 401
+unauth, exact-id cleanup. **Regressions:** 1B.2 84 / 1B.1 65 / 1B.0 52 / 1A.4 65 / 1A.3B 57 / 1A.3A 64 /
+1A.2 72 / 1A.1 69 / Home 63 / Manage 27 / Build 2A 136 / 2B.1 126 / 2B.2 60 — all green. Secret scan clean.
+
+**Temporary Sandbox cleanup** — all temp connections + their provider accounts + imported transactions
+removed by exact ID (connection delete cascades transactions); **0** imported_transactions remain.
+
+**Owner-data & request-222** — owner's real **Bank of America** Sandbox connection + **Plaid Checking**
+linked account untouched; Chase/BofA manual unchanged; 0 orphaned linked accounts; income/bills/
+transfers/movements untouched; request 222 present; 0 usage-log rows.
+
+**Known issues / limitations** — Sandbox only (no Production/OAuth); **no webhooks** (manual sync only —
+1B.3B); **no matching** of any kind; cached balances remain authoritative for linked accounts (import
+never recomputes them); a fresh Sandbox Item needs a moment / injected transactions before
+`/transactions/sync` returns data (handled with a bounded retry in tests). The interactive Plaid Link
+iframe + pixel-level 375px were not browser-automated (gate + cross-origin); render/persistence proven
+via authenticated HTTP + the live harness.
+
+**Decisions needed** — owner review before commit; Finance 1B.3B requires separate authorization.
+**Recommended next step** — owner reviews 1B.3A; if approved, commit
+(`feat(finance): add Plaid Sandbox transaction sync`), then prepare Finance 1B.3B.
 
 ### Finance 1B.2 — Plaid Sandbox accounts + cached balances — implemented — 2026-06-26
 

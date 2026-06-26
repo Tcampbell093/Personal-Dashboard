@@ -21,12 +21,17 @@ import type { BankProvider } from "../bank-provider";
 import type {
   ConnectionMetadata,
   CreateLinkSessionInput,
+  ImportedTransactionDTO,
   LinkSession,
   ProviderAccessToken,
   ProviderAccount,
   ProviderBalance,
   PublicCredentialExchange,
+  RemovedTransactionRef,
+  TransactionSyncPage,
 } from "../types";
+import { MutationDuringPaginationError } from "../types";
+import { toXantherAmount } from "../amount";
 import { plaidClient } from "./client";
 
 const notImplemented = (method: string) => async (): Promise<never> => {
@@ -48,6 +53,52 @@ export function normalizePlaidAccountType(type: string | null, subtype: string |
     if (subtype === "savings") return "savings";
   }
   return "other";
+}
+
+/**
+ * Normalize a Plaid transaction amount into Xanther's convention. Plaid is
+ * outflow-positive (a purchase is positive, a deposit is negative), so the
+ * Xanther amount is the negation. Returns `null` for the documented exception —
+ * a $0 (or non-finite) transaction carries no balance evidence and is SKIPPED
+ * (not stored). Inflow → positive, outflow → negative.
+ */
+export function normalizePlaidTransactionAmount(plaidAmount: number): number | null {
+  if (!Number.isFinite(plaidAmount) || plaidAmount === 0) return null;
+  return toXantherAmount(plaidAmount, "outflow_positive");
+}
+
+/** Map one raw Plaid transaction to a normalized DTO, or null to SKIP ($0). */
+function toTransactionDTO(t: {
+  transaction_id: string;
+  account_id: string;
+  pending_transaction_id?: string | null;
+  pending: boolean;
+  amount: number;
+  iso_currency_code?: string | null;
+  name: string;
+  original_description?: string | null;
+  merchant_name?: string | null;
+  authorized_date?: string | null;
+  date: string;
+  personal_finance_category?: { primary?: string | null; detailed?: string | null } | null;
+}): ImportedTransactionDTO | null {
+  const amount = normalizePlaidTransactionAmount(t.amount);
+  if (amount === null) return null; // $0 — skipped (documented)
+  return {
+    providerTransactionId: t.transaction_id,
+    providerAccountId: t.account_id,
+    pendingProviderTransactionId: t.pending_transaction_id ?? null,
+    isPending: t.pending,
+    amount,
+    isoCurrencyCode: t.iso_currency_code ?? null,
+    descriptionCurrent: t.name,
+    descriptionOriginal: t.original_description ?? null,
+    merchantName: t.merchant_name ?? null,
+    authorizedDate: t.authorized_date ?? null,
+    postedDate: t.date ?? null,
+    categoryPrimary: t.personal_finance_category?.primary ?? null,
+    categoryDetailed: t.personal_finance_category?.detailed ?? null,
+  };
 }
 
 export const plaidAdapter: BankProvider = {
@@ -133,9 +184,39 @@ export const plaidAdapter: BankProvider = {
     }));
   },
 
+  // Finance 1B.3A: incremental transaction sync (Plaid /transactions/sync). One
+  // page per call; the caller paginates on `hasMore` and commits the cursor only
+  // after every page persists. Raw Plaid transactions are normalized to DTOs here
+  // ($0 transactions are skipped). Removed entries carry only ids.
+  async syncTransactions(access: ProviderAccessToken, cursor: string | null): Promise<TransactionSyncPage> {
+    const client = plaidClient();
+    let resp;
+    try {
+      resp = await client.transactionsSync({
+        access_token: access,
+        ...(cursor ? { cursor } : {}),
+      });
+    } catch (e) {
+      // Plaid reports a mid-pagination mutation → surface a provider-neutral signal
+      // so the caller restarts the whole loop from the committed cursor.
+      const code = (e as { response?: { data?: { error_code?: string } } })?.response?.data?.error_code;
+      if (code === "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION") throw new MutationDuringPaginationError();
+      throw e;
+    }
+    const d = resp.data;
+    const added: ImportedTransactionDTO[] = [];
+    for (const t of d.added) { const dto = toTransactionDTO(t as Parameters<typeof toTransactionDTO>[0]); if (dto) added.push(dto); }
+    const modified: ImportedTransactionDTO[] = [];
+    for (const t of d.modified) { const dto = toTransactionDTO(t as Parameters<typeof toTransactionDTO>[0]); if (dto) modified.push(dto); }
+    const removed: RemovedTransactionRef[] = d.removed.map((r) => ({
+      providerTransactionId: r.transaction_id ?? "",
+      providerAccountId: r.account_id ?? "",
+    }));
+    return { added, modified, removed, nextCursor: d.next_cursor, hasMore: d.has_more };
+  },
+
   // Deferred to later Finance 1B phases — fail loudly if called now.
   createUpdateLinkSession: notImplemented("createUpdateLinkSession"),
-  syncTransactions: notImplemented("syncTransactions"),
   verifyWebhook: notImplemented("verifyWebhook"),
 };
 
@@ -151,4 +232,17 @@ export async function sandboxCreatePublicToken(institutionId = "ins_109508"): Pr
     initial_products: [Products.Transactions],
   });
   return resp.data.public_token;
+}
+
+/**
+ * SANDBOX-ONLY test helper: inject specific fake transactions into a Sandbox Item
+ * so the verification harness can deterministically exercise the import path.
+ * `amount` here is Plaid-native (positive = outflow). Never used by app routes.
+ */
+export async function sandboxCreateTransactions(
+  access: ProviderAccessToken,
+  transactions: { date_transacted: string; date_posted: string; amount: number; description: string }[],
+): Promise<void> {
+  const client = plaidClient();
+  await client.sandboxTransactionsCreate({ access_token: access, transactions });
 }

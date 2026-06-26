@@ -213,7 +213,10 @@ async function main() {
   ok("[21] plaintext access-token column does not exist (schema + migration)",
     !/["']access_token["']/.test(schemaSrc) && !/"access_token" /.test(mig));
   ok("[22] no provider-account mapping table exists yet", !/pgTable\(\s*["']provider_account_mappings["']/.test(schemaSrc));
-  ok("[23] no imported-transaction table exists yet", !/pgTable\(\s*["']imported_transactions["']/.test(schemaSrc));
+  // NOTE: `imported_transactions` (read-only bank evidence) is intentionally added
+  // by Finance 1B.3A (separate, approved build). The 1B.1 invariant becomes: no
+  // transaction-MATCHING/evidence-confirmation table exists yet.
+  ok("[23] no transaction-matching table exists yet", !/pgTable\(\s*["'](transaction_matches|match_evidence|imported_matches)["']/.test(schemaSrc));
   ok("[24] no transaction-match table exists yet", !/pgTable\(\s*["']transaction_matches["']/.test(schemaSrc));
   const afterFlow = await ownerSnapshot();
   ok("[25] no historical owner record changes (during the flow)",
@@ -250,9 +253,14 @@ async function main() {
   // scope boundary: NO transaction sync / webhook / money movement here.
   ok("[51] account import is cached-only (no paid real-time balance endpoint call)",
     !/accountsBalanceGet\s*\(/.test(adapterSrc));
-  ok("[52] no transaction-level sync in the connect/accounts adapter",
-    /syncTransactions: notImplemented/.test(adapterSrc));
-  ok("[53] no transaction synchronization", /syncTransactions: notImplemented/.test(adapterSrc) && !/syncTransactions\(/.test(svcSrc));
+  // NOTE: `syncTransactions` is intentionally implemented by Finance 1B.3A
+  // (separate, approved build). The 1B.1 invariants become: the adapter normalizes
+  // transaction amounts to Xanther's convention, and update-mode + webhook remain
+  // deferred (notImplemented).
+  ok("[52] adapter transaction sync normalizes amounts to Xanther's convention",
+    /normalizePlaidTransactionAmount/.test(adapterSrc) && /outflow_positive/.test(adapterSrc));
+  ok("[53] update mode + webhook remain deferred (notImplemented)",
+    /createUpdateLinkSession: notImplemented/.test(adapterSrc) && /verifyWebhook: notImplemented/.test(adapterSrc));
   ok("[54] no webhook", /verifyWebhook: notImplemented/.test(adapterSrc) && !existsSync("app/api/finances/connections/webhook") && !existsSync("app/api/webhooks"));
   ok("[55] no transaction matching", !/match/i.test(svcSrc) && !existsSync("lib/services/matching.ts"));
   ok("[56] no money movement (no transfer/payment code; comments excluded)",

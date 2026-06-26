@@ -304,18 +304,20 @@ async function main() {
   const pkg = read("package.json");
   ok("[20] Plaid dependency is the official package only (no unofficial wrapper)",
     !/"plaid-[a-z]|react-plaid|plaid-node-/.test(pkg));
-  ok("[21] no LATER-phase bank routes exist (account/balance/transaction/webhook)",
-    !existsSync("app/api/finances/connections/webhook") && !existsSync("app/api/finances/accounts/import") &&
-    !existsSync("app/api/plaid") && !existsSync("app/api/webhooks") &&
-    !existsSync("app/api/finances/transactions"));
+  // NOTE: the transaction-sync + listing routes are intentionally added by Finance
+  // 1B.3A (separate, approved build). The forward invariant: no WEBHOOK route and
+  // no money-movement/import route exist yet.
+  ok("[21] no webhook / money-movement bank routes exist",
+    !existsSync("app/api/finances/connections/[id]/webhook") && !existsSync("app/api/finances/accounts/import") &&
+    !existsSync("app/api/plaid") && !existsSync("app/api/webhooks"));
   const schemaSrc = read("db/schema.ts");
   ok("[22] no LATER-phase connection tables exist yet (mappings/imported/sync/match)",
-    !/pgTable\(\s*["'](provider_account_mappings|imported_transactions|connection_sync_requests|connection_sync_runs|transaction_matches)["']/.test(schemaSrc));
+    !/pgTable\(\s*["'](provider_account_mappings|connection_sync_requests|connection_sync_runs|transaction_matches|match_evidence)["']/.test(schemaSrc));
   // [23] migrations remain additive; the latest is 1B.1's 0011 (1A.4 added
   // 0009/0010, the rename added none, 1B.1 added 0011).
   const migFiles = existsSync("db/migrations") ? readdirSync("db/migrations").filter((f) => f.endsWith(".sql")) : [];
   const maxMig = migFiles.map((f) => parseInt(f.slice(0, 4), 10)).reduce((a, b) => Math.max(a, b), -1);
-  ok("[23] migrations are sequential + additive/constraint-only (latest is 1B.2's 0013)", maxMig === 13);
+  ok("[23] migrations are sequential + additive/constraint-only (latest is 1B.3A's 0014)", maxMig === 14);
   // [24] no external provider API call: no plaid.com API URL anywhere in code.
   ok("[24] no external provider API call occurs (no plaid.com API URL in code)",
     !/https?:\/\/[^"'\s]*plaid\.com/.test(providerBlob + read("app/finances/page.tsx")));

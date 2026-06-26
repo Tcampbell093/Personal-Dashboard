@@ -42,6 +42,7 @@ import { IncomeManager } from "@/components/finances/income-manager";
 import { ScheduleManager } from "@/components/finances/schedule-manager";
 import { TransferManager } from "@/components/finances/transfer-manager";
 import { ConnectionManager } from "@/components/finances/connection-manager";
+import { ImportedActivity } from "@/components/finances/imported-activity";
 import type { MovementView, ProjectionHorizon, ForecastItem, ConnectionView } from "@/lib/types";
 
 const HORIZONS: { key: ProjectionHorizon; label: string }[] = [
@@ -268,6 +269,16 @@ export default async function FinancesPage({
           <span className="tier-sub">read-only · Plaid Sandbox · fake test data</span>
         </div>
         <ConnectionManager initialConnections={connections} />
+      </section>
+
+      {/* 1b.3a — Imported activity (Plaid Sandbox transactions, read-only evidence) */}
+      <section className="tier">
+        <div className="tier-head">
+          <span className="tier-tick" style={{ background: "var(--explore)" }} />
+          <span className="tier-name">Imported activity</span>
+          <span className="tier-sub">bank evidence · read-only · separate from Xanther activity</span>
+        </div>
+        <ImportedActivity connections={connections} />
       </section>
 
       {/* 2b — Projected balances (deterministic forecast, separate from actual) */}

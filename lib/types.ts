@@ -274,6 +274,26 @@ export interface ConnectionView {
   requiresReauth: boolean;
   connectedAt: string | null; // ISO
   lastSyncedAt: string | null; // Finance 1B.2: last successful account sync (ISO)
+  lastTransactionSyncedAt: string | null; // Finance 1B.3A: last successful transaction sync (ISO)
+}
+
+/* Finance 1B.3A — a NONSECRET imported-transaction view. Bank EVIDENCE, never a
+ * Xanther command. Carries no provider transaction id, full account number, or
+ * any secret. `amount` is Xanther-signed (inflow +, outflow −). */
+export interface ImportedTransactionView {
+  id: number;
+  accountLabel: string; // mapped Xanther account name, or "Not added to Xanther"
+  mapped: boolean;
+  amount: number; // Xanther-signed
+  currencyCode: string | null;
+  isPending: boolean;
+  status: string; // active | removed
+  descriptionCurrent: string;
+  merchantName: string | null;
+  authorizedDate: string | null;
+  postedDate: string | null;
+  date: string | null; // postedDate ?? authorizedDate (for display ordering)
+  categoryPrimary: string | null;
 }
 
 export interface SignalView {

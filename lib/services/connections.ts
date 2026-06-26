@@ -52,6 +52,7 @@ export function toConnectionView(row: ConnectionRow): ConnectionView {
     requiresReauth: row.requiresReauth,
     connectedAt: (row.consentGrantedAt ?? row.createdAt)?.toISOString() ?? null,
     lastSyncedAt: row.lastSyncedAt ? row.lastSyncedAt.toISOString() : null,
+    lastTransactionSyncedAt: row.lastTransactionSyncedAt ? row.lastTransactionSyncedAt.toISOString() : null,
   };
 }
 

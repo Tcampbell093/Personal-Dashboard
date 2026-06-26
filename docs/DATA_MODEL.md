@@ -212,6 +212,20 @@ duplicate manual income movements; uncertain matches need owner approval; recurr
   FK is `ON DELETE NO ACTION` (migration `0013`, constraint-only)** so a connection can't be hard-deleted
   while any provider account still references it — preventing an orphaned linked account; the
   `financial_account_id` FK is also `NO ACTION`. See `docs/DECISIONS.md` ADR-029.
+- **1B.3A — DONE (Plaid Sandbox transaction import)** — additive migration `0014_bouncy_arclight.sql`
+  adds the `imported_transaction_status` enum (`active|removed`) + the **`imported_transactions`** table:
+  `userId`, `connectionId` (FK cascade), `providerAccountId`, `financialAccountId` (FK **SET NULL**),
+  `provider`, `providerTransactionId` (unique within `(connection_id, provider_transaction_id)`),
+  `pendingProviderTransactionId`, `status`, `isPending`, `amount` (**Xanther-signed**; $0 skipped),
+  `currencyCode`, `descriptionOriginal`/`descriptionCurrent`, `merchantName`, `authorizedDate`/
+  `postedDate`, bounded `categoryPrimary`/`categoryDetailed`, `firstSeenAt`/`lastUpdatedAt`/`removedAt`,
+  timestamps. **Bank EVIDENCE only — never an `account_movements` row, balance mutation, or
+  bill/income/transfer confirmation; no raw payload/token/cursor stored here.** `financial_connections`
+  gains 6 nullable transaction-sync columns (`transactions_cursor`, `last_transaction_sync_attempted_at`/
+  `_synced_at`, `transaction_sync_locked_at` = per-connection lock, error code/message). The committed
+  cursor advances only after every page persists; removed→tombstone; pending→posted suppression avoids
+  double-counting. View model: `ImportedTransactionView` (nonsecret — no provider txn id/account number).
+  See `docs/DECISIONS.md` ADR-030.
 - **1B.1 — DONE (Plaid Sandbox connect)** — additive migration `0011_rapid_sasquatch.sql` adds the
   `connection_status` enum + the **`financial_connections`** table: `userId`, `provider` (`plaid`),
   `providerItemId` (unique within `(user_id, provider)`), `institutionId`/`institutionName`, the

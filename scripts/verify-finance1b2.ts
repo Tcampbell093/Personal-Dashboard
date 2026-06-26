@@ -270,7 +270,10 @@ async function main() {
     console.log("\n[scope protection]");
     ok("[51] no real Production connection (Sandbox base path only)", /PlaidEnvironments\.sandbox/.test(read("lib/providers/plaid/client.ts")) && !/PlaidEnvironments\.production/.test(read("lib/providers/plaid/client.ts")));
     ok("[52] no OAuth handling added", !/oauth|redirect_uri/i.test(stripComments(svcSrc + connUi + syncRoute)));
-    ok("[53] no transaction synchronization", /syncTransactions: notImplemented/.test(adapterSrc) && !/syncTransactions\(/.test(svcSrc) && !existsSync("app/api/finances/transactions"));
+    // NOTE: transaction sync is intentionally added by Finance 1B.3A (separate,
+    // approved build). The 1B.2 invariant: the ACCOUNT-sync service does not sync
+    // transactions (kept distinct from the transaction-sync service).
+    ok("[53] account-sync service does not perform transaction synchronization", !/syncTransactions\(|imported_transactions/.test(svcSrc));
     ok("[54] no webhook", /verifyWebhook: notImplemented/.test(adapterSrc) && !existsSync("app/api/finances/connections/webhook") && !existsSync("app/api/webhooks"));
     ok("[55] no transaction matching", !/match/i.test(stripComments(svcSrc)) && !existsSync("lib/services/matching.ts"));
     ok("[56] no bill/income/transfer evidence confirmation", !/confirm.*(bill|income|transfer).*evidence|evidence.*confirm/i.test(stripComments(svcSrc)));
@@ -367,9 +370,11 @@ async function main() {
     ok("[63] owner income/bills/transfers/movements untouched", after.i === before.i && after.b === before.b && after.t === before.t && after.m === before.m);
     const logsAfter = (await db.select({ id: apiUsageLogs.id }).from(apiUsageLogs).where(eq(apiUsageLogs.userId, U))).length;
     ok("[64] no AI call or usage-log row", logsAfter === logsBefore && !/@anthropic|openai|messages\.create/i.test(svcSrc + adapterSrc));
-    ok("[65] exact-ID cleanup only (no provider_accounts or linked owner accounts remain)",
-      (await db.select().from(providerAccounts).where(eq(providerAccounts.userId, U))).length === 0 &&
-      (await db.select().from(financialAccounts).where(and(eq(financialAccounts.userId, U), eq(financialAccounts.balanceSource, "linked"), isNull(financialAccounts.deletedAt)))).length === 0);
+    // NOTE: exact-ID — assert THIS harness's temp records are gone (the owner may
+    // have a pre-existing real linked account, which must be preserved, not zeroed).
+    ok("[65] exact-ID cleanup only (this harness's temp provider-accounts + linked accounts removed)",
+      (await db.select().from(providerAccounts).where(eq(providerAccounts.connectionId, cid))).length === 0 &&
+      (await Promise.all(created.acctIds.map(async (id) => (await db.select().from(financialAccounts).where(eq(financialAccounts.id, id))).length))).every((n) => n === 0));
     ok("[66] .env.local remains ignored (gitignore) + no real key in tracked files", /(^|\n)\.env\.local/.test(read(".gitignore")));
     ok("[67] no secret in source/responses (no token/cipher literal, no plaintext token column)",
       !/access-sandbox-[0-9a-f]{8}|access-production-/.test(svcSrc + connUi + acctUi + syncRoute + listRoute + createRoute) &&

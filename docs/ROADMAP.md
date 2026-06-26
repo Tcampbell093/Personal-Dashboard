@@ -27,13 +27,15 @@
   contacts people, or exposes private information without explicit owner approval.
 - **Read-only bank connections (Finance 1B)** — *in progress.* **1B.0** (contracts + security), **1B.1**
   (Plaid **Sandbox** connect), and **1B.2** (Sandbox **accounts + cached balances** + create-linked-
-  account: `provider_accounts`, sync/list/create routes, linked-account display) are **done**.
-  **Transactions are still not functional** — no transaction sync, webhooks, or matching yet;
-  **read-only, no money movement**. Next: **1B.3** (incremental transaction sync + webhooks), then
-  matching (bills → income incl. split deposits → transfers), the **manual→linked authority-handoff**
-  transition (deferred from 1B.2), and repair/disconnect hardening. Real Chase/BofA need eligible
-  Production/OAuth (a later owner step). See `docs/BANK_INTEGRATION_SECURITY.md` and `docs/DECISIONS.md`
-  ADR-027/028/029. (The active approved task is always in `docs/HANDOFF.md`.)
+  account: `provider_accounts`, sync/list/create routes, linked-account display) and **1B.3A** (manual
+  **transaction import** — read-only bank evidence in `imported_transactions` + an Imported activity
+  section, separate from the manual ledger) are **done**. **Matching is still not functional** — no
+  webhooks or transaction matching yet; **read-only, no money movement**. Next: **1B.3B**
+  (webhook-triggered automatic sync), then matching (bills → income incl. split deposits → transfers),
+  the **manual→linked authority-handoff** transition (deferred from 1B.2), and repair/disconnect
+  hardening. Real Chase/BofA need eligible Production/OAuth (a later owner step). See
+  `docs/BANK_INTEGRATION_SECURITY.md` and `docs/DECISIONS.md` ADR-027/028/029/030. (The active approved
+  task is always in `docs/HANDOFF.md`.)
 - **Personal knowledge and editable memory** — structured, inspectable, editable personal data.
 - **Experience and Adventure Loop** — capturing and acting on experiences/adventures.
 - **AI recommendation foundation** — the basis for owner-gated, explainable recommendations.

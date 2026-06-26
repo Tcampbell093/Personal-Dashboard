@@ -278,9 +278,11 @@ async function main() {
   // later approved builds — verified by verify-finance1a2.ts / verify-finance1a3b.ts.
   // NOTE: the word "transactions" now appears in a Finance 1B.1 schema COMMENT
   // (financial_connections), so this guard checks for an actual TABLE, not prose.
-  // No discretionary-spending or imported-transaction table exists.
-  ok("[12] no discretionary spending / imported-transaction table",
-    !/pgTable\(\s*["'](spending_entries|discretionary_\w+|imported_transactions|transactions)["']/.test(schemaSrc));
+  // NOTE: read-only `imported_transactions` (bank EVIDENCE) is intentionally added
+  // by Finance 1B.3A (a separate, approved build) and is NOT a discretionary-
+  // spending table. The 1A.3A invariant is narrower: no DISCRETIONARY-spending table.
+  ok("[12] no discretionary spending table",
+    !/pgTable\(\s*["'](spending_entries|discretionary_\w+|discretionary)["']/.test(schemaSrc));
   // NOTE: read-only Plaid connections are intentionally added by Finance 1B.0/1B.1
   // and now surface in the schema + /finances — so those are NO LONGER scanned
   // here. The 1A.3A invariant: the bill-payment-ledger UI has no Plaid code.

@@ -107,7 +107,10 @@ export interface ImportedTransactionDTO {
   /** Xanther-signed amount: inflow > 0, outflow < 0, never 0. */
   readonly amount: number;
   readonly isoCurrencyCode: string | null;
-  readonly descriptionOriginal: string;
+  /** Provider's current/cleaned description (Plaid `name`). Always present. */
+  readonly descriptionCurrent: string;
+  /** Provider's raw original description, when supplied (Plaid `original_description`). */
+  readonly descriptionOriginal: string | null;
   readonly merchantName: string | null;
   readonly authorizedDate: string | null; // ISO date
   readonly postedDate: string | null; // ISO date
@@ -140,6 +143,19 @@ export interface WebhookVerificationInput {
   readonly headers: Readonly<Record<string, string>>;
   /** Raw, unparsed request body (verification is whitespace-sensitive). */
   readonly rawBody: string;
+}
+
+/**
+ * Provider-neutral signal that the transaction set MUTATED while a `/transactions/
+ * sync` pagination loop was in progress (Plaid `TRANSACTIONS_SYNC_MUTATION_DURING_
+ * PAGINATION`). The caller MUST discard its in-memory accumulation and restart the
+ * whole loop from the original committed cursor.
+ */
+export class MutationDuringPaginationError extends Error {
+  constructor(message = "Transactions mutated during pagination; restart from the committed cursor.") {
+    super(message);
+    this.name = "MutationDuringPaginationError";
+  }
 }
 
 /** A webhook that passed authenticity + replay checks. */
