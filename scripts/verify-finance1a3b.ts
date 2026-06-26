@@ -207,7 +207,12 @@ async function main() {
   ok("[37] Home stays compact (actual + projected + link, no account mgmt)", /Manual actual cash/.test(homeSrc) && /projected/i.test(homeSrc) && homeSrc.includes('href="/finances"') && !homeSrc.includes("AccountManager"));
   ok("[38] /manage is summary-only + links /finances", manageSrc.includes("/finances") && !manageSrc.includes("FinanceManager"));
   ok("[39] no projected value called live/current/available/safe-to-spend", !/safe to spend|live balance|projected.{0,12}current balance|available-now balance/i.test(all));
-  ok("[40] no Plaid / bank-sync implementation", !/plaid/i.test(all) && !/import(ed)? transaction/i.test(pageSrc));
+  // NOTE: read-only Plaid connections are intentionally added by Finance 1B.0/1B.1
+  // (separate, approved builds) and now surface in /finances — so they are NO
+  // LONGER excluded here. The 1A.3B invariant is narrower: the PROJECTION +
+  // RECONCILIATION logic must not depend on Plaid or imported transactions.
+  ok("[40] 1A.3B projection/reconciliation has no Plaid / imported-transaction dependency",
+    !/plaid/i.test(projSrc + acctMgr) && !/import(ed)? transaction/i.test(projSrc));
   const logsAfter = (await db.select({ id: apiUsageLogs.id }).from(apiUsageLogs).where(eq(apiUsageLogs.userId, U))).length;
   ok("[41] no usage-log row (no AI)", logsBefore === logsAfter);
   // owner data: balances + reconcile timestamps + movement count unchanged (no fabrication)

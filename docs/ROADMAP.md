@@ -25,11 +25,14 @@
   native-device** capability, **not** a requirement for the current Netlify web app. This
   stays within existing guardrails: AI assists, the owner decides; nothing publishes, spends,
   contacts people, or exposes private information without explicit owner approval.
-- **Read-only bank connections (Finance 1B)** — *in foundational preparation.* The provider-neutral
-  contracts + security model (Finance 1B.0) exist; **bank sync is not functional**. Initial provider is
-  Plaid, Sandbox-first, cached balances, owner-confirmed matching, **read-only — no money movement**.
-  Linked balances are provider-authoritative; imported transactions are evidence, not balance commands.
-  See `docs/BANK_INTEGRATION_SECURITY.md` and `docs/DECISIONS.md` ADR-027. (The active approved task is
+- **Read-only bank connections (Finance 1B)** — *in progress.* **1B.0** (provider-neutral contracts +
+  security) and **1B.1** (Plaid **Sandbox** connect: encrypted `financial_connections`, link/exchange/
+  list routes, `/finances` Bank-connections UI) are **done**. Bank **sync is still not functional** —
+  no accounts, balances, transactions, webhooks, or matching yet; **read-only, no money movement**.
+  Next: **1B.2** (accounts + cached balances), **1B.3** (incremental transaction sync + webhooks), then
+  matching (bills → income incl. split deposits → transfers), manual-to-linked transition, and repair/
+  disconnect hardening. Real Chase/BofA need eligible Production/OAuth (a later owner step). See
+  `docs/BANK_INTEGRATION_SECURITY.md` and `docs/DECISIONS.md` ADR-027/028. (The active approved task is
   always in `docs/HANDOFF.md`.)
 - **Personal knowledge and editable memory** — structured, inspectable, editable personal data.
 - **Experience and Adventure Loop** — capturing and acting on experiences/adventures.

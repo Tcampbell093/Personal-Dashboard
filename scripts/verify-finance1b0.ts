@@ -68,7 +68,11 @@ async function main() {
   const amountSrc = read("lib/providers/amount.ts");
   const authSrc = read("lib/providers/balance-authority.ts");
   const cryptoSrc = read("lib/providers/token-crypto.ts");
-  const providerFiles = existsSync("lib/providers") ? readdirSync("lib/providers") : [];
+  // Top-level provider-contract files only (skip the lib/providers/plaid adapter
+  // subdirectory, added in Finance 1B.1).
+  const providerFiles = existsSync("lib/providers")
+    ? readdirSync("lib/providers", { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name)
+    : [];
 
   ok("[1] provider-neutral interfaces exist (types + BankProvider)",
     typesSrc.length > 0 && /interface BankProvider/.test(ifaceSrc) &&
@@ -82,7 +86,12 @@ async function main() {
   const importsPlaid = (s: string) => /from\s+["']plaid["']|require\(\s*["']plaid["']\s*\)/.test(s);
   ok("[2] no raw Plaid SDK import in provider-neutral contracts",
     !importsPlaid(typesSrc) && !importsPlaid(ifaceSrc) && !importsPlaid(amountSrc) && !importsPlaid(authSrc) && !importsPlaid(cryptoSrc));
-  ok("[2b] no Plaid adapter directory yet (lib/providers/plaid)", !existsSync("lib/providers/plaid"));
+  // [2b] The Plaid SDK is imported ONLY inside the adapter folder — never by a
+  // provider-neutral contract. (Finance 1B.1 added lib/providers/plaid/; the
+  // 1B.0 "no adapter yet" guard is intentionally superseded by this boundary
+  // check so raw Plaid types can never leak into the neutral contracts.)
+  ok("[2b] Plaid SDK imported only inside the adapter folder (not by neutral contracts)",
+    !importsPlaid(typesSrc) && !importsPlaid(ifaceSrc) && !importsPlaid(amountSrc) && !importsPlaid(authSrc) && !importsPlaid(cryptoSrc));
 
   /* ===================== canonical sign convention ===================== */
   console.log("\n[canonical sign convention]");
@@ -285,21 +294,28 @@ async function main() {
   }
   ok("[19] no NEXT_PUBLIC_PLAID_* variable exists anywhere", !nextPublicPlaid);
 
-  /* ===================== repo invariants (nothing built) ===================== */
-  console.log("\n[repo invariants — nothing built]");
+  /* ===================== repo invariants ===================== */
+  // NOTE: Finance 1B.1 (a separate, approved build) intentionally adds the Plaid
+  // dependency, the connections routes, the financial_connections table, and
+  // migration 0011. The 1B.0 "nothing built yet" guards below are therefore
+  // SUPERSEDED into forward invariants: the dependency is the OFFICIAL package
+  // only, and the LATER-phase (1B.2+) routes/tables still do not exist yet.
+  console.log("\n[repo invariants — 1B.0 foundation + 1B.1 boundary]");
   const pkg = read("package.json");
-  ok("[20] no Plaid dependency installed", !/"plaid"\s*:/.test(pkg) && !existsSync("node_modules/plaid"));
-  ok("[21] no bank API route exists",
-    !existsSync("app/api/finances/connections") && !existsSync("app/api/finances/plaid") &&
-    !existsSync("app/api/plaid") && !existsSync("app/api/webhooks"));
+  ok("[20] Plaid dependency is the official package only (no unofficial wrapper)",
+    !/"plaid-[a-z]|react-plaid|plaid-node-/.test(pkg));
+  ok("[21] no LATER-phase bank routes exist (account/balance/transaction/webhook)",
+    !existsSync("app/api/finances/connections/webhook") && !existsSync("app/api/finances/accounts/import") &&
+    !existsSync("app/api/plaid") && !existsSync("app/api/webhooks") &&
+    !existsSync("app/api/finances/transactions"));
   const schemaSrc = read("db/schema.ts");
-  ok("[22] no connection schema/table exists",
-    !/pgTable\(\s*["'](financial_connections|provider_account_mappings|imported_transactions|connection_sync_requests|connection_sync_runs|transaction_matches)["']/.test(schemaSrc));
-  // [23] no migration generated for 1B.0: highest migration is 0010 (the rename
-  // added none; 1A.4 added 0009/0010).
+  ok("[22] no LATER-phase connection tables exist yet (mappings/imported/sync/match)",
+    !/pgTable\(\s*["'](provider_account_mappings|imported_transactions|connection_sync_requests|connection_sync_runs|transaction_matches)["']/.test(schemaSrc));
+  // [23] migrations remain additive; the latest is 1B.1's 0011 (1A.4 added
+  // 0009/0010, the rename added none, 1B.1 added 0011).
   const migFiles = existsSync("db/migrations") ? readdirSync("db/migrations").filter((f) => f.endsWith(".sql")) : [];
   const maxMig = migFiles.map((f) => parseInt(f.slice(0, 4), 10)).reduce((a, b) => Math.max(a, b), -1);
-  ok("[23] no migration was generated (max migration is still 0010)", maxMig === 10);
+  ok("[23] migrations are sequential + additive (latest is 1B.1's 0011)", maxMig === 11);
   // [24] no external provider API call: no plaid.com API URL anywhere in code.
   ok("[24] no external provider API call occurs (no plaid.com API URL in code)",
     !/https?:\/\/[^"'\s]*plaid\.com/.test(providerBlob + read("app/finances/page.tsx")));

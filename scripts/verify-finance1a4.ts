@@ -260,7 +260,12 @@ async function main() {
   console.log("\n[safety]");
   const pageSrc = readFileSync("app/finances/page.tsx", "utf8");
   const recurSrc = readFileSync("lib/finance-recurrence.ts", "utf8");
-  ok("[42] no Plaid / bank-sync implementation", !/plaid/i.test(pageSrc + schedMgr + incMgr + recurSrc + projSrc));
+  // NOTE: read-only Plaid connections are intentionally added by Finance 1B.0/1B.1
+  // (separate, approved builds) and now surface in /finances (`pageSrc`) — so the
+  // page is NO LONGER scanned here. The 1A.4 invariant: the recurring-income +
+  // estimate + projection MODULES have no Plaid/bank-sync logic.
+  ok("[42] 1A.4 recurring-income/projection modules have no Plaid / bank-sync logic",
+    !/plaid/i.test(schedMgr + incMgr + recurSrc + projSrc));
   const logsAfter = (await db.select({ id: apiUsageLogs.id }).from(apiUsageLogs).where(eq(apiUsageLogs.userId, U))).length;
   ok("[43] no usage-log row (no AI)", logsBefore === logsAfter);
   ok("[44] no owner income converted to a schedule", (await db.select().from(incomeEntries).where(and(eq(incomeEntries.userId, U), inArray(incomeEntries.id, ownerIncomeBefore.map((i) => i.id))))).every((i) => i.scheduleId === null && i.deletedAt === null));

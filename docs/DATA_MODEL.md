@@ -196,6 +196,14 @@ duplicate manual income movements; uncertain matches need owner approval; recurr
   uncertain matches; recurring detection may suggest but never silently create a schedule.
 - **1B** — a separate **`financial_connections`** model for read-only bank links (`balanceSource =
   linked`); connection health lives there, not on the account row.
+- **1B.1 — DONE (Plaid Sandbox connect)** — additive migration `0011_rapid_sasquatch.sql` adds the
+  `connection_status` enum + the **`financial_connections`** table: `userId`, `provider` (`plaid`),
+  `providerItemId` (unique within `(user_id, provider)`), `institutionId`/`institutionName`, the
+  **encrypted access-token envelope** (`access_token_cipher`/`_nonce`/`_tag`/`_key_version`/
+  `_envelope_version` — **no plaintext token column**), `status`, `environment` (`sandbox`),
+  `consentGrantedAt`, `lastSyncAttemptedAt`/`lastSyncedAt`, `requiresReauth`, bounded redacted
+  `errorCode`/`errorMessage`, `disconnectedAt`, timestamps. Read-only; **no accounts/balances/
+  transactions/mappings yet**. View model: `ConnectionView` (nonsecret — omits every encrypted field).
 - **1B.0 — DONE (foundation only; no DB change)** — provider-neutral contracts + security model, **no
   tables yet**. Added `lib/providers/*` (the `BankProvider` interface + DTOs, a canonical
   transaction-sign convention `inflow + / outflow − / 0 invalid`, a pure balance-authority resolver,

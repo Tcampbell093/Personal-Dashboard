@@ -12,17 +12,21 @@
 
 ## Next approved task
 
-### Finance 1B.0 — bank-integration security & provider foundation
+### Finance 1B.1 — Plaid Sandbox connection flow
 
 - **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** See the latest handoff report
-  below. Contracts + security model **before any bank connection exists**: provider-neutral
-  `lib/providers/*` (`BankProvider` interface + DTOs, canonical transaction-sign convention, pure
-  balance-authority resolver, AES-256-GCM token-encryption module) + `docs/BANK_INTEGRATION_SECURITY.md`
-  + doc updates + `scripts/verify-finance1b0.ts` (38/38). **No** Plaid SDK, provider call, link route,
-  stored token, connection table, or migration. **Read-only Finance 1B moves no money.**
-  - **The next approved finance build after review is Finance 1B.1** (connection + Sandbox Link flow:
-    `financial_connections`, link-token/exchange, encrypted token storage, Sandbox institutions) — it
-    requires its own explicit owner authorization. Production/OAuth onboarding is a later owner step.
+  below. Read-only, owner-only, **Plaid Sandbox** connect: official `plaid@^42.2.0` adapter behind the
+  1B.0 contracts, additive `financial_connections` table (migration `0011`, encrypted token envelope,
+  no plaintext column), link-token/exchange/list/delete routes, a `/finances` **Bank connections** UI,
+  `scripts/verify-finance1b1.ts` (65 assertions, live Sandbox), and doc updates. **No** accounts,
+  balances, transactions, webhooks, matching, or money movement.
+  - **The next approved finance build after review is Finance 1B.2** (accounts + cached balances:
+    provider-account mappings, `balance_source = linked` authority, truthful "last updated") — it
+    requires its own explicit owner authorization. Real Chase/BofA need eligible Production + OAuth (a
+    later owner step). **A pre-existing, unrelated issue is flagged:** `scripts/verify-home1a.ts` has a
+    wall-clock/timezone bug (its UTC `iso()` drifts vs the NY-local ranker) that fails 4 day-delta
+    assertions when run in the UTC hours where NY is a day behind — a separate task chip was spawned to
+    fix that harness; Finance 1B.1 touched no Home/task code.
 
 ### Finance 1A.4 — recurring income + estimate-vs-confirmed paychecks (committed `a15f99f`)
 
@@ -124,6 +128,99 @@ specific build. Builds are ordered so the manual loop works end-to-end before an
 ---
 
 ## Latest handoff
+
+### Finance 1B.1 — Plaid Sandbox connection flow — implemented — 2026-06-25
+
+**Task Completed** — Xanther's first real provider connection: **Plaid Sandbox only, read-only,
+owner-only, fake test data, no money movement.** Not committed — awaiting owner review.
+
+**Repository state confirmed** — HEAD `d6497eb` (1B.0); local == `origin/main`; clean tree; 1B.0
+contracts present; no prior Plaid connection code/table/token.
+
+**Environment handling (no secrets exposed)** — the owner configured `PLAID_CLIENT_ID`/`PLAID_SECRET`/
+`PLAID_ENV`/`BANK_TOKEN_ENC_KEY` in **Netlify**; for local execution they were placed in an **untracked
+`.env.local`** (git-ignored) that the owner populated. Availability was confirmed by **name only**
+(present/missing + `PLAID_ENV` resolves to `sandbox`); **no value was printed, inspected, or logged**.
+The harness + browser-equivalent runs load `--env-file=.env --env-file=.env.local`; the dev server
+auto-loads both. `.env.local` is **not** tracked or committed.
+
+**Dependency** — official **`plaid@^42.2.0`** (server SDK). Required for `linkTokenCreate`,
+`itemPublicTokenExchange`, `itemGet`/`institutionsGetById`, `itemRemove`, and the harness's
+`sandboxPublicTokenCreate`. Imported **only** in `lib/providers/plaid/{client,adapter}.ts`. The browser
+uses Plaid's official **Link CDN script** (no extra npm dependency; no Plaid SDK in the client bundle).
+
+**Schema & migration** — additive `0011_rapid_sasquatch.sql`: new `connection_status` enum + the
+`financial_connections` table. Access token stored **only** as the AES-256-GCM envelope
+(`access_token_cipher`/`_nonce`/`_tag`/`_key_version`/`_envelope_version`) — **no plaintext-token
+column**. Unique index on `(user_id, provider, provider_item_id)`. **No** DROP/owner-ALTER/backfill; no
+later-phase tables. Applied; owner data unchanged.
+
+**Plaid adapter** — `lib/providers/plaid/adapter.ts` implements the 1B.0 `BankProvider` subset
+(`createLinkSession`, `exchangePublicCredential`, `getConnectionMetadata`, `revokeConnection`); every
+deferred method throws "not implemented in 1B.1". `env.ts` reads creds lazily and **fails closed**
+(`PLAID_ENV` must be `sandbox`; client pinned to the Sandbox base path — no Production reachable).
+`client.ts` + `env.ts` + `adapter.ts` are server-only (`typeof window` guard). Raw Plaid types never
+escape the folder.
+
+**Link & exchange lifecycle** — Connect → `link-token` (returns only `linkToken`+`expiresAt`) → Plaid
+Link (fake Sandbox institution) → public token → `exchange` (server-side) → encrypt → store →
+nonsecret connection view → truthful Sandbox status.
+
+**Encryption & token storage** — `lib/services/connections.ts` encrypts the access token (1B.0
+`token-crypto`, key from `BANK_TOKEN_ENC_KEY` read lazily) **before any DB write**; the plaintext token
+is never returned, logged, or persisted. Decryption is server-side only (Sandbox revoke).
+
+**Duplicate & retry** — explicit existing-Item check **and** the unique index → a repeated/concurrent
+exchange returns the **existing** view (no second row). Plaid failure, encryption failure, and owner
+cancellation each write **nothing**. The owner id is server-resolved — never taken from the request
+body.
+
+**Routes** — `POST /api/finances/connections/link-token`, `POST /api/finances/connections/exchange`,
+`GET /api/finances/connections`, `DELETE /api/finances/connections/[id]` (Sandbox cleanup). All behind
+the password gate (middleware → 401 unauth).
+
+**`/finances` behavior** — a new **Bank connections** tier: Connect bank button, "fake Plaid Sandbox"
+explanation, connection list (institution name, provider, date, status, **Sandbox** badge,
+reconnect-needed label), and "accounts and balances … added in the next phase". **No** balances,
+account lists, or transaction feed. Loading/error states, keyboard-operable, responsive (flex-wrap),
+overlapping-session guard, non-destructive cancel.
+
+**Exact files changed** — new: `lib/providers/plaid/{env,client,adapter}.ts`,
+`lib/services/connections.ts`, `app/api/finances/connections/{route,link-token/route,exchange/route,[id]/route}.ts`,
+`components/finances/connection-manager.tsx`, `scripts/verify-finance1b1.ts`,
+`db/migrations/0011_rapid_sasquatch.sql` (+ `meta/0011_snapshot.json`, `_journal.json`); modified:
+`db/schema.ts`, `lib/types.ts`, `app/finances/page.tsx`, `app/globals.css`, `package.json`,
+`package-lock.json`; the six docs; and the stale `!/plaid/i`/`transactions`/`lastSyncedAt` guards in
+`verify-finance1a`/`1a2`/`1a3a`/`1a3b`/`1a4`/`1b0` (disclosed NOTEs, sanctioned by 1B.1).
+
+**Testing completed** — `npm run typecheck` ✓; `npm run build` ✓. **`scripts/verify-finance1b1.ts` —
+65/65** (66 invariants; checks 16/32 combined): env/security (sandbox accepted, production rejected,
+missing-by-name, server-only client + encryption, secret-readers unreachable from Client Components, no
+secret in source/routes/responses), schema/migration (additive, unique Item scope, no plaintext column,
+no later-phase tables), **live Plaid Sandbox** connection flow (link token, exchange stores one
+encrypted row, institution metadata, duplicate idempotent, encryption-failure/Plaid-failure/cancel
+write nothing, foreign-user rejected, list nonsecret), UI source, scope protection (no
+account/balance/transaction/webhook/match/money-movement, 1A.4 + 1B.0 intact), and owner-data/request-
+222 untouched + exact-id cleanup. **Browser-equivalent (authenticated HTTP, password never echoed):**
+section renders, link-token nonsecret, 401 unauth, a real Sandbox connection seeded via the exchange
+route renders + persists across reload with no balances, list nonsecret, bad-token errors leak nothing,
+exact-id cleanup, owner data untouched. **Regressions:** 1B.0 52 / 1A.4 65 / 1A.3B 57 / 1A.3A 63 /
+1A.2 72 / 1A.1 68 / Manage-tasks 27 / Build 2A 136 / 2B.1 126 / 2B.2 60 — all green. Secret scan clean.
+
+**Known issues / not tested** — the interactive **Plaid Link iframe** login (cross-origin to
+`cdn.plaid.com`) was **not driven by browser automation**; the full server flow it produces is proven
+end-to-end against **live Plaid Sandbox** (programmatically + via the exchange route over HTTP).
+**Pixel-level 375px** layout was not screenshotted (the password gate + secret constraints made the
+in-browser tooling impractical without exposing the password; the responsive CSS + section render were
+verified). **`verify-home1a.ts` (52/4)** fails 4 day-delta assertions due to a **pre-existing
+UTC-vs-New-York wall-clock bug in that harness** — unrelated to 1B.1 (no Home/task code touched); a
+separate task chip was spawned to fix it. The token-crypto/env readers are server-only; an orphaned
+Sandbox Item can remain on Plaid's side if an exchange succeeds but storage fails (Sandbox fake data;
+documented).
+
+**Decisions needed** — owner review before commit; Finance 1B.2 requires separate authorization.
+**Recommended next step** — owner reviews 1B.1; if approved, commit
+(`feat(finance): add Plaid Sandbox connection flow`), then prepare Finance 1B.2.
 
 ### Finance 1B.0 — bank-integration security & provider foundation — implemented — 2026-06-25
 

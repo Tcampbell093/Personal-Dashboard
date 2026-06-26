@@ -1,10 +1,60 @@
 # Bank Integration Security & Provider Foundation (Finance 1B)
 
-> **Status: foundational preparation (Finance 1B.0).** Bank sync is **NOT functional**.
-> Nothing here connects to a provider, stores a token, or moves money. Finance 1B is
-> **read-only** and performs **no money movement**. This document is the bounded
-> security/privacy reference for the bank-integration work; durable product principles
-> remain in `docs/PRODUCT_VISION.md`, and the decision record is `docs/DECISIONS.md` (ADR-027).
+> **Status: Finance 1B.1 implemented — Plaid Sandbox connect works; broader bank sync is still
+> NOT functional.** The owner can connect a **fake Plaid Sandbox** institution and Xanther stores
+> an **encrypted** connection; there are **no accounts, balances, transactions, webhooks, or
+> matching yet**, and Finance 1B performs **no money movement**. This document is the bounded
+> security/privacy reference for the bank-integration work; durable product principles remain in
+> `docs/PRODUCT_VISION.md`, and the decision records are `docs/DECISIONS.md` (ADR-027/028).
+
+## Sandbox Link lifecycle (Finance 1B.1 — what is functional now)
+
+1. Owner clicks **Connect bank** on `/finances` → `POST /api/finances/connections/link-token`.
+2. Server (Sandbox-guarded) creates a short-lived Plaid **Link token** and returns only
+   `linkToken` + `expiresAt` (never the client id, secret, or any token).
+3. Browser launches **Plaid Link** (official CDN script) and the owner picks a **fake Sandbox
+   institution** + completes the fake login → Link returns a temporary **public token**.
+4. Browser posts the public token to `POST /api/finances/connections/exchange`.
+5. Server exchanges it for the Plaid **access token** + `item_id`, fetches bounded institution
+   metadata, **AES-256-GCM-encrypts** the access token, and inserts ONE `financial_connections`
+   row. The plaintext token is never written, returned, or logged.
+6. `GET /api/finances/connections` returns nonsecret connection views; the UI shows a truthful
+   **Sandbox** status. `DELETE /…/[id]` is an owner-scoped Sandbox cleanup (revoke + delete the
+   row only).
+
+**Duplicate & retry:** `provider_item_id` is unique within `(user_id, provider)`; a repeated
+exchange (double-click, browser retry, duplicate Item) returns the **existing** nonsecret view —
+never a second row. A **Plaid failure** or an **encryption failure** writes **nothing**; owner
+cancellation never calls exchange, so nothing is stored.
+
+**Plaid adapter boundary:** the official `plaid` server SDK is imported **only** inside
+`lib/providers/plaid/` (client + adapter). The adapter implements the 1B.0 `BankProvider` subset
+and normalizes every response into the provider-neutral DTOs — raw Plaid types never escape the
+folder. The browser bundle contains **no** Plaid server SDK (it uses Plaid's Link CDN script).
+
+**Sandbox-only guard:** `lib/providers/plaid/env.ts` reads credentials lazily and **fails
+closed** — `PLAID_ENV` must equal `sandbox`, and the client is pinned to the Sandbox base path,
+so **no Production endpoint is reachable**. A non-sandbox or missing value is rejected before any
+provider call; rejection messages name the variable, never its value.
+
+**Encrypted connection storage:** only the AES-256-GCM envelope is persisted
+(`access_token_cipher`/`_nonce`/`_tag`/`_key_version`/`_envelope_version`). There is **no
+plaintext-token column**. Decryption happens server-side only (e.g. for Sandbox revoke).
+
+## Netlify environment-variable setup (no Google Drive, no downloaded `.env`)
+
+The owner entered `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV=sandbox`, and
+`BANK_TOKEN_ENC_KEY` into **Netlify** using Netlify's `.env`-content import — there is **no
+requirement for Google Drive or a committed `.env` file**. For **local** execution (the dev
+server, scripts), the same variable *names* must be available locally — e.g. an **untracked
+`.env.local`** (git-ignored, beside `package.json`) that the owner populates, or `netlify dev`
+if the repo is linked. `BANK_TOKEN_ENC_KEY` must be the **same** value locally and in Netlify so
+ciphertext stays compatible.
+
+## What is NOT functional yet (deferred to later 1B phases)
+
+No account import, balance display, transaction sync, webhooks, transaction matching, update/
+repair mode, real Chase/BofA (needs eligible Production + OAuth), or any money movement.
 
 ## Approved first-version defaults (owner-approved)
 

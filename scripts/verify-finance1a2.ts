@@ -242,7 +242,11 @@ async function main() {
   // to spend. Truthful disclaimers that bank sync is a FUTURE feature are allowed.
   ok("[39] no false bank-sync / live-balance / safe-to-spend claims",
     !/live balance|safe to spend|synced from your bank|bank-synced|currently synced|externally confirmed/i.test(uiAll));
-  ok("[40] no Plaid code", !/plaid/i.test(uiAll + schemaSrc));
+  // NOTE: read-only Plaid connections are intentionally added by Finance 1B.0/1B.1
+  // (separate, approved builds) and now appear in the schema (financial_connections)
+  // and /finances page — so those are NO LONGER scanned here. The 1A.2 invariant:
+  // the income-split + transfer MANAGERS have no Plaid code.
+  ok("[40] 1A.2 income/transfer managers have no Plaid code", !/plaid/i.test(incMgr + trMgr + manageSrc));
   ok("[12-ui] income UI shows a truthful linked-account limitation", /linked-account income must be confirmed through a future bank sync/i.test(incMgr));
   ok("[12-ui] transfer UI shows a truthful linked-account limitation", /bank-sync/i.test(trMgr) && /manual/i.test(trMgr));
   ok("[13-ui] linked records are not labelled completed/received/confirmed in UI", !/externally confirmed|pending confirmation/i.test(uiAll));

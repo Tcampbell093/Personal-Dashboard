@@ -538,6 +538,45 @@
   intact) + typecheck + build + all regressions green + secret scan clean. Full reference:
   `docs/BANK_INTEGRATION_SECURITY.md`.
 
+### ADR-028 — Finance 1B.1: Plaid Sandbox connection flow
+- **Classification:** Owner-approved decision (owner approved the 1B.1 scope + configured the Plaid
+  Sandbox env vars in Netlify).
+- **Detail:** Xanther's first real provider connection — **Plaid Sandbox only, read-only, owner-only,
+  fake test data, no money movement.** Stops before accounts, balances, transactions, webhooks, and
+  matching.
+  - **Dependency:** the official `plaid` server SDK (`plaid@^42.2.0`) — imported only inside
+    `lib/providers/plaid/` (client + adapter). The browser uses Plaid's official Link CDN script (no
+    extra npm dependency, no Plaid SDK in the client bundle).
+  - **Adapter:** `lib/providers/plaid/adapter.ts` implements the 1B.0 `BankProvider` subset
+    (`createLinkSession`, `exchangePublicCredential`, `getConnectionMetadata`, `revokeConnection`);
+    every other method throws "not implemented in 1B.1". Raw Plaid types never escape the folder.
+  - **Sandbox guard:** `lib/providers/plaid/env.ts` reads creds lazily and **fails closed** — `PLAID_ENV`
+    must be exactly `sandbox`; the client is pinned to the Sandbox base path, so no Production endpoint
+    is reachable. Rejection messages name the variable, never its value.
+  - **Schema:** additive migration `0011_rapid_sasquatch.sql` — new `connection_status` enum + the
+    `financial_connections` table. The access token is stored **only** as the AES-256-GCM envelope
+    (`access_token_cipher`/`_nonce`/`_tag`/`_key_version`/`_envelope_version`) — **no plaintext-token
+    column**. `provider_item_id` is unique within `(user_id, provider)`, so a repeated exchange of the
+    same Item can never create a second row. No owner-data backfill; no later-phase tables.
+  - **Flow:** `lib/services/connections.ts` orchestrates create-link → exchange → encrypt → store. The
+    plaintext token is encrypted before any DB write and never returned or logged. Duplicate/retry is
+    idempotent (returns the existing nonsecret view); a Plaid failure or an encryption failure writes
+    **nothing**; the owner id is server-resolved (never trusted from the request body).
+  - **Routes:** `POST /api/finances/connections/link-token` (returns only `linkToken`+`expiresAt`),
+    `POST /api/finances/connections/exchange` (returns only a nonsecret connection view),
+    `GET /api/finances/connections` (nonsecret views), `DELETE /…/[id]` (owner-scoped Sandbox cleanup —
+    revoke + delete only the connection row).
+  - **UI:** a `Bank connections` section on `/finances` (Connect bank, Sandbox explanation, connection
+    list with a `Sandbox` badge + status) — **no accounts, balances, or transactions** are shown.
+  - **Env (Netlify):** the owner entered `PLAID_CLIENT_ID`/`PLAID_SECRET`/`PLAID_ENV`/`BANK_TOKEN_ENC_KEY`
+    via Netlify's `.env` import; no downloaded `.env` and no Google Drive are required. Local runs need
+    the same names (e.g. an untracked `.env.local` or `netlify dev`).
+- **Evidence:** `scripts/verify-finance1b1.ts` (65/66 invariants; live Plaid Sandbox end-to-end via
+  `sandboxPublicTokenCreate` → exchange → encrypted store → idempotent duplicate → exact-id cleanup) +
+  authenticated-HTTP browser-equivalent run against the dev server (section render, link-token,
+  connected-state persistence, 401 on no-auth, no-secret errors) + typecheck + build + all regressions
+  green + secret scan clean. Older suites' stale `!/plaid/i` guards were updated (disclosed NOTEs).
+
 ---
 
 ## Open decisions — `[DECISION NEEDED]`

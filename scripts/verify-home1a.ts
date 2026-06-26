@@ -27,11 +27,33 @@ const U = CURRENT_USER_ID;
 let passed = 0, failed = 0;
 const ok = (n: string, c: boolean) => { c ? passed++ : failed++; console.log(`${c ? "✓" : "✗"} ${n}`); };
 
-const iso = (offsetDays: number) => {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() + offsetDays);
+// Deterministic clock control for exact day-delta assertions. The ranker computes
+// deltas with localToday()/localDaysUntil() in the App timezone (America/New_York),
+// so the harness must (a) anchor every test due-date to the SAME NY "today" frame
+// and (b) be able to FREEZE a reference instant — otherwise UTC-based dates drift
+// by one day vs NY near the UTC midnight boundary. (Harness-only; production Home
+// behavior is unchanged.)
+const REAL_DATE = Date;
+function withFrozenClock<T>(instantIso: string, fn: () => T): T {
+  const fixedMs = new REAL_DATE(instantIso).getTime();
+  class FrozenDate extends REAL_DATE {
+    constructor(...args: unknown[]) {
+      if (args.length === 0) super(fixedMs);
+      else super(...(args as []));
+    }
+    static now() { return fixedMs; }
+  }
+  (globalThis as { Date: typeof Date }).Date = FrozenDate as unknown as typeof Date;
+  try { return fn(); } finally { (globalThis as { Date: typeof Date }).Date = REAL_DATE; }
+}
+// Pure calendar arithmetic on a YYYY-MM-DD string (noon-anchored → no DST drift).
+const addDaysStr = (dateStr: string, n: number): string => {
+  const d = new REAL_DATE(`${dateStr}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
 };
+// A due-date `offsetDays` from the App-timezone "today" (honors a frozen clock).
+const iso = (offsetDays: number): string => addDaysStr(localToday(), offsetDays);
 const mkTask = (o: Partial<TaskView>): TaskView => ({
   id: o.id ?? 0, title: o.title ?? "t", dueDate: o.dueDate ?? null, dueTime: null,
   priority: o.priority ?? "medium", status: o.status ?? "pending", category: null, completedAt: o.completedAt ?? null,
@@ -81,8 +103,10 @@ async function main() {
   if (savedTz === undefined) delete process.env.APP_TIME_ZONE; else process.env.APP_TIME_ZONE = savedTz;
 
   /* ---- 1. Deterministic ranker: order + reason labels ---------------- */
+  // Frozen at a fixed reference instant so exact day-delta labels never depend on
+  // the real wall clock (REF below: UTC and NY share the date → straightforward).
   console.log("[1] ranker order + reason labels");
-  const ranked = rankNeedsAttention({
+  const ranked = withFrozenClock("2026-06-23T17:00:00Z", () => rankNeedsAttention({
     tasks: [
       mkTask({ id: 1, title: "overdue", dueDate: iso(-3) }),
       mkTask({ id: 2, title: "today", dueDate: iso(0) }),
@@ -94,7 +118,7 @@ async function main() {
     ],
     obligations: [mkObl({ id: 8, title: "obl-overdue", startDate: iso(-1) })],
     finances: { overdueCount: 2, accountsTotal: 0, nextPaydayDate: null, expectedIncomeBeforePayday: 0, billsDueBeforePayday: 0, estimatedRemaining: 0, due7: 0, due14: 0, due30: 0 },
-  });
+  }));
   const reasons = ranked.map((r) => r.reason);
   ok("[1] excludes non-pressing + completed (5 tasks + 1 obligation + 1 bill = 7)", ranked.length === 7);
   ok("[1] sorted by rank desc", ranked.every((r, i) => i === 0 || ranked[i - 1].rank >= r.rank));
@@ -106,6 +130,45 @@ async function main() {
   ok("[1] overdue bills item = '2 overdue bills'", ranked.some((r) => r.kind === "bill" && r.title === "2 overdue bills"));
   ok("[1] most urgent first is the overdue task", ranked[0].reason === "Overdue 3 days");
   ok("[1] every item has a visible reason", ranked.every((r) => typeof r.reason === "string" && r.reason.length > 0));
+
+  /* ---- 1d. Deterministic timezone-boundary correctness -------------- */
+  // Prove the ranker's day-delta labels + ordering are correct AND identical at a
+  // reference where UTC and NY share the date, AND at a reference just after UTC
+  // midnight where NY is still on the prior calendar date. All due-dates are
+  // anchored to the App-timezone "today", so labels are exact at both — this is
+  // the regression that previously flaked on the real wall clock.
+  console.log("\n[1d] deterministic timezone-boundary ranker checks");
+  const rankAt = (refIso: string) =>
+    withFrozenClock(refIso, () => {
+      const utcDate = new Date().toISOString().slice(0, 10);
+      const nyDate = localToday();
+      const r = rankNeedsAttention({
+        tasks: [
+          mkTask({ id: 1, title: "od", dueDate: iso(-3) }),
+          mkTask({ id: 2, title: "td", dueDate: iso(0) }),
+          mkTask({ id: 3, title: "soon", dueDate: iso(2) }),
+        ],
+        obligations: [],
+        finances: null,
+      });
+      return { utcDate, nyDate, reasons: r.map((x) => x.reason), first: r[0]?.reason };
+    });
+  const sameRef = rankAt("2026-06-23T17:00:00Z"); // 13:00 EDT — UTC date == NY date
+  const boundaryRef = rankAt("2026-06-24T01:00:00Z"); // 21:00 EDT prev day — NY still 06-23
+  ok("[1d] reference where UTC and NY share the calendar date",
+    sameRef.utcDate === "2026-06-23" && sameRef.nyDate === "2026-06-23");
+  ok("[1d] reference after UTC midnight while NY is still the prior date",
+    boundaryRef.utcDate === "2026-06-24" && boundaryRef.nyDate === "2026-06-23");
+  ok("[1d] overdue label correct at both references",
+    sameRef.reasons.includes("Overdue 3 days") && boundaryRef.reasons.includes("Overdue 3 days"));
+  ok("[1d] due-soon label correct at both references",
+    sameRef.reasons.includes("Due in 2 days") && boundaryRef.reasons.includes("Due in 2 days"));
+  ok("[1d] due-today label correct at both references",
+    sameRef.reasons.includes("Due today") && boundaryRef.reasons.includes("Due today"));
+  ok("[1d] ranking (most-urgent-first) correct at both references",
+    sameRef.first === "Overdue 3 days" && boundaryRef.first === "Overdue 3 days");
+  ok("[1d] repeated execution produces identical results",
+    JSON.stringify(rankAt("2026-06-24T01:00:00Z").reasons) === JSON.stringify(boundaryRef.reasons));
 
   /* ---- 2. Top-five curation ----------------------------------------- */
   console.log("\n[2] top-five curation");

@@ -282,7 +282,10 @@ async function main() {
   ok("[8] no providerAccountId field", !/provider_account_id|providerAccountId/.test(schemaSrc));
   ok("[8] no syncStatus field", !/sync_status|syncStatus/.test(schemaSrc));
   ok("[8] no connectionError field", !/connection_error|connectionError/.test(schemaSrc));
-  ok("[8] no lastSyncedAt field", !/last_synced_at|lastSyncedAt/.test(schemaSrc));
+  // NOTE: financial_connections (Finance 1B.1) legitimately has last_synced_at, so
+  // this guard is scoped to the financial_ACCOUNTS table, which stays manual-only.
+  ok("[8] no lastSyncedAt field on financial_accounts",
+    !/last_synced_at|lastSyncedAt/.test(schemaSrc.match(/financialAccounts = pgTable[\s\S]*?\n\);/)?.[0] ?? ""));
   // NOTE: reconciliation (last_reconciled_at + the reconcile route) is intentionally
   // added by Finance 1A.3B — no longer excluded here; verified by verify-finance1a3b.ts.
   // NOTE: income splits (income_allocations) and transfers (account_transfers) are
@@ -292,7 +295,10 @@ async function main() {
   // (a separate, approved build) — so it is NO LONGER excluded here. Its own
   // behavior is verified by scripts/verify-finance1a3a.ts.
   ok("[8] balance_source enum present (manual|linked, future-ready)", /balance_source/.test(schemaSrc));
-  ok("[8] no Plaid references", !/plaid/i.test(schemaSrc + pageSrc + acctMgr + billMgr));
+  // NOTE: read-only Plaid connections are intentionally added by Finance 1B.0/1B.1
+  // and now surface in the schema + /finances — so those are NO LONGER scanned
+  // here. The 1A.1 invariant: the account + bill MANAGERS have no Plaid code.
+  ok("[8] no Plaid references in 1A.1 account/bill managers", !/plaid/i.test(acctMgr + billMgr));
 
   // Home stays compact; /manage links to /finances; income preserved on /manage.
   ok("[8] Home money card links to /finances", homeSrc.includes('href="/finances"'));

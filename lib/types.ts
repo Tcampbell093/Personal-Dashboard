@@ -229,6 +229,19 @@ export interface TransferView {
   note: string | null;
 }
 
+/* Finance 1B.1 — a NONSECRET view of a read-only bank connection. Deliberately
+ * omits every encrypted-token field; nothing here is a secret. */
+export interface ConnectionView {
+  id: number;
+  provider: string; // "plaid"
+  institutionId: string | null;
+  institutionName: string; // falls back to "Connected institution"
+  status: string; // active | login_required | pending_expiration | error | revoked
+  environment: string; // "sandbox"
+  requiresReauth: boolean;
+  connectedAt: string | null; // ISO
+}
+
 export interface SignalView {
   id: number;
   title: string;

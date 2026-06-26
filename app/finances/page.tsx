@@ -32,6 +32,7 @@ import {
   toScheduleViews,
 } from "@/lib/services/income-schedules";
 import { computeProjection } from "@/lib/services/finance-projection";
+import { listConnections } from "@/lib/services/connections";
 import { isAuthConfigured } from "@/lib/session";
 import { LogoutButton } from "@/components/logout-button";
 import { AccountManager } from "@/components/finances/account-manager";
@@ -39,7 +40,8 @@ import { BillManager } from "@/components/finances/bill-manager";
 import { IncomeManager } from "@/components/finances/income-manager";
 import { ScheduleManager } from "@/components/finances/schedule-manager";
 import { TransferManager } from "@/components/finances/transfer-manager";
-import type { MovementView, ProjectionHorizon, ForecastItem } from "@/lib/types";
+import { ConnectionManager } from "@/components/finances/connection-manager";
+import type { MovementView, ProjectionHorizon, ForecastItem, ConnectionView } from "@/lib/types";
 
 const HORIZONS: { key: ProjectionHorizon; label: string }[] = [
   { key: "7d", label: "7 days" },
@@ -156,6 +158,15 @@ export default async function FinancesPage({
     );
   }
 
+  // Bank connections (Finance 1B.1) — loaded resiliently so a provider/env hiccup
+  // never breaks the money workspace; a failure simply shows no connections.
+  let connections: ConnectionView[] = [];
+  try {
+    connections = await listConnections(userId);
+  } catch (err) {
+    console.error("FinancesPage: connections load failed.", err);
+  }
+
   const summary = computeCashSummary(accounts);
   const projection = computeProjection({ accounts, bills, income, transfers, horizon, today });
   const accountOptions = accounts
@@ -232,6 +243,16 @@ export default async function FinancesPage({
           <span className="tier-sub">manual balances you keep up to date</span>
         </div>
         <AccountManager accounts={accounts} reconcilableIds={reconcilableIds} />
+      </section>
+
+      {/* 1b — Bank connections (Finance 1B.1: read-only Plaid Sandbox connect) */}
+      <section className="tier">
+        <div className="tier-head">
+          <span className="tier-tick" style={{ background: "var(--explore)" }} />
+          <span className="tier-name">Bank connections</span>
+          <span className="tier-sub">read-only · Plaid Sandbox · fake test data</span>
+        </div>
+        <ConnectionManager initialConnections={connections} />
       </section>
 
       {/* 2b — Projected balances (deterministic forecast, separate from actual) */}

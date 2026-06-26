@@ -167,6 +167,18 @@ export const transferStatus = pgEnum("transfer_status", [
   "cancelled",
 ]);
 
+// Finance 1B.1: health of a read-only bank connection (provider-neutral; mirrors
+// the `ConnectionStatus` DTO in lib/providers/types.ts). `active` = usable;
+// `login_required`/`pending_expiration` = repair needed; `error`/`revoked` =
+// unusable. Soft-disconnect/archive is tracked by `disconnectedAt` + `deletedAt`.
+export const connectionStatus = pgEnum("connection_status", [
+  "active",
+  "login_required",
+  "pending_expiration",
+  "error",
+  "revoked",
+]);
+
 export const signalType = pgEnum("signal_type", [
   "weather",
   "local_event",
@@ -710,6 +722,57 @@ export const accountMovements = pgTable(
     uniqueIndex("account_movements_reversal_uq")
       .on(t.reversalOfId)
       .where(sqlNotNull(t.reversalOfId)),
+  ],
+);
+
+/* Finance 1B.1 — read-only bank connection (Plaid Sandbox).
+ * One authenticated connection to an institution. A connection may later back
+ * several accounts, but 1B.1 stores ONLY the connection + bounded institution
+ * metadata — no accounts, balances, transactions, cursor, or mappings yet.
+ *
+ * The provider access token is NEVER stored in plaintext: only the AES-256-GCM
+ * encrypted envelope (cipher + nonce + tag + key/envelope version) from
+ * lib/providers/token-crypto.ts is persisted. Error fields are bounded + redacted
+ * and never contain a token. `providerItemId` is unique within owner+provider
+ * scope so a repeated exchange of the same Item can never create a second row. */
+export const financialConnections = pgTable(
+  "financial_connections",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: varchar("provider", { length: 40 }).notNull().default("plaid"),
+    // Non-secret provider connection id (Plaid item_id). Stored in clear.
+    providerItemId: varchar("provider_item_id", { length: 255 }).notNull(),
+    institutionId: varchar("institution_id", { length: 120 }),
+    institutionName: varchar("institution_name", { length: 200 }),
+    // Encrypted access-token envelope (NO plaintext token column exists).
+    accessTokenCipher: text("access_token_cipher").notNull(),
+    accessTokenNonce: text("access_token_nonce").notNull(),
+    accessTokenTag: text("access_token_tag").notNull(),
+    accessTokenKeyVersion: integer("access_token_key_version").notNull(),
+    accessTokenEnvelopeVersion: integer("access_token_envelope_version").notNull(),
+    status: connectionStatus("status").notNull().default("active"),
+    // Sandbox label so the UI can be truthful about fake test data.
+    environment: varchar("environment", { length: 20 }).notNull().default("sandbox"),
+    consentGrantedAt: timestamp("consent_granted_at", { withTimezone: true }),
+    lastSyncAttemptedAt: timestamp("last_sync_attempted_at", { withTimezone: true }),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    requiresReauth: boolean("requires_reauth").notNull().default(false),
+    // Bounded, redacted — never a token.
+    errorCode: varchar("error_code", { length: 80 }),
+    errorMessage: varchar("error_message", { length: 300 }),
+    // Optional explicit disconnect/archive timestamp (soft); `deletedAt` from the
+    // shared timestamps helper also soft-archives.
+    disconnectedAt: timestamp("disconnected_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    index("financial_connections_user_idx").on(t.userId, t.status),
+    // Provider Item is unique within owner + provider scope: a repeated exchange
+    // of the same Item can never create a second active connection.
+    uniqueIndex("financial_connections_owner_item_uq").on(t.userId, t.provider, t.providerItemId),
   ],
 );
 

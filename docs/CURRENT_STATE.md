@@ -9,14 +9,19 @@
 > only; technical identifiers (routes, DB, env vars, the `Personal-Dashboard` repo) keep their
 > original names. See `docs/DECISIONS.md` ADR-026.
 
-**Last updated:** 2026-06-25 · **Reflects branch:** `main` (Finance 1A.4 + Xanther rename committed `9470cf7`; Finance 1B.0 foundation uncommitted)
+**Last updated:** 2026-06-25 · **Reflects branch:** `main` (Finance 1B.0 committed `d6497eb`; Finance 1B.1 uncommitted)
 
-> **Finance 1B (read-only bank connections) is in foundational preparation — bank sync is NOT
-> functional.** Finance 1B.0 added provider-neutral contracts (`lib/providers/*`), a canonical
-> transaction-sign convention, a pure balance-authority resolver, an AES-256-GCM token-encryption
-> module, and the security/setup reference (`docs/BANK_INTEGRATION_SECURITY.md`). **No** Plaid SDK,
-> provider call, link route, stored token, connection table, or migration exists. Read-only Finance 1B
-> performs **no money movement**. See `docs/DECISIONS.md` ADR-027.
+> **Finance 1B.1 — Plaid Sandbox connection flow — implemented (uncommitted).** The owner can connect a
+> **fake Plaid Sandbox** institution from `/finances` → the public token is exchanged server-side → the
+> Plaid access token is **AES-256-GCM encrypted** and stored in the new `financial_connections` table →
+> a truthful Sandbox connection status renders. **Read-only, owner-only, no money movement.** It stops
+> before accounts, balances, transactions, webhooks, and matching. Verified against **live Plaid
+> Sandbox** (`scripts/verify-finance1b1.ts`, 65 assertions) + an authenticated-HTTP run. Dependency:
+> official `plaid@^42.2.0` (server SDK; the browser uses Plaid's Link CDN script). Additive migration
+> `0011`. See `docs/DECISIONS.md` ADR-028 + `docs/BANK_INTEGRATION_SECURITY.md`.
+>
+> **Finance 1B.0 (committed `d6497eb`)** established the provider-neutral contracts, sign convention,
+> balance-authority resolver, and token-encryption module that 1B.1 builds on.
 
 ## Status legend
 

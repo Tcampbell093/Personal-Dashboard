@@ -1200,7 +1200,19 @@ textarea.taskadd-field:focus {
 .fin-tag.good { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, var(--line)); }
 .fin-tag.liab { color: var(--act); border-color: color-mix(in srgb, var(--act) 40%, var(--line)); }
 .fin-tag.muted { color: var(--muted-dim); }
+.fin-tag.sandbox { color: var(--explore); border-color: color-mix(in srgb, var(--explore) 40%, var(--line)); }
 .fin-acct-actions { display: flex; gap: 10px; }
+
+/* Finance 1B.1 — bank connections */
+.fin-conn-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 6px; }
+.fin-conn-actions .fin-form-note { margin: 0; flex: 1 1 220px; }
+.fin-conn-list { list-style: none; margin: 10px 0 0; padding: 0; }
+.fin-conn-row { padding: 12px 0; border-top: 1px solid var(--line); }
+.fin-conn-row:first-of-type { border-top: none; }
+.fin-conn-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fin-conn-name { font-weight: 600; }
+.fin-conn-meta { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 3px; }
+.fin-conn-phase { margin: 4px 0 0; }
 
 /* account + bill forms */
 .fin-acct-form {

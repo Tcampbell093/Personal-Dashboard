@@ -276,8 +276,15 @@ async function main() {
   // NOTE: income_allocations + account_transfers (1A.2) and reconciliation
   // (last_reconciled_at + reconcile_* kinds, 1A.3B) are intentionally added by
   // later approved builds — verified by verify-finance1a2.ts / verify-finance1a3b.ts.
-  ok("[12] no discretionary spending/transactions table", !/spending_entries|discretionary|"transactions"|\btransactions\b/.test(schemaSrc));
-  ok("[12] no Plaid", !/plaid/i.test(schemaSrc + pageSrc + billMgr));
+  // NOTE: the word "transactions" now appears in a Finance 1B.1 schema COMMENT
+  // (financial_connections), so this guard checks for an actual TABLE, not prose.
+  // No discretionary-spending or imported-transaction table exists.
+  ok("[12] no discretionary spending / imported-transaction table",
+    !/pgTable\(\s*["'](spending_entries|discretionary_\w+|imported_transactions|transactions)["']/.test(schemaSrc));
+  // NOTE: read-only Plaid connections are intentionally added by Finance 1B.0/1B.1
+  // and now surface in the schema + /finances — so those are NO LONGER scanned
+  // here. The 1A.3A invariant: the bill-payment-ledger UI has no Plaid code.
+  ok("[12] 1A.3A bill-ledger UI has no Plaid code", !/plaid/i.test(billMgr));
 
   /* ---- 13. No AI / no usage log ------------------------------------------ */
   const logsAfter = (
