@@ -592,6 +592,30 @@
   + typecheck + build + all regressions green + secret scan clean. Owner's real Sandbox connection
   untouched. Older suites' superseded `!/plaid/i`/migration/scope guards updated (disclosed NOTEs).
 
+### ADR-031 — Finance 1B.3A.1: Imported-activity usability + test-cleanup hardening
+- **Classification:** Owner-approved decision (owner approved the 1B.3A.1 polish-and-safety scope).
+- **Detail:** Two bounded changes, **no** new schema/route/provider work (no webhooks, matching, AI,
+  Production, OAuth, money movement; the 1B.3A fetch→buffer→atomic-commit sync is unchanged).
+  - **Imported Activity usability:** `/finances` now shows only the most recent **10** transactions by
+    default with **Show more** / **Show less**, plus small **Account** / **Status (All/Posted/Pending)**
+    / **Date (Last 30 / Last 90 (default) / All history)** filters and a truthful **"Showing X of Y"**
+    count. All filtering + pagination is **client-side** over a single bounded, deterministically-ordered
+    fetch (the service gained a stable `id` tie-breaker and the view a `financialAccountId`); filters
+    never trigger a sync or mutate data; removed + suppressed-pending rows stay excluded. Imported
+    Activity remains clearly separate from Recent (Xanther) Activity. Responsive at 375px.
+  - **Test-cleanup hardening:** a shared `scripts/support/bank-test-cleanup.ts` (`cleanupBankTestRecords`,
+    `sweepStaleTestAccounts`, `orphanLinkedCount`) gives every bank harness (`verify-finance1b1/1b2/1b3a`)
+    **exact-ID, safe-FK-order, idempotent** cleanup that runs on a pass, an assertion failure, a
+    provider/db throw, OR an interruption. Root cause of the earlier `ZZ1B2` leak: a finally that ran a
+    **raw `DELETE financial_accounts` which FK-violated (a provider account still referenced it) and
+    swallowed the error** — fixed by always unmapping before deleting. A startup **sweep** removes
+    provably-test (`ZZ`-prefixed) leftovers by exact id and **refuses** if a real owner name matches;
+    prefix scanning is a final diagnostic only, never the primary cleanup.
+- **Evidence:** `scripts/verify-finance1b3a.ts` (131/131, incl. `[u1]–[u24]` usability + `[k25]–[k42]`
+  cleanup-hardening incl. cleanup-after-provider/db/assertion-failure and the no-durable-orphan
+  invariant) + all regressions green + typecheck + build + secret scan + authenticated-HTTP render.
+  The owner's real BofA imported transactions (19) and Plaid Checking linked account are preserved.
+
 ### ADR-030 — Finance 1B.3A: Plaid Sandbox transaction import + manual incremental sync
 - **Classification:** Owner-approved decision (owner approved the 1B.3A scope).
 - **Detail:** A manual **`Sync transactions`** action imports fake Plaid Sandbox transactions as

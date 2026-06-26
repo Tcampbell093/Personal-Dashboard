@@ -245,7 +245,9 @@ export async function listImportedTransactions(userId: number, filters: Transact
     .select()
     .from(importedTransactions)
     .where(and(...conds))
-    .orderBy(desc(importedTransactions.postedDate), desc(importedTransactions.authorizedDate), desc(importedTransactions.createdAt))
+    // Deterministic ordering: newest first, with a STABLE id tie-breaker so equal
+    // dates/created-at never reorder between renders.
+    .orderBy(desc(importedTransactions.postedDate), desc(importedTransactions.authorizedDate), desc(importedTransactions.createdAt), desc(importedTransactions.id))
     .limit(Math.min(filters.limit ?? 100, 500));
 
   const supersededPending = new Set(
@@ -260,6 +262,7 @@ async function mapTransactionViews(userId: number, rows: TxRow[]): Promise<Impor
   const nameById = new Map(accts.map((a) => [a.id, a.name]));
   return rows.map((r) => ({
     id: r.id,
+    financialAccountId: r.financialAccountId,
     accountLabel: r.financialAccountId != null ? (nameById.get(r.financialAccountId) ?? "Linked account") : "Not added to Xanther",
     mapped: r.financialAccountId != null,
     amount: Number(r.amount),

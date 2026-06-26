@@ -23,8 +23,12 @@ import {
 } from "@/lib/services/provider-accounts";
 import { toAccountViews, computeCashSummary, listAccounts, updateAccount, reconcileAccount } from "@/lib/services/finances";
 import { computeProjection } from "@/lib/services/finance-projection";
+import { newRecords, cleanupBankTestRecords, sweepStaleTestAccounts } from "./support/bank-test-cleanup";
 
 const U = CURRENT_USER_ID;
+// Never-reset accumulator of EVERY temp record this run creates — used by the
+// finally so a passing, failing, or interrupted run always cleans up correctly.
+const temp = newRecords();
 let passed = 0, failed = 0;
 const ok = (n: string, c: boolean) => { c ? passed++ : failed++; console.log(`${c ? "✓" : "✗"} ${n}`); };
 const read = (p: string) => (existsSync(p) ? readFileSync(p, "utf8") : "");
@@ -73,6 +77,10 @@ async function ownerSnapshot() {
 
 async function main() {
   console.log("Finance 1B.2 deterministic verification\n");
+  // Startup sweep: remove any provably-test (ZZ1B2*) records a prior interrupted
+  // run left behind, by exact id (refuses if a real owner account ever matched).
+  const swept = await sweepStaleTestAccounts(U, "ZZ1B2");
+  if (swept.cleaned) console.log(`[startup] swept ${swept.cleaned} stale test account(s): ${swept.found.join(", ")}`);
   const before = await ownerSnapshot();
   const logsBefore = (await db.select({ id: apiUsageLogs.id }).from(apiUsageLogs).where(eq(apiUsageLogs.userId, U))).length;
   const chaseBofA = JSON.parse(before.a).filter((x: { name: string }) => x.name === "Chase" || x.name === "BofA");
@@ -97,6 +105,7 @@ async function main() {
     const pub = await sandboxCreatePublicToken();
     const conn = await exchangeAndStore(U, pub);
     created.connId = conn.id;
+    temp.connIds.push(conn.id);
     const cid = conn.id;
 
     /* ============ provider account sync (1-14) ============ */
@@ -168,7 +177,7 @@ async function main() {
     const fresh = await listProviderAccounts(U, cid);
     const chk = fresh.find((p) => p.type === "checking" && !p.mapped)!;
     const made = await createLinkedAccount(U, chk.id, { name: "ZZ1B2 Checking", purpose: "spending", includeInSpendable: true });
-    created.acctIds.push(made.financialAccountId);
+    created.acctIds.push(made.financialAccountId); temp.acctIds.push(made.financialAccountId);
     const fa = (await db.select().from(financialAccounts).where(eq(financialAccounts.id, made.financialAccountId)))[0];
     ok("[15] unmapped provider account creates a new linked Xanther account", fa != null && fa.name === "ZZ1B2 Checking");
     ok("[16] created account uses balanceSource='linked'", fa.balanceSource === "linked");
@@ -183,7 +192,7 @@ async function main() {
       createLinkedAccount(U, chk2.id, { name: "ZZ1B2 Conc", purpose: "spending", includeInSpendable: false }),
     ]);
     const succeeded = conc.filter((r) => r.status === "fulfilled") as PromiseFulfilledResult<{ financialAccountId: number }>[];
-    succeeded.forEach((s) => created.acctIds.push(s.value.financialAccountId));
+    succeeded.forEach((s) => { created.acctIds.push(s.value.financialAccountId); temp.acctIds.push(s.value.financialAccountId); });
     const mappedAcctIds = new Set(succeeded.map((s) => s.value.financialAccountId));
     ok("[19] concurrent creation creates exactly one account", mappedAcctIds.size === 1);
     const chk2row = (await db.select().from(providerAccounts).where(eq(providerAccounts.id, chk2.id)))[0];
@@ -194,7 +203,7 @@ async function main() {
     const creditPa = fresh.find((p) => p.type === "credit" && !p.mapped);
     if (creditPa) {
       const cl = await createLinkedAccount(U, creditPa.id, { name: "ZZ1B2 Credit", purpose: "other", includeInSpendable: true });
-      created.acctIds.push(cl.financialAccountId);
+      created.acctIds.push(cl.financialAccountId); temp.acctIds.push(cl.financialAccountId);
       const clfa = (await db.select().from(financialAccounts).where(eq(financialAccounts.id, cl.financialAccountId)))[0];
       ok("[22] credit account cannot count as spendable cash", clfa.includeInSpendable === false && clfa.type === "credit");
     } else ok("[22] credit account cannot count as spendable cash (no credit sandbox acct; rule verified in service)", /isLiabilityType\(type\) \? false/.test(svcSrc));
@@ -292,7 +301,7 @@ async function main() {
     const ownerConnsBefore = (await db.select().from(financialConnections).where(and(eq(financialConnections.userId, U), isNull(financialConnections.deletedAt)))).filter((c) => c.id !== cid).map((c) => c.id).sort();
 
     // [L1] an unused/unmapped temp connection can be cleaned up.
-    const tmp1 = await exchangeAndStore(U, await sandboxCreatePublicToken());
+    const tmp1 = await exchangeAndStore(U, await sandboxCreatePublicToken()); temp.connIds.push(tmp1.id);
     await syncProviderAccounts(U, tmp1.id);
     const del1 = await deleteConnection(U, tmp1.id);
     ok("[L1] unused temp Sandbox connection (unmapped accounts) can be cleaned up", del1.deleted === true && (await db.select().from(financialConnections).where(eq(financialConnections.id, tmp1.id))).length === 0);
@@ -383,9 +392,12 @@ async function main() {
     ok("[mig] migration 0012 is additive (CREATE only; no DROP/owner-ALTER/backfill)",
       /CREATE TABLE "provider_accounts"/.test(mig) && !/\bDROP\b|TRUNCATE|DELETE FROM/.test(mig) && !/INSERT INTO|UPDATE\s+"[^"]+"\s+SET/i.test(mig) && !/ALTER TABLE "(?!provider_accounts)/.test(mig));
   } finally {
-    // best-effort cleanup on any failure
-    for (const id of created.acctIds) await db.delete(financialAccounts).where(eq(financialAccounts.id, id)).catch(() => {});
-    if (created.connId) { await db.delete(providerAccounts).where(eq(providerAccounts.connectionId, created.connId)).catch(() => {}); await deleteConnection(U, created.connId).catch(() => {}); }
+    // Exact-ID, safe-order, idempotent cleanup of EVERY temp record (runs on a
+    // pass, an assertion failure, a provider/db throw, or an interruption). The
+    // unmap-then-delete order avoids the FK-violation-swallow that previously
+    // leaked ZZ1B2 accounts. A prefix sweep follows ONLY as a final diagnostic.
+    await cleanupBankTestRecords(U, temp);
+    await sweepStaleTestAccounts(U, "ZZ1B2").catch(() => {});
   }
 
   console.log(`\n${passed} passed, ${failed} failed`);

@@ -12,9 +12,24 @@
 
 ## Next approved task
 
-### Finance 1B.3A — Plaid Sandbox transaction import + manual incremental sync
+### Finance 1B.3A.1 — Imported-activity usability + test-cleanup hardening
 
-- **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** See the latest handoff report
+- **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** Polish + safety, **no** new
+  schema/route/migration. **Imported Activity** on `/finances` now defaults to the most recent **10**
+  rows with **Show more/less** + **Account / Status / Date (default Last 90 days)** filters + a truthful
+  **"Showing X of Y"** count (client-side over one bounded deterministic fetch; filters never sync or
+  mutate; removed + suppressed-pending stay excluded). The bank verification harnesses
+  (`verify-finance1b1/1b2/1b3a`) gained shared **exact-ID, safe-FK-order, cleanup-on-every-exit-path**
+  teardown (`scripts/support/bank-test-cleanup.ts`) + a startup stale-test sweep — fixing the earlier
+  `ZZ1B2` leak (a finally's raw `DELETE financial_accounts` that FK-violated and swallowed the error).
+  `verify-finance1b3a.ts` is now **131/131** (incl. `[u1]–[u24]` usability + `[k25]–[k42]` cleanup-on-
+  failure). The 1B.3A sync lifecycle is unchanged; owner's real BofA imported transactions + Plaid
+  Checking preserved. The next approved bank gate after review is **Finance 1B.3B** (webhook-triggered
+  sync) — separate authorization required.
+
+### Finance 1B.3A — Plaid Sandbox transaction import + manual incremental sync (committed `6c613a1`)
+
+- **Status:** **COMMITTED & PUSHED (`6c613a1`).** See the latest handoff report
   below. A manual **Sync transactions** action imports fake Plaid Sandbox transactions as **bank
   evidence** into `imported_transactions` (migration `0014`) + an **Imported activity** `/finances`
   section, kept separate from the manual-command ledger. Adapter `syncTransactions` +

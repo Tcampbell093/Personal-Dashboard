@@ -16,6 +16,7 @@ import {
   accountTransfers, accountMovements, apiUsageLogs, experienceRequests,
 } from "@/db/schema";
 import { CURRENT_USER_ID } from "@/lib/auth";
+import { cleanupBankTestRecords } from "./support/bank-test-cleanup";
 import {
   createLinkSession, exchangeAndStore, listConnections, deleteConnection, toConnectionView, sandboxReadiness,
 } from "@/lib/services/connections";
@@ -293,8 +294,9 @@ async function main() {
 }
 
 main().then(() => process.exit(0)).catch(async (e) => {
-  // Best-effort cleanup of anything created before the failure.
-  try { for (const id of created) await deleteConnection(U, id); } catch { /* ignore */ }
+  // Exact-ID, safe-order cleanup of any temp connection created before the failure
+  // (shared helper handles provider accounts + the connection in FK order).
+  try { await cleanupBankTestRecords(U, { connIds: created, acctIds: [] }); } catch { /* ignore */ }
   console.error(e);
   process.exit(1);
 });

@@ -1224,6 +1224,11 @@ textarea.taskadd-field:focus {
 .fin-txn-amt { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--act); }
 .fin-txn-amt.good { color: var(--good); }
 .fin-txn-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; align-items: center; }
+.fin-txn-filters { display: flex; flex-wrap: wrap; gap: 12px; margin: 10px 0 4px; }
+.fin-txn-filter { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fin-txn-filter select { background: var(--surface-2); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; font-size: 13px; max-width: 100%; }
+.fin-txn-count { margin: 8px 0 0; }
+.fin-txn-pager { display: flex; gap: 14px; margin-top: 10px; }
 
 /* Finance 1B.2 — discovered provider accounts + linked accounts */
 .fin-pa-list { list-style: none; margin: 8px 0 0; padding: 0 0 0 10px; border-left: 2px solid var(--line); }

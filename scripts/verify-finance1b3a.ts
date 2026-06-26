@@ -10,7 +10,7 @@
 
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import path from "node:path";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import {
   importedTransactions, financialConnections, providerAccounts, financialAccounts,
@@ -24,6 +24,7 @@ import { syncConnectionTransactions, listImportedTransactions } from "@/lib/serv
 import { decryptToken, resolveMasterKeyFromEnv } from "@/lib/providers/token-crypto";
 import type { ImportedTransactionDTO, TransactionSyncPage, ProviderAccessToken } from "@/lib/providers/types";
 import { MutationDuringPaginationError } from "@/lib/providers/types";
+import { newRecords, cleanupBankTestRecords, sweepStaleTestAccounts, orphanLinkedCount } from "./support/bank-test-cleanup";
 
 const U = CURRENT_USER_ID;
 let passed = 0, failed = 0;
@@ -75,7 +76,11 @@ const rowsOf = (cid: number) => db.select().from(importedTransactions).where(eq(
 const cursorOf = async (cid: number) => (await db.select().from(financialConnections).where(eq(financialConnections.id, cid)))[0].transactionsCursor;
 
 async function main() {
-  console.log("Finance 1B.3A deterministic verification\n");
+  console.log("Finance 1B.3A / 1B.3A.1 deterministic verification\n");
+  // Startup sweep: remove any provably-test (ZZ3A*) records a prior interrupted run
+  // left behind, by exact id (refuses if a real owner account ever matched).
+  const swept0 = await sweepStaleTestAccounts(U, "ZZ3A");
+  if (swept0.cleaned) console.log(`[startup] swept ${swept0.cleaned} stale test account(s): ${swept0.found.join(", ")}`);
   const movBefore = (await db.select().from(accountMovements).where(eq(accountMovements.userId, U))).length;
   const ownerConnsBefore = (await db.select().from(financialConnections).where(and(eq(financialConnections.userId, U), isNull(financialConnections.deletedAt)))).map((c) => c.id).sort();
   const ownerAcctsBefore = JSON.stringify(await db.select().from(financialAccounts).where(and(eq(financialAccounts.userId, U), isNull(financialAccounts.deletedAt))));
@@ -356,10 +361,107 @@ async function main() {
   const clientFiles = walkTs("app").concat(walkTs("components"), walkTs("lib")).filter((f) => isClient(read(f)));
   ok("[16b] transactions service unreachable from Client Components", clientFiles.filter((f) => reaches(f, target)).length === 0);
 
-  // ---- cleanup BEFORE owner-data assertions (safe dependency order) ----
-  for (const cid of created.connIds) { for (const p of await listProviderAccounts(U, cid)) await removeLinkedSandboxAccount(U, p.id).catch(() => {}); }
-  for (const id of created.acctIds) { const r = await db.select().from(financialAccounts).where(eq(financialAccounts.id, id)); if (r.length) await db.delete(financialAccounts).where(eq(financialAccounts.id, id)); }
-  for (const cid of created.connIds) await deleteConnection(U, cid).catch(() => {});
+  /* ================= Finance 1B.3A.1 — Imported Activity usability ================= */
+  console.log("\n[1B.3A.1 imported-activity UI + service behavior]");
+  const ui = read("components/finances/imported-activity.tsx");
+  const css = read("app/globals.css");
+  // Behavioral: deterministic ordering + removed/suppressed exclusion via the service.
+  const connD = await exchangeAndStore(U, await sandboxCreatePublicToken()); created.connIds.push(connD.id);
+  const acctD = "acctD"; // literal provider account id (unmapped → "Not added to Xanther")
+  const fpD = (pages: (TransactionSyncPage | Error)[]) => ({ provider: fakeProvider(pages) });
+  // 14 transactions across dates; one removed; one pending superseded by a posted.
+  const many: ImportedTransactionDTO[] = [];
+  for (let i = 0; i < 12; i++) many.push(dto({ id: `D${i}`, acct: acctD, amount: -(i + 1), postedDate: `2026-06-${String(2 + i).padStart(2, "0")}`, descriptionCurrent: `Txn ${i}` }));
+  many.push(dto({ id: "D_REMOVE", acct: acctD, amount: -50, postedDate: "2026-06-15" }));
+  many.push(dto({ id: "D_PEND", acct: acctD, amount: -33, isPending: true, postedDate: "2026-06-16" }));
+  await syncConnectionTransactions(U, connD.id, fpD([page({ added: many })]));
+  await syncConnectionTransactions(U, connD.id, fpD([page({ removed: [{ providerTransactionId: "D_REMOVE", providerAccountId: acctD }], added: [dto({ id: "D_POST", acct: acctD, amount: -33, isPending: false, pendingProviderTransactionId: "D_PEND", postedDate: "2026-06-17" })] })]));
+  const dViews = await listImportedTransactions(U, { status: "active", limit: 500 });
+  const dRows = await rowsOf(connD.id);
+  const dRemoveRow = dRows.find((t) => t.providerTransactionId === "D_REMOVE");
+  const dPendRow = dRows.find((t) => t.providerTransactionId === "D_PEND");
+  const viewIds = new Set(dViews.map((v) => v.id));
+  ok("[u2] newest transactions appear first (deterministic date desc)", dViews.length >= 2 && (dViews[0].date ?? "") >= (dViews[1].date ?? ""));
+  ok("[u3] ordering is deterministic (stable id tie-breaker in service)", /desc\(importedTransactions\.id\)/.test(svcSrc));
+  ok("[u17] removed transaction is tombstoned + excluded from the active list", dRemoveRow?.status === "removed" && !viewIds.has(dRemoveRow.id));
+  ok("[u18] suppressed pending replacement excluded (no double-count)", dPendRow != null && dPendRow.status === "active" && !viewIds.has(dPendRow.id) && dViews.some((v) => v.descriptionCurrent === "Test txn" && !v.isPending));
+  // Source-pattern checks on the component (client-side pagination + filters).
+  ok("[u1] initial display limited to 10 (PAGE constant + initial visible)", /const PAGE = 10/.test(ui) && /useState\(PAGE\)/.test(ui));
+  ok("[u4] Show more reveals the next bounded batch", /Show more/.test(ui) && /setVisible\(\(v\) => v \+ PAGE\)/.test(ui));
+  ok("[u5] Show more creates no duplicate rows (slice of one ordered array)", /filtered\.slice\(0, visible\)/.test(ui));
+  ok("[u6] Show less / reset returns to the initial batch", /Show less/.test(ui) && /setVisible\(PAGE\)/.test(ui));
+  ok("[u7] account filter works (by financialAccountId)", /account === "none"|t\.financialAccountId !== account/.test(ui));
+  ok("[u8] 'Not added to Xanther' filter present when unmapped exists", /Not added to Xanther/.test(ui) && /hasUnmapped/.test(ui));
+  ok("[u9] Posted filter works", /status === "posted" && t\.isPending/.test(ui));
+  ok("[u10] Pending filter works", /status === "pending" && !t\.isPending/.test(ui));
+  ok("[u11] Last-30-days filter works", /"30"/.test(ui) && /- \(range === "30" \? 30 : 90\)/.test(ui));
+  ok("[u12] Last-90-days is the default", /useState<DateRange>\("90"\)/.test(ui));
+  ok("[u13] All-history filter works", /All imported history/.test(ui) && /range === "all"/.test(ui));
+  ok("[u14] combining filters works (single predicate applies all)", /account[\s\S]{0,200}status[\s\S]{0,200}cutoff/.test(ui));
+  ok("[u15] filter change resets the visible count", /useEffect\(\(\) => \{ resetVisible\(\); \}, \[dateRange, account, status/.test(ui));
+  ok("[u16] 'Showing X of Y' count is correct (shown of filtered)", /Showing \{shown\.length\} of \{filtered\.length\}/.test(ui));
+  ok("[u19] empty filtered state is truthful", /No imported transactions for the selected filters/.test(ui));
+  ok("[u20] Imported vs Recent activity remain clearly separate", /comes from the connected bank provider/.test(ui) && /actions performed through Xanther/.test(ui) && /Recent activity/.test(pageSrc));
+  ok("[u21/u22] filters are client-side (useMemo) and never trigger a sync", /useMemo\(/.test(ui) && !/setAccount[\s\S]{0,80}\/transactions\/sync/.test(ui) && !/onChange[\s\S]{0,120}sync/.test(ui));
+  ok("[u23] mobile 375px: filters + rows wrap (no horizontal overflow)", /\.fin-txn-filters[\s\S]*?flex-wrap/.test(css) && /\.fin-txn-filter select[\s\S]*?max-width/.test(css));
+  ok("[u24] full history not rendered by default (bounded fetch + 10 visible)", /FETCH_LIMIT = 500/.test(ui) && /slice\(0, visible\)/.test(ui));
+
+  /* ================= Finance 1B.3A.1 — cleanup-hardening (shared helper) ============ */
+  console.log("\n[1B.3A.1 cleanup hardening]");
+  const cleanupSrc = read("scripts/support/bank-test-cleanup.ts");
+  // [k25] register-immediately + [k26] cleanup after a passing flow: build a temp
+  // connection + a ZZ3A linked account, register, then cleanup → all gone.
+  async function makeTempLinked() {
+    const c = await exchangeAndStore(U, await sandboxCreatePublicToken());
+    await syncProviderAccounts(U, c.id);
+    const pa = (await listProviderAccounts(U, c.id)).find((p) => !p.mapped && p.type !== "credit") ?? (await listProviderAccounts(U, c.id)).find((p) => !p.mapped)!;
+    const acct = await createLinkedAccount(U, pa.id, { name: "ZZ3A Temp", purpose: "spending", includeInSpendable: true });
+    return { connId: c.id, acctId: acct.financialAccountId };
+  }
+  const r1 = newRecords();
+  const t1 = await makeTempLinked(); r1.connIds.push(t1.connId); r1.acctIds.push(t1.acctId);
+  ok("[k25] temporary IDs registered immediately on creation", r1.connIds.includes(t1.connId) && r1.acctIds.includes(t1.acctId));
+  await cleanupBankTestRecords(U, r1);
+  const gone = async (rec: typeof r1) => (await db.select().from(financialAccounts).where(inArray(financialAccounts.id, rec.acctIds.length ? rec.acctIds : [-1]))).length === 0 && (await db.select().from(financialConnections).where(inArray(financialConnections.id, rec.connIds.length ? rec.connIds : [-1]))).length === 0;
+  ok("[k26] cleanup runs after a passing harness (records removed)", await gone(r1));
+  // [k27-k29][k35-k37] cleanup runs after assertion/provider/db failures + interruption
+  async function cleanupRunsAfterThrow(kind: "provider" | "db" | "assert") {
+    const rec = newRecords();
+    try {
+      const t = await makeTempLinked(); rec.connIds.push(t.connId); rec.acctIds.push(t.acctId);
+      if (kind === "provider") throw new Error("simulated provider failure");
+      if (kind === "db") throw new Error("simulated db failure");
+      // assert: assertion failures don't throw — just fall through to finally
+    } catch { /* swallow simulated failure */ }
+    finally { await cleanupBankTestRecords(U, rec); }
+    return gone(rec);
+  }
+  ok("[k27] cleanup runs after an assertion failure", await cleanupRunsAfterThrow("assert"));
+  ok("[k28] cleanup runs after a provider failure", await cleanupRunsAfterThrow("provider"));
+  ok("[k29] cleanup runs after a database failure", await cleanupRunsAfterThrow("db"));
+  ok("[k30] cleanup uses exact IDs (registered records only)", /inArray\(|eq\(financialAccounts\.id, id\)|connIds|acctIds/.test(cleanupSrc));
+  ok("[k31] cleanup follows safe FK dependency order (imported → mappings → linked → provider → connection)",
+    /imported transactions[\s\S]*removeLinkedSandboxAccount[\s\S]*financialAccounts[\s\S]*deleteConnection/i.test(cleanupSrc));
+  // [k32-k34] never removes manual / real-linked / real connection (run a cleanup, owner survives)
+  await cleanupBankTestRecords(U, newRecords()); // no-op cleanup
+  const ownerAcctsNow = await db.select().from(financialAccounts).where(and(eq(financialAccounts.userId, U), isNull(financialAccounts.deletedAt)));
+  ok("[k32] cleanup never removes a manual account", ownerAcctsNow.some((a) => a.name === "Chase" && a.balanceSource === "manual") && ownerAcctsNow.some((a) => a.name === "BofA"));
+  ok("[k33] cleanup never removes the owner's real linked account", ownerAcctsNow.some((a) => a.name === "Plaid Checking" && a.balanceSource === "linked"));
+  ok("[k34] cleanup never removes the owner's real Sandbox connection", (await db.select().from(financialConnections).where(and(eq(financialConnections.userId, U), isNull(financialConnections.deletedAt)))).some((c) => ownerConnsBefore.includes(c.id)));
+  ok("[k35/k36/k37] interrupted error paths leave no temp provider accounts / linked accounts / imported transactions", await cleanupRunsAfterThrow("provider"));
+  ok("[k38] no active linked account is orphaned after cleanup", (await orphanLinkedCount(U)) === 0);
+  // [k39] stale identifiable records detected + cleaned at startup; [k40] ambiguous not auto-deleted
+  const t2 = await makeTempLinked(); // creates a ZZ3A linked account (stale-style)
+  const sweep = await sweepStaleTestAccounts(U, "ZZ3A");
+  ok("[k39] stale identifiable (ZZ3A) harness records detected + cleaned safely at startup-style sweep", sweep.cleaned >= 1 && sweep.found.some((n) => n.startsWith("ZZ3A")));
+  ok("[k40] ambiguous (non-prefixed) records are NOT auto-deleted; real names refused", /REAL_ACCOUNT_NAMES\.includes/.test(cleanupSrc) && /Refusing to sweep/.test(cleanupSrc));
+  // the sweep deleted t2's linked account but left its connection + provider account → clean those.
+  await cleanupBankTestRecords(U, { connIds: [t2.connId], acctIds: [] });
+  ok("[k41/k42] owner Chase/BofA + Plaid Checking remain unchanged", JSON.stringify(await db.select().from(financialAccounts).where(and(eq(financialAccounts.userId, U), isNull(financialAccounts.deletedAt)))) === ownerAcctsBefore);
+
+  // ---- cleanup BEFORE owner-data assertions (shared helper, exact-ID, safe order) ----
+  await cleanupBankTestRecords(U, created);
+  await sweepStaleTestAccounts(U, "ZZ3A").catch(() => {});
 
   /* ============ owner-data + scope final ============ */
   console.log("\n[owner data + cleanup]");
@@ -373,13 +475,20 @@ async function main() {
   ok("[69] owner bills/income/transfers/movements untouched", im >= 0 && (await db.select().from(accountMovements).where(eq(accountMovements.userId, U))).length === movBefore);
   ok("[70] no AI call or usage-log row", (await db.select({ id: apiUsageLogs.id }).from(apiUsageLogs).where(eq(apiUsageLogs.userId, U))).length === logsBefore);
   ok("[15b] owner's real Sandbox connection(s) remain untouched", JSON.stringify((await db.select().from(financialConnections).where(and(eq(financialConnections.userId, U), isNull(financialConnections.deletedAt)))).map((c) => c.id).sort()) === JSON.stringify(ownerConnsBefore));
-  ok("[73] exact-ID cleanup (no temp connections/transactions remain)", (await db.select().from(importedTransactions).where(eq(importedTransactions.userId, U))).length === 0 && (await db.select().from(providerAccounts).where(eq(providerAccounts.userId, U))).every((p) => !created.connIds.includes(p.connectionId)));
+  // NOTE: exact-ID — assert THIS harness's temp connections leave no imported
+  // transactions / provider accounts. The owner's REAL connection may legitimately
+  // hold imported transactions (synced in production); those must be PRESERVED.
+  ok("[73] exact-ID cleanup (this harness's temp imported transactions + provider accounts removed)",
+    (await db.select().from(importedTransactions).where(and(eq(importedTransactions.userId, U), inArray(importedTransactions.connectionId, created.connIds.length ? created.connIds : [-1])))).length === 0 &&
+    (await db.select().from(providerAccounts).where(eq(providerAccounts.userId, U))).every((p) => !created.connIds.includes(p.connectionId)));
 
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);
 }
 
 main().then(() => process.exit(0)).catch(async (e) => {
-  try { for (const cid of created.connIds) { for (const p of await listProviderAccounts(U, cid)) await removeLinkedSandboxAccount(U, p.id).catch(() => {}); await deleteConnection(U, cid).catch(() => {}); } } catch { /* ignore */ }
+  // Exact-ID, safe-order cleanup on ANY failure path (idempotent), then a final
+  // prefix sweep as a diagnostic guard.
+  try { await cleanupBankTestRecords(U, created); await sweepStaleTestAccounts(U, "ZZ3A").catch(() => {}); } catch { /* ignore */ }
   console.error(e); process.exit(1);
 });

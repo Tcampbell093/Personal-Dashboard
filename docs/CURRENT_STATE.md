@@ -9,7 +9,15 @@
 > only; technical identifiers (routes, DB, env vars, the `Personal-Dashboard` repo) keep their
 > original names. See `docs/DECISIONS.md` ADR-026.
 
-**Last updated:** 2026-06-26 · **Reflects branch:** `main` (Finance 1B.2 committed `e107322`; Finance 1B.3A uncommitted)
+**Last updated:** 2026-06-26 · **Reflects branch:** `main` (Finance 1B.3A committed `6c613a1`; Finance 1B.3A.1 uncommitted)
+
+> **Finance 1B.3A.1 — Imported-activity usability + test-cleanup hardening — implemented (uncommitted).**
+> `/finances` Imported Activity now shows the most recent **10** transactions with **Show more/less** +
+> **Account / Status / Date (default Last 90 days)** filters + a truthful **"Showing X of Y"** count
+> (client-side over one bounded deterministic fetch; filters never sync or mutate). The bank
+> verification harnesses gained shared **exact-ID, safe-order, cleanup-on-every-exit-path** teardown +
+> a startup stale-test sweep (fixes the earlier `ZZ1B2` leak). **No** schema/route/provider change; the
+> 1B.3A sync lifecycle is unchanged. See `docs/DECISIONS.md` ADR-031.
 
 > **Finance 1B.3A — Plaid Sandbox transaction import + manual incremental sync — implemented
 > (uncommitted).** A manual **Sync transactions** action imports fake Plaid Sandbox transactions as

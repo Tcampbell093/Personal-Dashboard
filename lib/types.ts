@@ -282,6 +282,7 @@ export interface ConnectionView {
  * any secret. `amount` is Xanther-signed (inflow +, outflow −). */
 export interface ImportedTransactionView {
   id: number;
+  financialAccountId: number | null; // Xanther account id (null = unmapped) — for precise filtering
   accountLabel: string; // mapped Xanther account name, or "Not added to Xanther"
   mapped: boolean;
   amount: number; // Xanther-signed
