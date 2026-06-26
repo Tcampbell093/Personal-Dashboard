@@ -1226,7 +1226,19 @@ textarea.taskadd-field:focus {
 .fin-txn-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; align-items: center; }
 .fin-txn-filters { display: flex; flex-wrap: wrap; gap: 12px; margin: 10px 0 4px; }
 .fin-txn-filter { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.fin-txn-filter select { background: var(--surface-2); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; font-size: 13px; max-width: 100%; }
+.fin-txn-filter select {
+  background: var(--ink); /* dark input surface (matches .fin-field select) */
+  color: var(--text); /* light, readable — was var(--ink) (near-black) → unreadable */
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 13px;
+  max-width: 100%;
+  color-scheme: dark; /* native dropdown popup renders dark-appropriate */
+}
+.fin-txn-filter select:focus { outline: none; border-color: var(--explore); }
+.fin-txn-filter option { background: var(--ink); color: var(--text); }
+.fin-txn-filter option:disabled { color: var(--muted-dim); }
 .fin-txn-count { margin: 8px 0 0; }
 .fin-txn-pager { display: flex; gap: 14px; margin-top: 10px; }
 
