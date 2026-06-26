@@ -17,6 +17,19 @@ import {
   accountMovements,
 } from "@/db/schema";
 import { localDaysUntil } from "@/lib/time";
+import { resolveBalanceAuthority } from "@/lib/providers/balance-authority";
+
+/* Finance 1B.2: minimal provider snapshot shape used to resolve a linked
+ * account's authoritative balance (passed in from the provider-accounts service
+ * to avoid a service-layer import cycle). */
+export type LinkedSnapshot = {
+  balanceCurrent: string | null;
+  balanceAvailable: string | null;
+  balanceAsOf: Date | null;
+  status: string; // active | stale
+  providerName: string;
+  currencyCode: string | null;
+};
 import type {
   AccountView,
   AllocationView,
@@ -57,7 +70,7 @@ export const CASH_TYPES = new Set(["checking", "savings", "cash"]);
 export const isCashType = (type: string) => CASH_TYPES.has(type);
 export const isLiabilityType = (type: string) => type === "credit";
 
-const num = (v: string | null | undefined): number => (v ? parseFloat(v) : 0);
+export const num = (v: string | null | undefined): number => (v ? parseFloat(v) : 0);
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const addDays = (iso: string, n: number): string => {
   const d = new Date(iso + "T00:00:00");
@@ -137,22 +150,47 @@ export async function listIncome(userId: number) {
 
 export function toAccountViews(
   rows: Awaited<ReturnType<typeof listAccounts>>,
+  linked?: Map<number, LinkedSnapshot>,
 ): AccountView[] {
   return rows.map((r) => {
     const type = r.type ?? "checking";
-    return {
+    const source = r.balanceSource ?? "manual";
+    const base: AccountView = {
       id: r.id,
       name: r.name,
       type,
       institution: r.institution ?? null,
       purpose: r.purpose ?? "other",
       currentBalance: num(r.currentBalance),
-      balanceSource: r.balanceSource ?? "manual",
+      balanceSource: source,
       includeInSpendable: r.includeInSpendable ?? true,
       active: r.active ?? true,
       isCash: isCashType(type),
       isLiability: isLiabilityType(type),
       lastReconciledAt: r.lastReconciledAt ? r.lastReconciledAt.toISOString() : null,
+    };
+    if (source !== "linked") return base;
+
+    // Finance 1B.2: a linked account's balance comes from the provider snapshot —
+    // never the (NULL) currentBalance column. A missing snapshot resolves to
+    // "unavailable" (never a fallback to a manual balance or zero).
+    const snap = linked?.get(r.id);
+    const providerSnapshot =
+      snap && snap.balanceCurrent != null
+        ? { actual: num(snap.balanceCurrent), asOf: (snap.balanceAsOf ?? new Date()).toISOString(), status: (snap.status === "stale" ? "stale" : "active") as "stale" | "active" }
+        : snap
+          ? { actual: null, asOf: (snap.balanceAsOf ?? new Date()).toISOString(), status: "active" as const }
+          : null;
+    const resolved = resolveBalanceAuthority({ balanceSource: "linked", manualBalance: num(r.currentBalance), providerSnapshot });
+    return {
+      ...base,
+      currentBalance: resolved.actual ?? 0,
+      balanceUnavailable: resolved.actual == null,
+      balanceStale: resolved.kind === "linked_stale",
+      balanceAsOf: resolved.asOf,
+      balanceAvailable: snap?.balanceAvailable != null ? num(snap.balanceAvailable) : null,
+      providerLabel: "Plaid Sandbox",
+      currency: snap?.currencyCode ?? null,
     };
   });
 }
@@ -185,17 +223,23 @@ export function toBillViews(rows: Awaited<ReturnType<typeof listBills>>): BillVi
  *   - netPosition        = totalActualCash − creditLiabilities (informational). */
 export function computeCashSummary(accounts: AccountView[]): CashSummary {
   const active = accounts.filter((a) => a.active);
-  const cash = active.filter((a) => a.isCash);
-  const credit = active.filter((a) => a.isLiability);
+  // A linked account with no provider snapshot is EXCLUDED from totals (never a
+  // silent zero) and surfaced as a warning so the total is qualified, not false.
+  const known = active.filter((a) => !a.balanceUnavailable);
+  const cash = known.filter((a) => a.isCash);
+  const credit = known.filter((a) => a.isLiability);
 
   const totalActualCash = cash.reduce((s, a) => s + a.currentBalance, 0);
   const spendableActualCash = cash
     .filter((a) => a.includeInSpendable)
     .reduce((s, a) => s + a.currentBalance, 0);
-  const savingsEmergency = active
+  const savingsEmergency = known
     .filter((a) => a.purpose === "savings" || a.purpose === "emergency")
     .reduce((s, a) => s + a.currentBalance, 0);
   const creditLiabilities = credit.reduce((s, a) => s + a.currentBalance, 0);
+
+  const linkedUnavailableCount = active.filter((a) => a.balanceUnavailable).length;
+  const linkedStaleCount = active.filter((a) => a.balanceStale).length;
 
   return {
     totalActualCash,
@@ -205,6 +249,9 @@ export function computeCashSummary(accounts: AccountView[]): CashSummary {
     netPosition: totalActualCash - creditLiabilities,
     cashAccountCount: cash.length,
     creditAccountCount: credit.length,
+    linkedUnavailableCount,
+    linkedStaleCount,
+    totalQualified: linkedUnavailableCount > 0,
   };
 }
 
@@ -315,6 +362,18 @@ export async function updateAccount(
   id: number,
   patch: Partial<NewAccount>,
 ) {
+  // Finance 1B.2: a linked account's balance is provider-authoritative — never a
+  // manually editable field. Strip any attempt to set its balance or flip its
+  // source. (Reconciliation is already blocked for linked accounts in 1A.3B.)
+  const existing = (
+    await db.select().from(financialAccounts).where(and(eq(financialAccounts.id, id), eq(financialAccounts.userId, userId)))
+  )[0];
+  if (existing?.balanceSource === "linked") {
+    delete (patch as Record<string, unknown>).currentBalance;
+    delete (patch as Record<string, unknown>).balanceSource;
+    delete (patch as Record<string, unknown>).lastReconciledAt;
+    delete (patch as Record<string, unknown>).balanceUpdatedAt;
+  }
   const [row] = await db
     .update(financialAccounts)
     .set({ ...patch, updatedAt: new Date() })

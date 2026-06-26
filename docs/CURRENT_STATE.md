@@ -9,19 +9,25 @@
 > only; technical identifiers (routes, DB, env vars, the `Personal-Dashboard` repo) keep their
 > original names. See `docs/DECISIONS.md` ADR-026.
 
-**Last updated:** 2026-06-25 · **Reflects branch:** `main` (Finance 1B.0 committed `d6497eb`; Finance 1B.1 uncommitted)
+**Last updated:** 2026-06-26 · **Reflects branch:** `main` (Finance 1B.1 committed `aa868b5`; Finance 1B.2 uncommitted)
 
-> **Finance 1B.1 — Plaid Sandbox connection flow — implemented (uncommitted).** The owner can connect a
-> **fake Plaid Sandbox** institution from `/finances` → the public token is exchanged server-side → the
-> Plaid access token is **AES-256-GCM encrypted** and stored in the new `financial_connections` table →
-> a truthful Sandbox connection status renders. **Read-only, owner-only, no money movement.** It stops
-> before accounts, balances, transactions, webhooks, and matching. Verified against **live Plaid
-> Sandbox** (`scripts/verify-finance1b1.ts`, 65 assertions) + an authenticated-HTTP run. Dependency:
-> official `plaid@^42.2.0` (server SDK; the browser uses Plaid's Link CDN script). Additive migration
-> `0011`. See `docs/DECISIONS.md` ADR-028 + `docs/BANK_INTEGRATION_SECURITY.md`.
+> **Finance 1B.2 — Plaid Sandbox accounts + cached balances — implemented (uncommitted).** From
+> `/finances`, the owner can **Sync accounts** on a Sandbox connection → discovered fake provider
+> accounts render with masked ids, **cached** balances, currency, and truthful freshness → the owner can
+> **Add to Xanther** an unmapped provider account, creating a **new linked account** (`balanceSource =
+> linked`) that appears in the Accounts section with a provider-authoritative balance (or **Balance
+> unavailable**), no manual editing, and no reconciliation. Existing manual Chase/BofA are never merged
+> or converted (existing-manual mapping is deferred). A connection with a linked account **cannot be
+> hard-deleted** (FK `NO ACTION` + a 409 guard prevents orphaned linked accounts). **Read-only,
+> owner-only, no money movement, no transactions/webhooks/matching.** New `provider_accounts` table
+> (migration `0012`; constraint-only `0013` makes the connection FK `NO ACTION`); adapter
+> `listAccounts`/`getCachedBalances` via cached `/accounts/get` (no paid real-time endpoint). Verified
+> against **live Plaid Sandbox** (`scripts/verify-finance1b2.ts`, 84 assertions incl. orphan-prevention)
+> + authenticated-HTTP. See `docs/DECISIONS.md` ADR-029 + `docs/BANK_INTEGRATION_SECURITY.md`.
 >
-> **Finance 1B.0 (committed `d6497eb`)** established the provider-neutral contracts, sign convention,
-> balance-authority resolver, and token-encryption module that 1B.1 builds on.
+> **Finance 1B.1 (committed `aa868b5`)** added the Plaid Sandbox connection flow (`financial_connections`,
+> encrypted token, link/exchange/list routes, Bank-connections UI). **1B.0 (`d6497eb`)** established the
+> provider-neutral contracts, sign convention, balance-authority resolver, and token-encryption module.
 
 ## Status legend
 

@@ -1,11 +1,61 @@
 # Bank Integration Security & Provider Foundation (Finance 1B)
 
-> **Status: Finance 1B.1 implemented — Plaid Sandbox connect works; broader bank sync is still
-> NOT functional.** The owner can connect a **fake Plaid Sandbox** institution and Xanther stores
-> an **encrypted** connection; there are **no accounts, balances, transactions, webhooks, or
-> matching yet**, and Finance 1B performs **no money movement**. This document is the bounded
-> security/privacy reference for the bank-integration work; durable product principles remain in
-> `docs/PRODUCT_VISION.md`, and the decision records are `docs/DECISIONS.md` (ADR-027/028).
+> **Status: Finance 1B.2 implemented — Plaid Sandbox connect + account discovery + cached balances
+> work; transactions are still NOT functional.** The owner can connect a **fake Plaid Sandbox**
+> institution (encrypted connection), **sync** its accounts, see **cached** balances, and create a
+> **new linked** Xanther account. There are **no transactions, webhooks, or matching yet**; existing
+> manual accounts are never merged/converted; Finance 1B performs **no money movement**. This document
+> is the bounded security/privacy reference; durable principles remain in `docs/PRODUCT_VISION.md`, and
+> the decision records are `docs/DECISIONS.md` (ADR-027/028/029).
+
+## Account discovery + cached balances (Finance 1B.2 — what is functional now)
+
+1. Owner clicks **Sync accounts** on a Sandbox connection → `POST /api/finances/connections/[id]/accounts/sync`.
+2. Server (owner-scoped, Sandbox-only) decrypts the access token **server-side**, calls Plaid
+   `/accounts/get` (**cached**, free — **never** the paid `/accounts/balance/get`), normalizes the
+   accounts, and **upserts** `provider_accounts` rows by `(connection_id, provider_account_id)`. The
+   decrypted token never leaves the provider-call boundary; only last-4 **masks** are stored (never a
+   full account number).
+3. `GET …/accounts` returns nonsecret provider-account views; the UI shows masked id, type/subtype,
+   cached balance + available, currency, and a truthful freshness label (**Cached Sandbox balance ·
+   Updated N minutes ago** / **Last known provider balance**, never "live"/"real-time").
+4. Owner clicks **Add to Xanther** on an **unmapped** provider account → `POST /api/finances/
+   provider-accounts/[id]/create-linked-account` with bounded choices (name, purpose, spendable) →
+   creates a **new** linked `financial_accounts` row (`balanceSource='linked'`, `currentBalance` NULL).
+
+**Balance authority (linked accounts):** the provider snapshot in `provider_accounts` is authoritative.
+A linked account's `currentBalance` is **NULL** — never an editable competing source; the UI resolves
+the balance via the 1B.0 resolver. A **missing** snapshot → **Balance unavailable** (never a fallback to
+a manual balance or zero) and **excluded from totals with a warning** (the total is qualified, not
+false). A **stale** snapshot is labeled "last known". Linked accounts **cannot be reconciled or
+manually balance-edited** (the service strips balance/source edits). Credit follows the existing
+liability convention (Plaid `current` = positive amount owed; excluded from cash/spendable).
+
+**Idempotency/concurrency:** sync upserts by the unique connection-scoped key (repeated/concurrent sync
+makes no duplicates); a previously-seen account now missing becomes **stale** (retained, never deleted);
+`lastSyncAttemptedAt` updates on every attempt, `lastSyncedAt` only on success; a **decryption** failure
+writes no account data and a **provider** failure preserves prior rows + `lastSyncedAt`. Linked-account
+creation is **insert-then-claim** (a guarded `WHERE financial_account_id IS NULL` update; the orphan is
+rolled back on a lost race), so a duplicate/concurrent call yields **exactly one** account.
+
+**No orphaned linked accounts (lifecycle safety):** a financial connection (or provider-account record)
+can **never** be hard-deleted while any provider account is linked to a Xanther account — that would
+leave a `balanceSource='linked'` account with no provider authority. Three layers enforce this: the
+`provider_accounts.connection_id` FK is **`ON DELETE NO ACTION`** (the DB refuses to delete a connection
+that still has provider-account rows); `deleteConnection` **rejects** a connection with any mapped
+provider account (bounded **409**, *"This connection has linked Xanther accounts and cannot be removed
+yet."*, mutating nothing, no token/id in the error) and otherwise deletes the unmapped snapshots + the
+connection in one race-safe guarded statement; and the Sandbox cleanup helper tears down in a safe order
+(clear mapping → delete the linked account → delete the provider row), never touching a manual account.
+The full disconnect/archive/token-revocation lifecycle is deferred (Finance 1B.9).
+
+**Existing-manual mapping is DEFERRED** to a later phase (it needs final reconciliation, a transition
+timestamp, movement preservation, duplicate safeguards, rollback rules, and explicit authority-handoff
+confirmation). 1B.2 only creates a **new** linked account; Chase/BofA are never merged, renamed, or
+converted.
+
+**Still not functional (later phases):** transaction sync, webhooks, transaction matching, bill/income/
+transfer confirmation from imported evidence, the manual→linked transition, real Production/OAuth.
 
 ## Sandbox Link lifecycle (Finance 1B.1 — what is functional now)
 

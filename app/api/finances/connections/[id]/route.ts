@@ -1,7 +1,9 @@
-/* DELETE /api/finances/connections/[id] — Finance 1B.1 Sandbox cleanup.
- * Owner-scoped: revokes the Plaid Sandbox Item (best-effort) and removes ONLY
- * this connection row. Touches no account, movement, bill, income, or transfer.
- * Returns whether a row was removed (no secret in the response). */
+/* DELETE /api/finances/connections/[id] — Finance 1B.1 Sandbox cleanup
+ * (Finance 1B.2 correction). Owner-scoped: revokes the Plaid Sandbox Item
+ * (best-effort), deletes the connection + its UNMAPPED provider-account
+ * snapshots. A connection with any LINKED Xanther account is REJECTED with 409
+ * (it would orphan a linked account) — nothing is mutated. Touches no manual
+ * account, movement, bill, income, or transfer. No secret in the response. */
 
 import { NextResponse } from "next/server";
 import { deleteConnection, ConnectionError } from "@/lib/services/connections";

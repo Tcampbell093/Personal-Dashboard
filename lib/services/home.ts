@@ -31,6 +31,7 @@ import {
 } from "@/lib/services/finances";
 import { listTransfers, toTransferViews } from "@/lib/services/transfers";
 import { computeProjection } from "@/lib/services/finance-projection";
+import { linkedBalanceMap } from "@/lib/services/provider-accounts";
 import {
   listPlanned,
   listHistory,
@@ -141,14 +142,17 @@ async function loadComingUp(userId: number): Promise<HomeComingItem[]> {
 }
 
 async function loadMoney(userId: number): Promise<HomeMoney> {
-  const [outlook, accounts, bills, incomeRows, allocRows, transfers] = await Promise.all([
+  const [outlook, acctRows, linkedSnap, bills, incomeRows, allocRows, transfers] = await Promise.all([
     computeFinancialOutlook(userId),
-    listAccounts(userId).then(toAccountViews),
+    listAccounts(userId),
+    linkedBalanceMap(userId),
     listBills(userId).then(toBillViews),
     listIncome(userId),
     listAllocations(userId),
     listTransfers(userId).then(toTransferViews),
   ]);
+  // Finance 1B.2: resolve linked accounts' provider balances (manual unchanged).
+  const accounts = toAccountViews(acctRows, linkedSnap);
   const income = toIncomeViews(incomeRows, allocationsByIncome(allocRows));
   const cash = computeCashSummary(accounts);
   const today = localToday();

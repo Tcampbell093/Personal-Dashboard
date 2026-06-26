@@ -196,6 +196,22 @@ duplicate manual income movements; uncertain matches need owner approval; recurr
   uncertain matches; recurring detection may suggest but never silently create a schedule.
 - **1B** — a separate **`financial_connections`** model for read-only bank links (`balanceSource =
   linked`); connection health lives there, not on the account row.
+- **1B.2 — DONE (Plaid Sandbox accounts + cached balances)** — additive migration
+  `0012_loud_barracuda.sql` adds the `provider_account_status` enum (`active|stale`) + the
+  **`provider_accounts`** table: one row per discovered provider account — `userId`, `connectionId`,
+  `provider`, `providerAccountId` (unique within `(connection_id, provider_account_id)`),
+  `financialAccountId` (nullable; partial-unique so one Xanther account ↔ one provider account),
+  `providerName`/`officialName`/`mask` (last-4 only), `providerType` (normalized) + `providerSubtype`
+  (raw display), `currencyCode`, cached `balanceCurrent`/`balanceAvailable`/`balanceLimit`,
+  `balanceAsOf` (freshness), `status`, `firstSeenAt`/`lastSeenAt`, timestamps. **No token, cursor,
+  imported transactions, or raw Plaid payload.** A **new linked** `financial_accounts` row
+  (`balanceSource='linked'`, `currentBalance` NULL — the provider snapshot is authoritative) is created
+  from an unmapped provider account; existing **manual** accounts are never mapped/converted (deferred).
+  View models: `ProviderAccountView` (nonsecret), `AccountView` gains linked-balance fields,
+  `CashSummary` gains linked unavailable/stale qualification. **The `provider_accounts.connection_id`
+  FK is `ON DELETE NO ACTION` (migration `0013`, constraint-only)** so a connection can't be hard-deleted
+  while any provider account still references it — preventing an orphaned linked account; the
+  `financial_account_id` FK is also `NO ACTION`. See `docs/DECISIONS.md` ADR-029.
 - **1B.1 — DONE (Plaid Sandbox connect)** — additive migration `0011_rapid_sasquatch.sql` adds the
   `connection_status` enum + the **`financial_connections`** table: `userId`, `provider` (`plaid`),
   `providerItemId` (unique within `(user_id, provider)`), `institutionId`/`institutionName`, the

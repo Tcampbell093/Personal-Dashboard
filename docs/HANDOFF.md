@@ -12,21 +12,19 @@
 
 ## Next approved task
 
-### Finance 1B.1 — Plaid Sandbox connection flow
+### Finance 1B.2 — Plaid Sandbox accounts and cached balances
 
 - **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** See the latest handoff report
-  below. Read-only, owner-only, **Plaid Sandbox** connect: official `plaid@^42.2.0` adapter behind the
-  1B.0 contracts, additive `financial_connections` table (migration `0011`, encrypted token envelope,
-  no plaintext column), link-token/exchange/list/delete routes, a `/finances` **Bank connections** UI,
-  `scripts/verify-finance1b1.ts` (65 assertions, live Sandbox), and doc updates. **No** accounts,
-  balances, transactions, webhooks, matching, or money movement.
-  - **The next approved finance build after review is Finance 1B.2** (accounts + cached balances:
-    provider-account mappings, `balance_source = linked` authority, truthful "last updated") — it
-    requires its own explicit owner authorization. Real Chase/BofA need eligible Production + OAuth (a
-    later owner step). **A pre-existing, unrelated issue is flagged:** `scripts/verify-home1a.ts` has a
-    wall-clock/timezone bug (its UTC `iso()` drifts vs the NY-local ranker) that fails 4 day-delta
-    assertions when run in the UTC hours where NY is a day behind — a separate task chip was spawned to
-    fix that harness; Finance 1B.1 touched no Home/task code.
+  below. Read-only, owner-only, Sandbox: account discovery + **cached** balances + create-a-new-linked-
+  account. New `provider_accounts` table (migration `0012`), adapter `listAccounts`/`getCachedBalances`
+  (cached `/accounts/get`, no paid endpoint), sync/list/create routes, linked-account resolution in
+  totals/projection, expanded Bank-connections + Accounts UI, `scripts/verify-finance1b2.ts` (69
+  assertions, live Sandbox). **No** transactions, webhooks, matching, money movement, manual-account
+  merge/convert.
+  - **The next approved finance build after review is Finance 1B.3** (incremental transaction sync +
+    verified webhooks: `imported_transactions`, the durable pending-sync trigger, `/transactions/sync`
+    cursor loop) — it requires its own explicit owner authorization. The **manual→linked authority-
+    handoff** transition (deferred from 1B.2) and real Production/OAuth are also later owner steps.
 
 ### Finance 1A.4 — recurring income + estimate-vs-confirmed paychecks (committed `a15f99f`)
 
@@ -128,6 +126,114 @@ specific build. Builds are ordered so the manual loop works end-to-end before an
 ---
 
 ## Latest handoff
+
+### Finance 1B.2 — Plaid Sandbox accounts + cached balances — implemented — 2026-06-26
+
+**Task Completed** — account discovery + cached balances + create-a-new-linked-account for an existing
+Plaid **Sandbox** connection. Read-only, owner-only, **no money movement, no transactions/webhooks/
+matching, no manual-account merge/convert.** Not committed — awaiting owner review.
+
+**Repository state confirmed** — HEAD `aa868b5` (1B.1); local == `origin/main`; clean tree; 1B.0
+contracts + 1B.1 connection schema/adapter/routes/UI present; `.env.local` ignored + unstaged; required
+env names present (by name only); `PLAID_ENV=sandbox`; no provider-account/imported-transaction model;
+no owner account was `linked` before this build.
+
+**Schema & migration** — additive `0012_loud_barracuda.sql`: `provider_account_status` enum (`active|
+stale`) + **`provider_accounts`** table. Unique `(connection_id, provider_account_id)` (connection-
+scoped identity) + partial unique on `financial_account_id` (one Xanther account ↔ one provider
+account). Cached balances + `balance_as_of` live here; **no token/cursor/imported-transactions/raw
+payload**. **Lifecycle-safety correction:** constraint-only `0013_next_speed.sql` changes the
+`connection_id` FK from `ON DELETE cascade` → **`NO ACTION`** so a connection can't be hard-deleted while
+any provider account references it (no orphaned linked account); `financial_account` FK is also
+no-action. No DROP/owner-ALTER/backfill/data-rewrite; Chase/BofA untouched.
+
+**Orphan prevention (correction)** — a connection with any **linked** provider account can't be deleted:
+`deleteConnection` rejects it with a bounded **409** (`This connection has linked Xanther accounts and
+cannot be removed yet.`, mutating nothing, no token/id leaked) and otherwise deletes the **unmapped**
+snapshots + the connection in a single **race-safe guarded CTE** (a concurrent create-linked makes the
+DELETE violate the NO ACTION FK and abort — no orphan). The Sandbox cleanup helper tears down in a safe
+order (clear mapping → delete the `linked` account → delete the provider row), never touching a manual
+account. Verified live (`scripts/verify-finance1b2.ts` `[L1]–[L15]` + an orphan-integrity invariant:
+every active linked account has exactly one provider mapping).
+
+**Plaid adapter expansion** — `listAccounts` + `getCachedBalances` via `/accounts/get` (**cached**,
+free; **not** the paid `/accounts/balance/get`). Raw Plaid types stay in `lib/providers/plaid/`.
+**Account-type normalization** (adapter, Plaid-specific): depository+checking→checking, depository+
+savings→savings, credit→credit, else→other. **Credit sign:** Plaid `current` = positive amount owed →
+stored unflipped, excluded from cash/spendable (existing liability convention).
+
+**Provider-account sync lifecycle** — owner-scoped + Sandbox-only: decrypt token server-side → fetch
+cached accounts/balances → normalize → **upsert** by `(connectionId, providerAccountId)` → set
+`lastSeenAt`/`balanceAsOf` → previously-seen-but-missing → **stale** (retained) → `lastSyncAttemptedAt`
+always, `lastSyncedAt` on success. Decryption failure writes no account data; provider failure preserves
+prior rows + `lastSyncedAt`.
+
+**Linked-account creation lifecycle** — from an **unmapped** provider account only: new
+`financial_accounts` row (`balanceSource='linked'`, `currentBalance` NULL, type from normalized provider
+type, institution from the connection, owner-chosen name/purpose/spendable — **credit forced
+non-spendable**). **Insert-then-claim** (guarded `WHERE financial_account_id IS NULL` update; orphan
+rolled back) → duplicate/concurrent yields exactly one account. **Never maps an existing manual
+account** (deferred).
+
+**Authority & freshness** — linked balance is provider-authoritative (resolved from the snapshot, never
+the NULL `currentBalance`); **missing → Balance unavailable** (no fallback) + excluded from totals with a
+warning; **stale → "last known"**; cached labels are truthful (never "live"). Linked accounts can't be
+reconciled or balance-edited (service strips balance/source edits; reconcile already rejects linked).
+
+**Totals/projection** — manual cash from manual balances, linked cash from provider snapshots; unavailable
+linked excluded + `linked_unavailable` warning; stale → `linked_stale` warning; credit separate; spendable
+respects `includeInSpendable`; projection consumes the resolved balance and overwrites no source.
+
+**Exact routes** — `POST /api/finances/connections/[id]/accounts/sync`,
+`GET /api/finances/connections/[id]/accounts`,
+`POST /api/finances/provider-accounts/[id]/create-linked-account`. Owner/provider-ids/balance/source
+never trusted from the body.
+
+**Exact files changed** — new: `lib/services/provider-accounts.ts`,
+`app/api/finances/connections/[id]/accounts/{route,sync/route}.ts`,
+`app/api/finances/provider-accounts/[id]/create-linked-account/route.ts`,
+`db/migrations/0012_loud_barracuda.sql` (+ snapshot/journal), `scripts/verify-finance1b2.ts`; modified:
+`db/schema.ts`, `lib/types.ts`, `lib/providers/plaid/adapter.ts`, `lib/services/finances.ts`,
+`lib/services/finance-projection.ts`, `lib/services/connections.ts`, `lib/services/home.ts`,
+`components/finances/connection-manager.tsx`, `components/finances/account-manager.tsx`,
+`app/finances/page.tsx`, `app/globals.css`, six docs, and the superseded guards in
+`verify-finance1a`/`1a3b`/`1b0`/`1b1` (disclosed NOTEs).
+
+**`/finances`, Home, `/manage`** — `/finances` Bank-connections gains **Sync accounts** + a discovered-
+accounts list (name, type/subtype, mask, cached current+available, currency, freshness, mapping status)
++ **Add to Xanther** (name/purpose/spendable, "does not merge with manual accounts" warning) for unmapped
+accounts; the **Accounts** section shows linked accounts (Linked / Plaid Sandbox / Provider balance /
+Updated <time> / Balance unavailable / stale) with manual editing + reconcile hidden; Cash-on-hand shows
+linked unavailable/stale warnings. Home resolves linked balances into its combined cash + warnings (no
+account list / transaction feed). `/manage` unchanged.
+
+**Testing** — `npm run typecheck` ✓; `npm run build` ✓. **`scripts/verify-finance1b2.ts` — 84/84**
+(67 base invariants + 2 extras + 15 lifecycle-safety/orphan-prevention checks): live Sandbox sync (12 fake accounts; types normalize; connection-scoped;
+insert; idempotent; concurrent no-dup; modified-balance update; missing→stale; provider-failure +
+decryption-failure write-nothing; foreign rejected; nonsecret), linked-account creation (linked source;
+atomic; duplicate/concurrent → one; purpose/spendable preserved; credit non-spendable; Chase/BofA
+unchanged; no auto-map/convert; provider-authoritative; no reconcile/balance-edit; no manual fallback;
+stale labeled), totals/projection (authorities; credit separate; spendable; unavailable/stale warnings;
+projection uses provider balance, overwrites nothing; no double-count), UI source, scope protection, owner
+data + request 222 intact, exact-id cleanup. **Browser-equivalent (authenticated HTTP):** sync route →
+nonsecret accounts w/ masks+balances+freshness; /finances renders connection + discovered accounts;
+create-linked → linked account appears in Accounts (Linked/Plaid Sandbox/Provider balance), persists
+across reload, no transactions; exact-id cleanup. **Regressions:** 1B.1 65 / 1B.0 52 / 1A.4 65 / 1A.3B 57
+/ 1A.3A 63 / 1A.2 72 / 1A.1 68 / Home 63 / Manage-tasks 27 / Build 2A 136 / 2B.1 126 / 2B.2 60 — all
+green. Secret scan clean.
+
+**Known issues / not tested** — the interactive Plaid Link iframe + pixel-level 375px layout were not
+browser-automated (gate + cross-origin Plaid CDN + secret constraints); the server/render flow is proven
+via live Sandbox + authenticated HTTP, the responsive CSS verified. The **owner's real "Bank of America"
+Sandbox connection** exists in the shared Neon DB (from the 1B.1 production test) and is left **untouched**
+— the harness creates/cleans its own connections by exact id (this required updating the 1B.1 harness's
+"0 connections remain" check to a created-ids-only check). **Existing-manual→linked mapping is deferred.**
+**No paid real-time balance refresh** (cached only). A linked account has no UI "remove" yet (cleanup via
+the provider-account path / harness).
+
+**Decisions needed** — owner review before commit; Finance 1B.3 requires separate authorization.
+**Recommended next step** — owner reviews 1B.2; if approved, commit
+(`feat(finance): add Plaid Sandbox accounts and cached balances`), then prepare Finance 1B.3.
 
 ### Finance 1B.1 — Plaid Sandbox connection flow — implemented — 2026-06-25
 

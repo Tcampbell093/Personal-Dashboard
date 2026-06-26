@@ -101,6 +101,7 @@ export function AccountManager({
               initial={toDraft(a)}
               pending={pending}
               submitLabel="Save"
+              linked={a.balanceSource === "linked"}
               onCancel={() => setEditingId(null)}
               onSubmit={async (draft) => {
                 if (await patch(a.id, draft)) setEditingId(null);
@@ -172,6 +173,16 @@ function reconciledLabel(iso: string | null): string {
   if (!iso) return "Not yet reconciled";
   return `Last reconciled ${new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
 }
+// Truthful relative freshness for a cached provider balance (never "live").
+function freshLabel(iso: string | null | undefined): string {
+  if (!iso) return "unknown";
+  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} minute${mins === 1 ? "" : "s"} ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} hour${hrs === 1 ? "" : "s"} ago`;
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
 
 function AccountCard({
   account: a,
@@ -191,10 +202,12 @@ function AccountCard({
   onDelete: () => void;
 }) {
   const [reconciling, setReconciling] = useState(false);
-  const balanceLabel = a.isLiability ? "Manual balance owed" : "Manual balance";
   const isManual = a.balanceSource === "manual";
+  const balanceLabel = isManual
+    ? a.isLiability ? "Manual balance owed" : "Manual balance"
+    : a.isLiability ? "Provider balance owed" : "Provider balance";
   return (
-    <div className={`fin-acct${a.active ? "" : " inactive"}`}>
+    <div className={`fin-acct${a.active ? "" : " inactive"}${isManual ? "" : " linked"}`}>
       <div className="fin-acct-top">
         <div>
           <div className="fin-acct-name">{a.name}</div>
@@ -204,11 +217,14 @@ function AccountCard({
           </div>
         </div>
         <div className={`fin-acct-bal num${a.isLiability ? " liab" : ""}`}>
-          {money(a.currentBalance)}
+          {a.balanceUnavailable ? <span className="sub">Balance unavailable</span> : money(a.currentBalance)}
         </div>
       </div>
       <div className="fin-acct-tags">
         <span className="fin-tag muted">{balanceLabel}</span>
+        {!isManual && <span className="fin-tag">Linked account</span>}
+        {!isManual && <span className="fin-tag sandbox">Plaid Sandbox</span>}
+        {a.balanceStale && <span className="fin-tag liab">Balance may be stale</span>}
         {a.isLiability && <span className="fin-tag liab">Liability — not cash</span>}
         {a.isCash &&
           (a.includeInSpendable ? (
@@ -217,11 +233,17 @@ function AccountCard({
             <span className="fin-tag muted">Excluded from spendable</span>
           ))}
         {!a.active && <span className="fin-tag muted">Inactive</span>}
-        {a.balanceSource !== "manual" && (
-          <span className="fin-tag">{cap(a.balanceSource)}</span>
-        )}
       </div>
-      <div className="fin-acct-reconciled sub">{reconciledLabel(a.lastReconciledAt)}</div>
+      {isManual ? (
+        <div className="fin-acct-reconciled sub">{reconciledLabel(a.lastReconciledAt)}</div>
+      ) : (
+        <div className="fin-acct-reconciled sub">
+          {a.balanceUnavailable
+            ? "No provider balance yet — sync accounts."
+            : `Provider balance · Updated ${freshLabel(a.balanceAsOf)}`}
+          {a.balanceAvailable != null && !a.balanceUnavailable && ` · Available ${money(a.balanceAvailable)}`}
+        </div>
+      )}
       <div className="fin-acct-actions">
         <button className="linkbtn" onClick={onEdit} disabled={pending}>
           Edit
@@ -237,9 +259,11 @@ function AccountCard({
             Undo reconcile
           </button>
         )}
-        <button className="linkbtn danger" onClick={onDelete} disabled={pending}>
-          Remove
-        </button>
+        {isManual && (
+          <button className="linkbtn danger" onClick={onDelete} disabled={pending}>
+            Remove
+          </button>
+        )}
       </div>
       {reconciling && (
         <ReconcilePanel
@@ -309,12 +333,14 @@ function AccountForm({
   initial,
   pending,
   submitLabel,
+  linked = false,
   onSubmit,
   onCancel,
 }: {
   initial: Draft;
   pending: boolean;
   submitLabel: string;
+  linked?: boolean;
   onSubmit: (draft: Draft) => void;
   onCancel: () => void;
 }) {
@@ -350,13 +376,19 @@ function AccountForm({
           />
         </label>
       </div>
+      {linked && (
+        <div className="fin-form-note">
+          This is a linked account. Its balance comes from the provider and can’t be edited or
+          reconciled here; you can still update its name, purpose, and spendable setting.
+        </div>
+      )}
       <div className="fin-form-row">
         <label className="fin-field">
           <span>Type</span>
           <select
             value={d.type}
             onChange={(e) => set({ type: e.target.value })}
-            disabled={pending}
+            disabled={pending || linked}
           >
             {TYPES.map((t) => (
               <option key={t} value={t}>
@@ -379,17 +411,19 @@ function AccountForm({
             ))}
           </select>
         </label>
-        <label className="fin-field">
-          <span>{d.type === "credit" ? "Balance owed" : "Actual balance"}</span>
-          <input
-            type="number"
-            step="0.01"
-            value={d.currentBalance}
-            onChange={(e) => set({ currentBalance: e.target.value })}
-            placeholder="0.00"
-            disabled={pending}
-          />
-        </label>
+        {!linked && (
+          <label className="fin-field">
+            <span>{d.type === "credit" ? "Balance owed" : "Actual balance"}</span>
+            <input
+              type="number"
+              step="0.01"
+              value={d.currentBalance}
+              onChange={(e) => set({ currentBalance: e.target.value })}
+              placeholder="0.00"
+              disabled={pending}
+            />
+          </label>
+        )}
       </div>
       <div className="fin-form-checks">
         <label className="fin-check">

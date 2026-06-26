@@ -33,6 +33,7 @@ import {
 } from "@/lib/services/income-schedules";
 import { computeProjection } from "@/lib/services/finance-projection";
 import { listConnections } from "@/lib/services/connections";
+import { linkedBalanceMap } from "@/lib/services/provider-accounts";
 import { isAuthConfigured } from "@/lib/session";
 import { LogoutButton } from "@/components/logout-button";
 import { AccountManager } from "@/components/finances/account-manager";
@@ -124,9 +125,10 @@ export default async function FinancesPage({
   try {
     // Replenish the rolling occurrence window for active schedules (idempotent).
     await replenishOccurrences(userId, today);
-    const [accts, billRows, incomeRows, allocRows, transferRows, movementRows, recIds, scheduleRows, schedAllocRows] =
+    const [acctRows, linkedSnap, billRows, incomeRows, allocRows, transferRows, movementRows, recIds, scheduleRows, schedAllocRows] =
       await Promise.all([
-        listAccounts(userId).then(toAccountViews),
+        listAccounts(userId),
+        linkedBalanceMap(userId),
         listBills(userId).then(toBillViews),
         listIncome(userId),
         listAllocations(userId),
@@ -136,7 +138,7 @@ export default async function FinancesPage({
         listSchedules(userId),
         listScheduleAllocations(userId),
       ]);
-    accounts = accts;
+    accounts = toAccountViews(acctRows, linkedSnap);
     bills = billRows;
     income = toIncomeViews(incomeRows, allocationsByIncome(allocRows));
     transfers = transferRows;
@@ -231,6 +233,19 @@ export default async function FinancesPage({
             <span className={summary.netPosition < 0 ? "liab" : "good"}>
               {money(summary.netPosition)}
             </span>
+          </div>
+        )}
+        {(summary.linkedUnavailableCount ?? 0) > 0 && (
+          <div className="fin-warn" role="status">
+            ⚠ {summary.linkedUnavailableCount} linked account
+            {summary.linkedUnavailableCount === 1 ? " has" : "s have"} no provider balance yet — this
+            total is partial. Sync accounts to include them.
+          </div>
+        )}
+        {(summary.linkedStaleCount ?? 0) > 0 && (
+          <div className="fin-warn" role="status">
+            ⚠ {summary.linkedStaleCount} linked balance
+            {summary.linkedStaleCount === 1 ? "" : "s"} may be stale (last known provider balance).
           </div>
         )}
       </section>

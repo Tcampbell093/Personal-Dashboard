@@ -211,8 +211,11 @@ async function main() {
   // (separate, approved builds) and now surface in /finances — so they are NO
   // LONGER excluded here. The 1A.3B invariant is narrower: the PROJECTION +
   // RECONCILIATION logic must not depend on Plaid or imported transactions.
-  ok("[40] 1A.3B projection/reconciliation has no Plaid / imported-transaction dependency",
-    !/plaid/i.test(projSrc + acctMgr) && !/import(ed)? transaction/i.test(projSrc));
+  // NOTE: Finance 1B.2 adds a read-only linked-account display to the account
+  // manager ("Plaid Sandbox" label) — sanctioned. The 1A.3B invariant is the
+  // PROJECTION ENGINE has no Plaid / imported-transaction dependency.
+  ok("[40] 1A.3B projection engine has no Plaid / imported-transaction dependency",
+    !/plaid/i.test(projSrc) && !/import(ed)? transaction/i.test(projSrc));
   const logsAfter = (await db.select({ id: apiUsageLogs.id }).from(apiUsageLogs).where(eq(apiUsageLogs.userId, U))).length;
   ok("[41] no usage-log row (no AI)", logsBefore === logsAfter);
   // owner data: balances + reconcile timestamps + movement count unchanged (no fabrication)

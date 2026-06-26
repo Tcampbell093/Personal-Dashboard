@@ -13,9 +13,9 @@ if (typeof window !== "undefined") {
   throw new Error("connections service is server-only and must not be imported in the browser.");
 }
 
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { financialConnections } from "@/db/schema";
+import { financialConnections, providerAccounts } from "@/db/schema";
 import { plaidAdapter } from "@/lib/providers/plaid/adapter";
 import { sandboxReadiness } from "@/lib/providers/plaid/env";
 import { encryptToken, decryptToken, resolveMasterKeyFromEnv } from "@/lib/providers/token-crypto";
@@ -51,6 +51,7 @@ export function toConnectionView(row: ConnectionRow): ConnectionView {
     environment: row.environment,
     requiresReauth: row.requiresReauth,
     connectedAt: (row.consentGrantedAt ?? row.createdAt)?.toISOString() ?? null,
+    lastSyncedAt: row.lastSyncedAt ? row.lastSyncedAt.toISOString() : null,
   };
 }
 
@@ -183,6 +184,16 @@ export async function deleteConnection(userId: number, id: number): Promise<{ de
   const row = rows[0];
   if (!row) return { deleted: false };
 
+  // Finance 1B.2 correction: a connection with ANY linked provider account cannot
+  // be hard-deleted — that would orphan a `linked` Xanther account. Reject with a
+  // bounded conflict (mutating nothing). The DB FK (NO ACTION) + the guarded CTE
+  // below are the race backstop. No token or provider id is exposed in the error.
+  const mapped = await db
+    .select({ id: providerAccounts.id })
+    .from(providerAccounts)
+    .where(and(eq(providerAccounts.connectionId, id), eq(providerAccounts.userId, userId), isNotNull(providerAccounts.financialAccountId)));
+  if (mapped.length) throw new ConnectionError(409, "This connection has linked Xanther accounts and cannot be removed yet.");
+
   // Best-effort provider revoke; a revoke failure must not block deleting our row.
   try {
     const key = resolveMasterKeyFromEnv(1);
@@ -203,10 +214,37 @@ export async function deleteConnection(userId: number, id: number): Promise<{ de
     /* ignore revoke failure — still remove our local row */
   }
 
-  await db
-    .delete(financialConnections)
-    .where(and(eq(financialConnections.id, id), eq(financialConnections.userId, userId)));
-  return { deleted: true };
+  // Atomic + race-safe: delete the UNMAPPED provider-account snapshots + the
+  // connection only if no provider account is mapped. If a concurrent
+  // create-linked maps one between the pre-check and here, the connection DELETE
+  // violates the NO ACTION FK and the whole statement aborts → nothing deleted,
+  // no orphan.
+  try {
+    const res = await db.execute(sql`
+      WITH guard AS (
+        SELECT 1 FROM provider_accounts
+        WHERE connection_id = ${id} AND user_id = ${userId} AND financial_account_id IS NOT NULL LIMIT 1
+      ),
+      del_pa AS (
+        DELETE FROM provider_accounts
+        WHERE connection_id = ${id} AND user_id = ${userId} AND financial_account_id IS NULL AND NOT EXISTS (SELECT 1 FROM guard)
+        RETURNING id
+      ),
+      del_conn AS (
+        DELETE FROM financial_connections
+        WHERE id = ${id} AND user_id = ${userId} AND NOT EXISTS (SELECT 1 FROM guard)
+        RETURNING id
+      )
+      SELECT (SELECT count(*)::int FROM guard) AS mapped, (SELECT count(*)::int FROM del_conn) AS deleted
+    `);
+    const r = res.rows[0] as { mapped: number; deleted: number };
+    if (Number(r.mapped) > 0) throw new ConnectionError(409, "This connection has linked Xanther accounts and cannot be removed yet.");
+    return { deleted: Number(r.deleted) > 0 };
+  } catch (e) {
+    if (e instanceof ConnectionError) throw e;
+    // A concurrent linked-account creation made the connection un-deletable (FK).
+    throw new ConnectionError(409, "This connection has linked Xanther accounts and cannot be removed yet.");
+  }
 }
 
 /** Re-export the nonsecret readiness probe (names-only). */

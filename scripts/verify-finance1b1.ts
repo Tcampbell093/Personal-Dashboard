@@ -9,7 +9,7 @@
 
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import path from "node:path";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import {
   financialConnections, financialAccounts, incomeEntries, financialEntries,
@@ -226,11 +226,17 @@ async function main() {
   ok("[41] Sandbox explanation is visible", /fake Plaid Sandbox/i.test(uiSrc));
   ok("[42] connected institution status renders", /STATUS_LABEL/.test(uiSrc) && /institutionName/.test(uiSrc));
   ok("[43] Sandbox label renders", /Sandbox</.test(uiSrc) && /fin-tag sandbox/.test(uiSrc));
-  ok("[44] UI says accounts and balances are not available yet",
-    /Accounts and balances are (added in the next phase|not available\s*\n?\s*yet)/i.test(uiSrc) || /not available\s+yet/i.test(uiSrc));
-  ok("[45] no invented balance (no balance figure / $ amount rendered)", !/\bbalance\b|currentBalance|toFixed|\$\s?\d/i.test(uiSrc));
-  ok("[46] no transaction feed added (no transaction rendering in code)",
-    !/transaction/i.test(stripComments(uiSrc).replace(/public[\s_-]?token/gi, "")));
+  // NOTE: Finance 1B.2 (a separate, approved build) intentionally adds account
+  // discovery + CACHED balances to the Bank-connections UI, so the 1B.1 "no
+  // accounts/balances shown" assertions are superseded. The durable invariant is
+  // narrower: cached balances are labeled truthfully (never live/real-time) and
+  // NO transaction feed is rendered.
+  ok("[44] cached balances are labeled truthfully (never live/real-time)",
+    !/\blive balance\b|real-?time|continuously updated/i.test(stripComments(uiSrc)));
+  ok("[45] balances shown are cached provider balances (1B.2), not invented",
+    !/Math\.random|fakeBalance|placeholder.?balance/i.test(uiSrc));
+  ok("[46] no transaction feed rendered (no transaction list/activity in the UI)",
+    !/fin-tx|transaction-?row|transactions\.map/i.test(uiSrc));
   ok("[47] repeated Connect clicks are safely controlled", /if \(linking\) return/.test(uiSrc) && /disabled=\{linking\}/.test(uiSrc));
   ok("[48] cancel flow is non-destructive (onExit does not exchange)",
     /onExit/.test(uiSrc) && !/onExit[\s\S]{0,200}exchange/.test(uiSrc));
@@ -239,9 +245,13 @@ async function main() {
 
   /* ===================== scope protection ===================== */
   console.log("\n[scope protection]");
-  ok("[51] no account import (adapter listAccounts not implemented; not called)",
-    /listAccounts: notImplemented/.test(adapterSrc) && !/\.listAccounts\(/.test(svcSrc));
-  ok("[52] no balance synchronization", /getCachedBalances: notImplemented/.test(adapterSrc) && !/getCachedBalances\(/.test(svcSrc));
+  // NOTE: account import + cached-balance sync are intentionally added by Finance
+  // 1B.2 (a separate, approved build), so these are superseded into the next
+  // scope boundary: NO transaction sync / webhook / money movement here.
+  ok("[51] account import is cached-only (no paid real-time balance endpoint call)",
+    !/accountsBalanceGet\s*\(/.test(adapterSrc));
+  ok("[52] no transaction-level sync in the connect/accounts adapter",
+    /syncTransactions: notImplemented/.test(adapterSrc));
   ok("[53] no transaction synchronization", /syncTransactions: notImplemented/.test(adapterSrc) && !/syncTransactions\(/.test(svcSrc));
   ok("[54] no webhook", /verifyWebhook: notImplemented/.test(adapterSrc) && !existsSync("app/api/finances/connections/webhook") && !existsSync("app/api/webhooks"));
   ok("[55] no transaction matching", !/match/i.test(svcSrc) && !existsSync("lib/services/matching.ts"));
@@ -250,9 +260,14 @@ async function main() {
   ok("[57] Finance 1A.4 remains intact", /pgTable\(\s*["']income_schedules["']/.test(schemaSrc) && existsSync("lib/services/income-schedules.ts"));
   ok("[58] Finance 1B.0 remains intact", existsSync("lib/providers/bank-provider.ts") && existsSync("lib/providers/token-crypto.ts") && existsSync("lib/providers/amount.ts"));
 
-  // cleanup BEFORE the final owner-data assertions.
+  // cleanup BEFORE the final owner-data assertions. NOTE: the owner may have a
+  // real Sandbox connection in the shared DB (created via the deployed app), so
+  // we assert only that THIS harness's own created connections are removed —
+  // never that the total is zero.
   for (const id of created) await deleteConnection(U, id);
-  const remaining = await connCount();
+  const createdRemaining = created.length
+    ? (await db.select().from(financialConnections).where(and(eq(financialConnections.userId, U), inArray(financialConnections.id, created), isNull(financialConnections.deletedAt)))).length
+    : 0;
 
   const after = await ownerSnapshot();
   ok("[59] request 222 remains untouched", after.r === before.r);
@@ -263,7 +278,7 @@ async function main() {
   ok("[64] owner movements remain untouched", after.m === before.m);
   const logsAfter = (await db.select({ id: apiUsageLogs.id }).from(apiUsageLogs).where(eq(apiUsageLogs.userId, U))).length;
   ok("[65] no AI call or usage-log row", logsAfter === logsBefore && !/@anthropic|openai|messages\.create/i.test(codeBlob));
-  ok("[66] exact-ID cleanup only (no connection rows remain)", remaining === 0);
+  ok("[66] exact-ID cleanup only (this harness's created connections removed)", createdRemaining === 0);
 
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);

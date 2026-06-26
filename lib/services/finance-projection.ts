@@ -210,10 +210,14 @@ export function computeProjection(input: ProjectionInput): FinanceProjection {
     it.resultingBalance = cur;
   }
 
-  const cash = active.filter((a) => a.isCash);
-  const credit = active.filter((a) => a.isLiability);
+  // Finance 1B.2: a linked account with no provider snapshot is EXCLUDED from
+  // cash totals (never a silent zero) and surfaced as a warning below. Linked
+  // accounts with a resolved provider balance ARE included.
+  const known = active.filter((a) => !a.balanceUnavailable);
+  const cash = known.filter((a) => a.isCash);
+  const credit = known.filter((a) => a.isLiability);
   const projOf = (a: AccountView) => proj.get(a.id)!.projectedBalance;
-  const savEm = active.filter((a) => a.purpose === "savings" || a.purpose === "emergency");
+  const savEm = known.filter((a) => a.purpose === "savings" || a.purpose === "emergency");
   const totals = {
     totalActualCash: round2(sum(cash, (a) => a.currentBalance)),
     totalProjectedCash: round2(sum(cash, projOf)),
@@ -235,6 +239,13 @@ export function computeProjection(input: ProjectionInput): FinanceProjection {
     warnings.push({ code: "unassigned_income", message: `${unassignedIncome.length} scheduled income(s) have no destination — not added to any account projection.` });
   if (linkedSkipped.length)
     warnings.push({ code: "linked_skipped", message: `${linkedSkipped.length} scheduled item(s) involve a linked account and aren't projected (awaiting future bank sync).` });
+  // Finance 1B.2: truthful linked-balance qualification.
+  const linkedUnavailable = active.filter((a) => a.balanceUnavailable).length;
+  const linkedStale = active.filter((a) => a.balanceStale).length;
+  if (linkedUnavailable > 0)
+    warnings.push({ code: "linked_unavailable", message: `${linkedUnavailable} linked account(s) have no provider balance yet — not included in totals. Account sync required.` });
+  if (linkedStale > 0)
+    warnings.push({ code: "linked_stale", message: `${linkedStale} linked balance(s) may be stale (last known provider balance).` });
 
   // Timeline sorted by date for display.
   items.sort((a, b) => (a.date ?? "9999-99-99").localeCompare(b.date ?? "9999-99-99"));

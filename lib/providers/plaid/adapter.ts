@@ -23,13 +23,32 @@ import type {
   CreateLinkSessionInput,
   LinkSession,
   ProviderAccessToken,
+  ProviderAccount,
+  ProviderBalance,
   PublicCredentialExchange,
 } from "../types";
 import { plaidClient } from "./client";
 
 const notImplemented = (method: string) => async (): Promise<never> => {
-  throw new Error(`Plaid adapter: ${method} is not implemented in Finance 1B.1 (read-only connect only).`);
+  throw new Error(`Plaid adapter: ${method} is not implemented in this Finance 1B phase.`);
 };
+
+/**
+ * Normalize a Plaid (type, subtype) into Xanther's bounded account vocabulary.
+ * Plaid-specific strings never leave this folder. Conservative: anything not a
+ * clear checking/savings/credit becomes `other` — investment/loan/brokerage
+ * semantics are NOT guessed in this phase. (Plaid credit `balances.current` is
+ * the POSITIVE amount owed, matching Xanther's existing liability convention, so
+ * it is stored unflipped and excluded from cash/spendable.)
+ */
+export function normalizePlaidAccountType(type: string | null, subtype: string | null): string {
+  if (type === "credit") return "credit";
+  if (type === "depository") {
+    if (subtype === "checking") return "checking";
+    if (subtype === "savings") return "savings";
+  }
+  return "other";
+}
 
 export const plaidAdapter: BankProvider = {
   providerName: "plaid",
@@ -85,10 +104,37 @@ export const plaidAdapter: BankProvider = {
     await client.itemRemove({ access_token: access });
   },
 
-  // Deferred to later Finance 1B phases — fail loudly if called in 1B.1.
+  // Finance 1B.2: cached account discovery + balances via /accounts/get (cached,
+  // free). Raw Plaid account objects are mapped to provider-neutral DTOs here.
+  async listAccounts(access: ProviderAccessToken): Promise<ProviderAccount[]> {
+    const client = plaidClient();
+    const resp = await client.accountsGet({ access_token: access });
+    return resp.data.accounts.map((a) => ({
+      providerAccountId: a.account_id,
+      mask: a.mask ?? null, // last 4 only
+      name: a.name,
+      officialName: a.official_name ?? null,
+      type: normalizePlaidAccountType(a.type ?? null, a.subtype ?? null),
+      subtype: a.subtype ?? null, // raw subtype string (display only)
+    }));
+  },
+
+  async getCachedBalances(access: ProviderAccessToken): Promise<ProviderBalance[]> {
+    const client = plaidClient();
+    const resp = await client.accountsGet({ access_token: access }); // cached — NOT /accounts/balance/get
+    return resp.data.accounts.map((a) => ({
+      providerAccountId: a.account_id,
+      current: a.balances.current ?? null,
+      available: a.balances.available ?? null,
+      isoCurrencyCode: a.balances.iso_currency_code ?? null,
+      // Plaid does not return a per-account "as of" for cached balances; the
+      // service stamps freshness as the sync time. Null here keeps the adapter honest.
+      asOf: null,
+    }));
+  },
+
+  // Deferred to later Finance 1B phases — fail loudly if called now.
   createUpdateLinkSession: notImplemented("createUpdateLinkSession"),
-  listAccounts: notImplemented("listAccounts"),
-  getCachedBalances: notImplemented("getCachedBalances"),
   syncTransactions: notImplemented("syncTransactions"),
   verifyWebhook: notImplemented("verifyWebhook"),
 };

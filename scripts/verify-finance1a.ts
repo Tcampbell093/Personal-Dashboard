@@ -279,7 +279,10 @@ async function main() {
   // truthfulness guard remains: never "safe to spend" / "live balance" (checked above).
 
   // Scope corrections: no provider/connection-health fields on the account.
-  ok("[8] no providerAccountId field", !/provider_account_id|providerAccountId/.test(schemaSrc));
+  // NOTE: provider_accounts (Finance 1B.2) legitimately has provider_account_id, so
+  // this guard is scoped to the financial_ACCOUNTS table, which has no such field.
+  ok("[8] no providerAccountId field on financial_accounts",
+    !/provider_account_id|providerAccountId/.test(schemaSrc.match(/financialAccounts = pgTable[\s\S]*?\n\);/)?.[0] ?? ""));
   ok("[8] no syncStatus field", !/sync_status|syncStatus/.test(schemaSrc));
   ok("[8] no connectionError field", !/connection_error|connectionError/.test(schemaSrc));
   // NOTE: financial_connections (Finance 1B.1) legitimately has last_synced_at, so
@@ -295,10 +298,12 @@ async function main() {
   // (a separate, approved build) — so it is NO LONGER excluded here. Its own
   // behavior is verified by scripts/verify-finance1a3a.ts.
   ok("[8] balance_source enum present (manual|linked, future-ready)", /balance_source/.test(schemaSrc));
-  // NOTE: read-only Plaid connections are intentionally added by Finance 1B.0/1B.1
-  // and now surface in the schema + /finances — so those are NO LONGER scanned
-  // here. The 1A.1 invariant: the account + bill MANAGERS have no Plaid code.
-  ok("[8] no Plaid references in 1A.1 account/bill managers", !/plaid/i.test(acctMgr + billMgr));
+  // NOTE: Finance 1B.2 adds a read-only LINKED-account display (with a "Plaid
+  // Sandbox" label) to the account manager — sanctioned. The 1A.1 invariant is
+  // narrower: the bill manager has no Plaid, and the account manager adds no
+  // money-movement / transaction code.
+  ok("[8] no Plaid money-movement/transaction code in 1A.1 managers",
+    !/plaid/i.test(billMgr) && !/transaction|moveMoney|paymentInitiation/i.test(acctMgr.replace(/balanceSource/g, "")));
 
   // Home stays compact; /manage links to /finances; income preserved on /manage.
   ok("[8] Home money card links to /finances", homeSrc.includes('href="/finances"'));

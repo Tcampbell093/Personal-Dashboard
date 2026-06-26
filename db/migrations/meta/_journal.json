@@ -85,6 +85,20 @@
       "when": 1782435128528,
       "tag": "0011_rapid_sasquatch",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1782452288271,
+      "tag": "0012_loud_barracuda",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1782471106751,
+      "tag": "0013_next_speed",
+      "breakpoints": true
     }
   ]
 }

@@ -179,6 +179,11 @@ export const connectionStatus = pgEnum("connection_status", [
   "revoked",
 ]);
 
+// Finance 1B.2: lifecycle of a discovered provider account. `active` = seen on
+// the latest sync; `stale` = previously seen but absent from the latest sync
+// (retained for audit/repair, never deleted).
+export const providerAccountStatus = pgEnum("provider_account_status", ["active", "stale"]);
+
 export const signalType = pgEnum("signal_type", [
   "weather",
   "local_event",
@@ -773,6 +778,64 @@ export const financialConnections = pgTable(
     // Provider Item is unique within owner + provider scope: a repeated exchange
     // of the same Item can never create a second active connection.
     uniqueIndex("financial_connections_owner_item_uq").on(t.userId, t.provider, t.providerItemId),
+  ],
+);
+
+/* Finance 1B.2 — a provider account discovered from a financial connection
+ * (Plaid Sandbox). One row per provider account; cached balances + freshness are
+ * stored here (the provider snapshot is authoritative for a linked account — it
+ * is NOT copied into an editable financial_accounts.currentBalance). A row may be
+ * linked to at most one Xanther `financial_accounts` row (`financialAccountId`),
+ * and a Xanther account maps to at most one provider account (partial unique
+ * index). No access token, no transaction cursor, no imported transactions, and
+ * no raw Plaid payload are stored here. */
+export const providerAccounts = pgTable(
+  "provider_accounts",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // Finance 1B.2 correction: NO ACTION (not cascade) so a connection cannot be
+    // hard-deleted while ANY provider account still references it — the DB itself
+    // resists orphaning a linked Xanther account. Bounded cleanup deletes the
+    // (unmapped) provider-account rows first, then the connection (see
+    // deleteConnection); a mapped connection delete is rejected.
+    connectionId: integer("connection_id")
+      .notNull()
+      .references(() => financialConnections.id, { onDelete: "no action" }),
+    provider: varchar("provider", { length: 40 }).notNull().default("plaid"),
+    // Non-secret provider account id (Plaid account_id). Trusted only WITHIN its connection.
+    providerAccountId: varchar("provider_account_id", { length: 255 }).notNull(),
+    // The Xanther linked account created from this provider account (null = unmapped).
+    financialAccountId: integer("financial_account_id").references(() => financialAccounts.id),
+    providerName: varchar("provider_name", { length: 200 }).notNull(),
+    officialName: varchar("official_name", { length: 200 }),
+    mask: varchar("mask", { length: 16 }), // last 4 only — never a full account number
+    // Normalized Xanther type (checking|savings|cash|credit|other); the raw Plaid
+    // subtype string is kept for display only.
+    providerType: varchar("provider_type", { length: 40 }).notNull().default("other"),
+    providerSubtype: varchar("provider_subtype", { length: 60 }),
+    currencyCode: varchar("currency_code", { length: 8 }),
+    // Cached balance snapshot (nullable when the provider does not supply it).
+    balanceCurrent: numeric("balance_current", { precision: 14, scale: 2 }),
+    balanceAvailable: numeric("balance_available", { precision: 14, scale: 2 }),
+    balanceLimit: numeric("balance_limit", { precision: 14, scale: 2 }),
+    // Freshness of the cached snapshot (the time Xanther last synced it).
+    balanceAsOf: timestamp("balance_as_of", { withTimezone: true }),
+    status: providerAccountStatus("status").notNull().default("active"),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).defaultNow().notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).defaultNow().notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    index("provider_accounts_user_idx").on(t.userId, t.connectionId),
+    // Provider account identity is scoped to its connection (idempotent sync).
+    uniqueIndex("provider_accounts_conn_acct_uq").on(t.connectionId, t.providerAccountId),
+    // A Xanther account maps to at most one provider account.
+    uniqueIndex("provider_accounts_financial_acct_uq")
+      .on(t.financialAccountId)
+      .where(sqlNotNull(t.financialAccountId)),
   ],
 );
 

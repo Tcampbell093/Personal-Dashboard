@@ -1214,6 +1214,19 @@ textarea.taskadd-field:focus {
 .fin-conn-meta { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 3px; }
 .fin-conn-phase { margin: 4px 0 0; }
 
+/* Finance 1B.2 — discovered provider accounts + linked accounts */
+.fin-pa-list { list-style: none; margin: 8px 0 0; padding: 0 0 0 10px; border-left: 2px solid var(--line); }
+.fin-pa-row { padding: 8px 0; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; }
+.fin-pa-main { flex: 1 1 180px; display: flex; flex-direction: column; gap: 2px; }
+.fin-pa-name { font-weight: 600; }
+.fin-pa-bal { display: flex; flex-direction: column; gap: 1px; text-align: right; }
+.fin-pa-fresh { font-size: 11px; }
+.fin-pa-status { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.fin-pa-form { flex: 1 1 100%; margin-top: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
+.fin-pa-phase { margin: 6px 0 0; padding-left: 10px; }
+.fin-acct.linked { border-color: color-mix(in srgb, var(--explore) 30%, var(--line)); }
+.fin-warn { margin-top: 10px; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--aware) 45%, var(--line)); border-radius: 8px; color: var(--aware); font-size: 13px; }
+
 /* account + bill forms */
 .fin-acct-form {
   border: 1px dashed var(--line);

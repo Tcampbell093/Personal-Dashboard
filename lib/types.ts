@@ -54,6 +54,35 @@ export interface AccountView {
   isCash: boolean;
   isLiability: boolean; // true for credit accounts
   lastReconciledAt: string | null; // Finance 1A.3B: when last verified vs the bank (ISO)
+  // Finance 1B.2: for a `linked` account, `currentBalance` is the resolved
+  // provider snapshot (NOT manually editable). These describe its freshness.
+  balanceAvailable?: number | null; // linked available balance (null for manual)
+  balanceAsOf?: string | null; // linked snapshot freshness (ISO)
+  balanceStale?: boolean; // linked snapshot is stale (last-known)
+  balanceUnavailable?: boolean; // linked account with no provider snapshot
+  providerLabel?: string | null; // e.g. "Plaid Sandbox" (linked only)
+  currency?: string | null; // linked currency code
+}
+
+/* Finance 1B.2 — a NONSECRET view of a discovered provider account. Never
+ * includes an access token or any encrypted field. */
+export interface ProviderAccountView {
+  id: number;
+  connectionId: number;
+  provider: string;
+  mask: string | null; // last 4 only — never a full account number
+  providerName: string;
+  officialName: string | null;
+  type: string; // normalized: checking | savings | cash | credit | other
+  subtype: string | null; // raw provider subtype (display only)
+  currency: string | null;
+  balanceCurrent: number | null;
+  balanceAvailable: number | null;
+  balanceAsOf: string | null; // freshness (ISO)
+  status: string; // active | stale
+  mapped: boolean;
+  financialAccountId: number | null;
+  linkedAccountName: string | null;
 }
 
 /** Finance 1A.1 cash/liability rollups. Every figure is from manually entered
@@ -67,6 +96,10 @@ export interface CashSummary {
   netPosition: number; // totalActualCash − creditLiabilities (informational)
   cashAccountCount: number;
   creditAccountCount: number;
+  // Finance 1B.2: truthful qualification when some linked balances are missing/stale.
+  linkedUnavailableCount?: number; // linked cash accounts with no provider snapshot
+  linkedStaleCount?: number; // linked accounts whose snapshot is last-known/stale
+  totalQualified?: boolean; // true when a required linked balance is unavailable → total is partial
 }
 
 export interface BillView {
@@ -240,6 +273,7 @@ export interface ConnectionView {
   environment: string; // "sandbox"
   requiresReauth: boolean;
   connectedAt: string | null; // ISO
+  lastSyncedAt: string | null; // Finance 1B.2: last successful account sync (ISO)
 }
 
 export interface SignalView {

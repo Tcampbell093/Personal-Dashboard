@@ -25,15 +25,15 @@
   native-device** capability, **not** a requirement for the current Netlify web app. This
   stays within existing guardrails: AI assists, the owner decides; nothing publishes, spends,
   contacts people, or exposes private information without explicit owner approval.
-- **Read-only bank connections (Finance 1B)** — *in progress.* **1B.0** (provider-neutral contracts +
-  security) and **1B.1** (Plaid **Sandbox** connect: encrypted `financial_connections`, link/exchange/
-  list routes, `/finances` Bank-connections UI) are **done**. Bank **sync is still not functional** —
-  no accounts, balances, transactions, webhooks, or matching yet; **read-only, no money movement**.
-  Next: **1B.2** (accounts + cached balances), **1B.3** (incremental transaction sync + webhooks), then
-  matching (bills → income incl. split deposits → transfers), manual-to-linked transition, and repair/
-  disconnect hardening. Real Chase/BofA need eligible Production/OAuth (a later owner step). See
-  `docs/BANK_INTEGRATION_SECURITY.md` and `docs/DECISIONS.md` ADR-027/028. (The active approved task is
-  always in `docs/HANDOFF.md`.)
+- **Read-only bank connections (Finance 1B)** — *in progress.* **1B.0** (contracts + security), **1B.1**
+  (Plaid **Sandbox** connect), and **1B.2** (Sandbox **accounts + cached balances** + create-linked-
+  account: `provider_accounts`, sync/list/create routes, linked-account display) are **done**.
+  **Transactions are still not functional** — no transaction sync, webhooks, or matching yet;
+  **read-only, no money movement**. Next: **1B.3** (incremental transaction sync + webhooks), then
+  matching (bills → income incl. split deposits → transfers), the **manual→linked authority-handoff**
+  transition (deferred from 1B.2), and repair/disconnect hardening. Real Chase/BofA need eligible
+  Production/OAuth (a later owner step). See `docs/BANK_INTEGRATION_SECURITY.md` and `docs/DECISIONS.md`
+  ADR-027/028/029. (The active approved task is always in `docs/HANDOFF.md`.)
 - **Personal knowledge and editable memory** — structured, inspectable, editable personal data.
 - **Experience and Adventure Loop** — capturing and acting on experiences/adventures.
 - **AI recommendation foundation** — the basis for owner-gated, explainable recommendations.

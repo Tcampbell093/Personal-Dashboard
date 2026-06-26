@@ -538,6 +538,60 @@
   intact) + typecheck + build + all regressions green + secret scan clean. Full reference:
   `docs/BANK_INTEGRATION_SECURITY.md`.
 
+### ADR-029 — Finance 1B.2: Plaid Sandbox accounts + cached balances
+- **Classification:** Owner-approved decision (owner approved the 1B.2 scope).
+- **Detail:** Discover Plaid **Sandbox** accounts for an existing connection, store **cached** balances +
+  freshness, and let the owner create a **NEW linked Xanther account** from an unmapped provider account.
+  Read-only; **no money movement, no transactions, no webhooks, no matching.**
+  - **`provider_accounts` model (single table, NOT a separate mappings table):** chosen because the
+    provider↔Xanther link is a strict 1:1 — a separate `provider_account_mappings` table would duplicate
+    the same relationship. `financial_account_id` (nullable) holds the link; unique
+    `(connection_id, provider_account_id)` scopes provider identity; a partial unique index on
+    `financial_account_id` enforces one Xanther account per provider account. Cached balances +
+    `balance_as_of` live here (NOT copied into an editable field). No token, cursor, imported
+    transactions, or raw Plaid payload stored. Additive migration `0012_loud_barracuda.sql`.
+  - **Adapter:** `listAccounts` + `getCachedBalances` via Plaid `/accounts/get` (cached, free). **No
+    paid `/accounts/balance/get`.** Raw Plaid types stay in `lib/providers/plaid/`. Account-type
+    normalization (Plaid-specific, in the adapter): depository+checking→checking, depository+savings→
+    savings, credit→credit, else→other. **Credit sign:** Plaid `current` is the positive amount owed,
+    matching Xanther's existing liability convention (stored unflipped, excluded from cash/spendable).
+  - **Balance authority:** a linked account's `financial_accounts.currentBalance` is **NULL** (never an
+    editable competing source); its authoritative balance is resolved from the provider snapshot via the
+    1B.0 resolver. A **missing** snapshot → `Balance unavailable` (never a fallback to manual/zero) and
+    excluded from totals with a warning; **stale** → labeled "last known"; cached balances are labeled
+    truthfully (never "live"/"real-time"). Linked accounts cannot be reconciled or have their balance
+    manually edited (the service strips balance/source edits; reconcile already rejects linked).
+  - **Existing-manual mapping is DEFERRED** (a later phase): mapping a provider account onto an existing
+    manual account needs final reconciliation, a transition timestamp, movement preservation, duplicate
+    safeguards, rollback rules, and explicit authority-handoff confirmation. 1B.2 only creates a NEW
+    linked account; Chase/BofA are never merged, renamed, or converted.
+  - **Sync lifecycle:** idempotent upsert by `(connectionId, providerAccountId)`; previously-seen
+    accounts now missing → `stale` (retained, never deleted); `lastSyncAttemptedAt` always updated,
+    `lastSyncedAt` only on success. Decryption failure writes no account data; a provider failure
+    preserves prior rows + prior `lastSyncedAt`. Linked-account creation is insert-then-claim
+    (guarded `WHERE financial_account_id IS NULL` UPDATE; orphan rolled back) → a duplicate/concurrent
+    call yields exactly one account.
+  - **Routes:** `POST /api/finances/connections/[id]/accounts/sync`, `GET …/accounts`,
+    `POST /api/finances/provider-accounts/[id]/create-linked-account`. The owner, provider ids, balance,
+    and balance source are never trusted from the request body.
+  - **Orphan prevention (lifecycle-safety correction):** a connection (or provider-account record) may
+    **never** be hard-deleted while any provider account is linked to a Xanther account — that would
+    leave a `balanceSource='linked'` account with no provider authority. **Defense in depth:** (1) the
+    `provider_accounts.connection_id` FK was changed from `ON DELETE cascade` to **`NO ACTION`**
+    (migration `0013_next_speed.sql`, constraint-only) so the DB itself resists deleting a connection
+    that still has provider-account rows; (2) `deleteConnection` rejects a connection with any mapped
+    provider account with a bounded **409** (`This connection has linked Xanther accounts and cannot be
+    removed yet.`) mutating nothing, and otherwise deletes the **unmapped** provider snapshots + the
+    connection in a single race-safe guarded CTE (a concurrent create-linked makes the connection
+    DELETE violate the FK and abort — no orphan); (3) the Sandbox cleanup helper tears down in a safe
+    order (clear mapping → delete the `linked` account → delete the provider row) and never touches a
+    manual account. Full disconnect/archive/token-revocation lifecycle remains a later (1B.9) concern.
+- **Evidence:** `scripts/verify-finance1b2.ts` (69/69; live Plaid Sandbox sync → discover → create-linked
+  → resolve → exact-id cleanup; idempotency/concurrency; decryption/provider failure writes-nothing;
+  no-merge/no-convert; totals/projection authority + warnings; UI scope) + authenticated-HTTP browser run
+  + typecheck + build + all regressions green + secret scan clean. Owner's real Sandbox connection
+  untouched. Older suites' superseded `!/plaid/i`/migration/scope guards updated (disclosed NOTEs).
+
 ### ADR-028 — Finance 1B.1: Plaid Sandbox connection flow
 - **Classification:** Owner-approved decision (owner approved the 1B.1 scope + configured the Plaid
   Sandbox env vars in Netlify).
