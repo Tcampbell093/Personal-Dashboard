@@ -225,6 +225,15 @@ duplicate manual income movements; uncertain matches need owner approval; recurr
   `_synced_at`, `transaction_sync_locked_at` = per-connection lock, error code/message). The committed
   cursor advances only after every page persists; removed→tombstone; pending→posted suppression avoids
   double-counting. View model: `ImportedTransactionView` (nonsecret — no provider txn id/account number).
+- **1B.3B — DONE (verified webhooks + automatic sync)** — additive migration `0015_bouncy_mandrill.sql`
+  adds the `webhook_event_status` enum (`received|processing|processed|failed|ignored`) + the
+  **`plaid_webhook_events`** table: `provider`, `environment`, `webhookType`, `webhookCode`,
+  `providerItemId` (resolves the connection server-side), `providerRequestId`, `bodyHash` (**unique** —
+  durable idempotency key), `status`, `receivedAt`/`processingStartedAt`/`processedAt`, `attemptCount`,
+  bounded `lastErrorCode`/`lastErrorMessage`, timestamps. **Stores NO token, encryption field, raw
+  payload, account number, or transaction data.** No FK to a user — the webhook is verified
+  cryptographically and the connection is resolved by `providerItemId`. `financial_connections` is
+  unchanged (the existing transaction-sync state is reused).
   See `docs/DECISIONS.md` ADR-030.
 - **1B.1 — DONE (Plaid Sandbox connect)** — additive migration `0011_rapid_sasquatch.sql` adds the
   `connection_status` enum + the **`financial_connections`** table: `userId`, `provider` (`plaid`),

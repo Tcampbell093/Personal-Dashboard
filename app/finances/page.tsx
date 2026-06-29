@@ -33,6 +33,7 @@ import {
 } from "@/lib/services/income-schedules";
 import { computeProjection } from "@/lib/services/finance-projection";
 import { listConnections } from "@/lib/services/connections";
+import { getAutoSyncStatus } from "@/lib/services/webhooks";
 import { linkedBalanceMap } from "@/lib/services/provider-accounts";
 import { isAuthConfigured } from "@/lib/session";
 import { LogoutButton } from "@/components/logout-button";
@@ -164,8 +165,10 @@ export default async function FinancesPage({
   // Bank connections (Finance 1B.1) — loaded resiliently so a provider/env hiccup
   // never breaks the money workspace; a failure simply shows no connections.
   let connections: ConnectionView[] = [];
+  let autoStatus = { configured: false, processorConfigured: false, lastSyncedAt: null as string | null, pending: false, failed: false };
   try {
     connections = await listConnections(userId);
+    autoStatus = await getAutoSyncStatus(userId);
   } catch (err) {
     console.error("FinancesPage: connections load failed.", err);
   }
@@ -278,7 +281,7 @@ export default async function FinancesPage({
           <span className="tier-name">Imported activity</span>
           <span className="tier-sub">bank evidence · read-only · separate from Xanther activity</span>
         </div>
-        <ImportedActivity connections={connections} />
+        <ImportedActivity connections={connections} autoStatus={autoStatus} />
       </section>
 
       {/* 2b — Projected balances (deterministic forecast, separate from actual) */}

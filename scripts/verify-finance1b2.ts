@@ -283,7 +283,10 @@ async function main() {
     // approved build). The 1B.2 invariant: the ACCOUNT-sync service does not sync
     // transactions (kept distinct from the transaction-sync service).
     ok("[53] account-sync service does not perform transaction synchronization", !/syncTransactions\(|imported_transactions/.test(svcSrc));
-    ok("[54] no webhook", /verifyWebhook: notImplemented/.test(adapterSrc) && !existsSync("app/api/finances/connections/webhook") && !existsSync("app/api/webhooks"));
+    // NOTE: verified webhooks are intentionally added by Finance 1B.3B (separate,
+    // approved build). The 1B.2 invariant: the ACCOUNT-sync service has no webhook
+    // handling.
+    ok("[54] account-sync service performs no webhook handling", !/verifyWebhook|webhook/i.test(svcSrc));
     ok("[55] no transaction matching", !/match/i.test(stripComments(svcSrc)) && !existsSync("lib/services/matching.ts"));
     ok("[56] no bill/income/transfer evidence confirmation", !/confirm.*(bill|income|transfer).*evidence|evidence.*confirm/i.test(stripComments(svcSrc)));
     ok("[57] no money movement", !/transfer|payment|moveMoney|paymentInitiation/i.test(stripComments(svcSrc + adapterSrc)));

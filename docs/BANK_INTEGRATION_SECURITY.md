@@ -137,10 +137,66 @@ server, scripts), the same variable *names* must be available locally — e.g. a
 if the repo is linked. `BANK_TOKEN_ENC_KEY` must be the **same** value locally and in Netlify so
 ciphertext stays compatible.
 
+## Webhook verification + automatic sync (Finance 1B.3B)
+
+`POST /api/webhooks/plaid` is **public** (Plaid calls it, not the owner) and is **exempt from the
+owner-session gate** in `middleware.ts`. Trust comes ONLY from cryptographic verification, never a
+login session:
+- the `Plaid-Verification` header is a JWT that must be **ES256** (verified with `jose`, never
+  hand-rolled); its key is fetched by `kid` from Plaid's verification-key endpoint and **cached by
+  env+kid** with a bounded TTL (access tokens are never cached here);
+- the `iat` must be within **5 minutes**; SHA-256 of the **exact raw body** must constant-time-match the
+  signed `request_body_sha256`. Any missing/malformed/wrong-alg/unknown-key/bad-signature/stale/body-
+  mismatch fails closed.
+
+A verified webhook is only a **notification** — transactions are always retrieved via the existing
+`/transactions/sync` lifecycle. Intake durably records a bounded, non-secret `plaid_webhook_events` row
+(idempotent by `body_hash`; **no token/encryption-field/raw-payload/account-number/transaction stored**),
+then the route **ack's promptly** (Plaid's 10-second window) and processing happens **durably in the
+background** — the route does **not** run the full sync inline. The **active primary processor** is a
+**Netlify Background Function** (`netlify/functions/process-plaid-webhooks-background.mts`; the
+`-background` suffix → returns 202, runs ~15 min, Netlify auto-retries), triggered by the route only
+after the event is durably stored. It claims pending/failed/**stale-`processing`** events **atomically**
+(overlapping invocations can't double-process), runs the existing fetch→buffer→atomic sync, marks
+`processed` only on success, and on failure preserves the event (bounded retry) + the prior cursor +
+imported state. **Stale-claim recovery:** a `processing` claim older than **5 minutes** (a crashed/
+timed-out worker) is re-claimable. The **active recovery backstop** is the **enabled** scheduled drainer
+`netlify/functions/drain-plaid-webhooks.mts` (every 10 min, small bounded batch, same atomic claim). The
+connection is resolved by `provider_item_id` (never a body-supplied user id); an unknown item or a
+non-sandbox connection mutates no owner data. The **manual Sync transactions** button remains.
+**Invariant:** a verified, durably stored event is never acked-then-lost — it stays recoverably pending/
+processing/failed until durably processed/ignored or truthfully retry-exhausted.
+
+**Internal processor access control.** The Background Function endpoint is publicly reachable, so it is
+protected by a **dedicated server-only secret** `PLAID_WEBHOOK_PROCESSOR_SECRET` — deliberately **not**
+`PLAID_SECRET`, `BANK_TOKEN_ENC_KEY`, a session secret, an access token, or the webhook JWT. The webhook
+route sends it in a bounded header `X-Xanther-Webhook-Processor-Key` **server-to-server only** (never to
+Plaid, the browser, or a Link-token response). The function reads the expected secret server-side, reads
+the supplied header, **constant-time compares** (`timingSafeEqual`, length-guarded), and rejects missing/
+incorrect credentials with a generic **401** **before any database query, claim, or Plaid call**; a
+missing server-side secret **fails closed**; the credential is never logged or returned. The **scheduled
+drainer** calls the shared processing service **directly** from trusted Netlify scheduled execution — it
+requires no HTTP secret and remains the recovery path if Background Function triggering is unauthorized
+or fails. **Invariant:** no unauthenticated/incorrectly-authenticated caller can cause webhook-event
+processing work. If the secret is unset, the owner-facing status truthfully says automatic processing
+isn't fully configured and the manual button still works.
+
+**Deployment requirements (Finance 1B.3B):** set **`PLAID_WEBHOOK_URL`** (server-only, HTTPS, pointing
+at the deployed `/api/webhooks/plaid`) **and `PLAID_WEBHOOK_PROCESSOR_SECRET`** (server-only, a strong
+random value dedicated to internal processor authorization) in Netlify; new Link tokens then include the
+URL, and an existing Sandbox Item can be updated via `configureConnectionWebhook` (Plaid Item webhook-
+update). Apply migration `0015`. The **background processor** + the **scheduled drainer** are active
+in-code (their schedules/triggers are declared in the function files, not gated by `netlify.toml`), so
+no extra enabling step is needed. Without `PLAID_WEBHOOK_URL`, automatic updates degrade truthfully (the
+UI says they aren't configured); without `PLAID_WEBHOOK_PROCESSOR_SECRET`, the background trigger fails
+closed (the UI says background processing isn't fully configured) and the scheduled drainer still
+recovers events — the manual button works in both cases.
+
 ## What is NOT functional yet (deferred to later 1B phases)
 
-No account import, balance display, transaction sync, webhooks, transaction matching, update/
-repair mode, real Chase/BofA (needs eligible Production + OAuth), or any money movement.
+No transaction matching, bill/income/transfer confirmation, update/repair mode, real Chase/BofA
+(needs eligible Production + OAuth), or any money movement. **Before Production:** Plaid Production
+onboarding + OAuth redirect registration, real-data 90-day history policy, and operational monitoring.
 
 ## Approved first-version defaults (owner-approved)
 

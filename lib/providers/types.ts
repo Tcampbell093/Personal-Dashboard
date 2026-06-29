@@ -163,5 +163,9 @@ export interface VerifiedWebhook {
   readonly providerItemId: string;
   readonly webhookType: string;
   readonly webhookCode: string;
+  /** Provider request id (non-secret, bounded — for audit). */
+  readonly providerRequestId: string | null;
+  /** SHA-256 hex of the verified raw body — the durable idempotency key. */
+  readonly bodyHash: string;
   readonly verified: true;
 }

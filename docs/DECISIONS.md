@@ -592,6 +592,67 @@
   + typecheck + build + all regressions green + secret scan clean. Owner's real Sandbox connection
   untouched. Older suites' superseded `!/plaid/i`/migration/scope guards updated (disclosed NOTEs).
 
+### ADR-032 — Finance 1B.3B: verified Plaid Sandbox webhooks + automatic sync
+- **Classification:** Owner-approved decision (owner approved the 1B.3B scope).
+- **Detail:** Adds **automatic** transaction sync via a verified Plaid webhook — still Sandbox-only,
+  read-only, owner-only; **no** Production, OAuth, matching, bill/income/transfer confirmation, AI, or
+  money movement. A webhook is only a NOTIFICATION; transactions are always retrieved through the
+  existing `/transactions/sync` lifecycle.
+  - **Dependency:** `jose` (maintained JWT/JWK library) for ES256 verification — never hand-rolled crypto.
+  - **Trust = cryptography, not the login session.** `POST /api/webhooks/plaid` is **public** (exempt
+    from the owner-session gate in `middleware.ts`). The verifier (`lib/providers/plaid/webhook.ts`)
+    reads the exact raw body, requires the `Plaid-Verification` JWT to be **ES256**, fetches the matching
+    public key by `kid` from Plaid's verification-key endpoint (cached by **env+kid**, bounded TTL, never
+    caching tokens), verifies the signature, rejects a stale `iat` (5-min window), and constant-time-
+    compares SHA-256 of the **exact raw body** to the signed `request_body_sha256`. Missing/malformed/
+    wrong-alg/unknown-key/bad-sig/stale/body-mismatch all fail closed.
+  - **Durable intake + idempotency:** `plaid_webhook_events` (migration `0015`, additive) stores ONLY
+    bounded non-secret metadata (NO token, encryption fields, raw payload, account numbers, or
+    transaction data). Idempotent by `body_hash` (unique) — a duplicate delivery creates no second event
+    or job. Only `TRANSACTIONS / SYNC_UPDATES_AVAILABLE` acts; other validly-signed events are `ignored`.
+  - **Processing mechanism (reliability correction — ack fast, process durably in the background):** the
+    route **verifies → durably stores the event → triggers a Netlify Background Function → ack's
+    promptly**. It does **NOT** run the full sync inline (Plaid's 10-second window is not safe for cold
+    starts + multi-page + retries). The ack means only "the verified notification was safely received".
+    The **active primary processor** is `netlify/functions/process-plaid-webhooks-background.mts` (the
+    `-background` suffix → returns 202, runs ~15 min, Netlify auto-retries). It claims pending/failed/
+    **stale-`processing`** events **atomically** (so overlapping invocations can't double-process), runs
+    the **existing** fetch→buffer→atomic sync, marks `processed` only on success, and on failure
+    preserves the event (bounded retry) + the prior cursor + imported state. **Stale-claim recovery:** a
+    `processing` claim older than **5 minutes** (a crashed/timed-out worker) is re-claimable, so a
+    verified event is never lost. The **active recovery backstop** is the scheduled drainer
+    `netlify/functions/drain-plaid-webhooks.mts` (**enabled** in-code, every 10 min, small bounded batch)
+    — it catches anything the background invocation missed via the same atomic claim. The **manual Sync
+    transactions** button remains. **Invariant:** every verified supported event is recoverably pending/
+    processing/failed or durably processed/ignored — never acked then silently lost.
+  - **Webhook config:** new Link tokens include `PLAID_WEBHOOK_URL` (server-only) when set;
+    `configureConnectionWebhook` updates an existing Item's webhook via Plaid's Item webhook-update
+    endpoint (fails closed / degrades truthfully when the URL is unset). The URL is never exposed to the
+    browser as a secret. Unknown items + non-sandbox connections mutate no owner data.
+  - **Internal processor access control (correction):** the Background Function endpoint is publicly
+    reachable, so it requires a **dedicated server-only secret** `PLAID_WEBHOOK_PROCESSOR_SECRET` (NEVER
+    `PLAID_SECRET`, `BANK_TOKEN_ENC_KEY`, a session secret, an access token, or the webhook JWT) in a
+    bounded header `X-Xanther-Webhook-Processor-Key`, **constant-time compared** (`timingSafeEqual`,
+    length-guarded) **before any DB query, claim, or Plaid call**. Missing/incorrect → generic **401**
+    with no work; a missing server-side secret **fails closed**; the credential is never logged or
+    returned. The webhook route supplies it **server-to-server only** (never to Plaid/browser/Link token).
+    The **scheduled drainer** calls the shared service **directly** from trusted Netlify execution — it
+    needs no HTTP secret and stays the recovery path when the trigger is unauthorized/fails. If the secret
+    is unset, the UI says background processing isn't fully configured (manual sync still works).
+    **Invariant:** no unauthenticated/incorrectly-authenticated caller can cause webhook-event processing.
+  - **UI status (truthful):** the owner-facing line distinguishes not-configured / **processor-not-
+    configured** / notification received (syncing) / automatic sync failed (retrying) / automatic updates
+    on + last automatic sync — it never claims automatic updates are working merely because a URL is set.
+    Manual sync stays available.
+- **Evidence:** `scripts/verify-finance1b3b.ts` (93/93, incl. accept + 8 reject paths, idempotent
+  intake, atomic claim, retry + exhaustion, failure-preserves-cursor, a LIVE webhook → real Plaid sync,
+  unknown-item/no-mutation, owner protection, the reliability correction `[R1]–[R20]`, **+ the access-
+  control correction `[A1]–[A20]`: missing/incorrect/correct-header auth, timing-safe compare, fail-
+  closed-when-unset, unauthorized-does-no-work, no-credential-in-responses/logs/bundles, server-to-server
+  only, drainer-recovers-without-secret, and the no-unauthenticated-processing invariant**) + all
+  regressions green + typecheck + build + secret scan + a public-route reject test + authenticated
+  `/finances` render. Owner's BofA connection + 19 imported transactions + Plaid Checking preserved.
+
 ### ADR-031 — Finance 1B.3A.1: Imported-activity usability + test-cleanup hardening
 - **Classification:** Owner-approved decision (owner approved the 1B.3A.1 polish-and-safety scope).
 - **Detail:** Two bounded changes, **no** new schema/route/provider work (no webhooks, matching, AI,

@@ -12,9 +12,34 @@
 
 ## Next approved task
 
-### Finance 1B.3A.1 — Imported-activity usability + test-cleanup hardening
+### Finance 1B.3B — verified Plaid Sandbox webhooks + automatic transaction sync
 
-- **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** Polish + safety, **no** new
+- **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** A **public** `POST
+  /api/webhooks/plaid` (gate-exempt) cryptographically verifies the Plaid webhook (ES256 via `jose` +
+  exact-raw-body SHA-256 + 5-min `iat`; keys cached by env+kid), durably records a bounded non-secret
+  event (`plaid_webhook_events`, migration `0015`, idempotent by `body_hash`), then **ack's promptly**
+  and processes durably in a **Netlify Background Function** (`process-plaid-webhooks-background.mts`)
+  reusing the **existing** fetch→buffer→atomic sync — so Imported Activity updates without pressing Sync
+  and the route never risks Plaid's 10s window. Atomic claims + **stale-`processing` recovery (5 min)** +
+  an **enabled** scheduled drainer backstop (`drain-plaid-webhooks.mts`, every 10 min) ensure a verified
+  event is **never silently lost**; failures preserve the cursor + imported state (bounded retry); the
+  **manual Sync button remains**; the auto-update UI status is truthful. The Background Function endpoint
+  is **access-controlled** by a dedicated server-only secret `PLAID_WEBHOOK_PROCESSOR_SECRET` (bounded
+  header, constant-time compare, fail-closed, rejected before any DB/Plaid work, server-to-server only);
+  the scheduled drainer needs no HTTP secret. New dependency `jose`. `scripts/verify-finance1b3b.ts` =
+  **93/93** (accept + 8 reject paths, idempotent intake, atomic claim, retry/exhaustion, failure-
+  preserves-cursor, LIVE webhook→real sync, unknown-item-no-mutation, owner protection, `[R1]–[R20]`
+  reliability, **+ `[A1]–[A20]` access control: header auth, timing-safe compare, fail-closed,
+  unauthorized-does-no-work, no-credential-leak, server-to-server only, drainer-recovers-without-secret,
+  no-unauthenticated-processing invariant**). Sandbox-only, read-only, **no** matching/Production/OAuth/
+  money-movement. **Deployment:** set `PLAID_WEBHOOK_URL` **and `PLAID_WEBHOOK_PROCESSOR_SECRET`** in
+  Netlify + apply migration `0015`; the background + scheduled functions are active in-code (see
+  `docs/BANK_INTEGRATION_SECURITY.md`). The next approved bank gate after review is **transaction
+  matching** (bills → income → transfers) — separate authorization required.
+
+### Finance 1B.3A.1 — Imported-activity usability + test-cleanup hardening (committed `130b2d8`)
+
+- **Status:** **COMMITTED & PUSHED (`608d52d`/`130b2d8`).** Polish + safety, **no** new
   schema/route/migration. **Imported Activity** on `/finances` now defaults to the most recent **10**
   rows with **Show more/less** + **Account / Status / Date (default Last 90 days)** filters + a truthful
   **"Showing X of Y"** count (client-side over one bounded deterministic fetch; filters never sync or

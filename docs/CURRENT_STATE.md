@@ -9,7 +9,23 @@
 > only; technical identifiers (routes, DB, env vars, the `Personal-Dashboard` repo) keep their
 > original names. See `docs/DECISIONS.md` ADR-026.
 
-**Last updated:** 2026-06-26 · **Reflects branch:** `main` (Finance 1B.3A committed `6c613a1`; Finance 1B.3A.1 uncommitted)
+**Last updated:** 2026-06-26 · **Reflects branch:** `main` (Finance 1B.3A.1 committed `130b2d8`; Finance 1B.3B uncommitted)
+
+> **Finance 1B.3B — verified Plaid Sandbox webhooks + automatic transaction sync — implemented
+> (uncommitted).** A **public** `POST /api/webhooks/plaid` cryptographically verifies the Plaid webhook
+> (ES256 signature via `jose` + raw-body hash + 5-min `iat`), durably records a bounded non-secret event
+> (`plaid_webhook_events`, migration `0015`, idempotent by body hash), then **ack's promptly** and runs
+> the existing fetch→buffer→atomic sync **in a Netlify Background Function** (`process-plaid-webhooks-
+> background.mts`) — so Imported Activity updates **without** pressing Sync, and the route never risks
+> Plaid's 10s window. Trust is the signature, not the login session (route is gate-exempt). Atomic
+> claims + **stale-`processing` recovery (5 min)** + an **enabled** scheduled drainer backstop (every
+> 10 min) make a verified event **never silently lost**; failures preserve the cursor + imported state
+> for bounded retry; the **manual Sync button remains**. The Background Function endpoint is **access-
+> controlled** by a dedicated server-only secret `PLAID_WEBHOOK_PROCESSOR_SECRET` (bounded header,
+> constant-time compare, fail-closed, rejected before any DB/Plaid work, server-to-server only); the
+> scheduled drainer needs no HTTP secret. The auto-update UI status is truthful (configured / processor-
+> not-configured / received / syncing / failed / last sync). Still Sandbox-only, read-only, no
+> matching/Production/OAuth/money-movement. See `docs/DECISIONS.md` ADR-032.
 
 > **Finance 1B.3A.1 — Imported-activity usability + test-cleanup hardening — implemented (uncommitted).**
 > `/finances` Imported Activity now shows the most recent **10** transactions with **Show more/less** +

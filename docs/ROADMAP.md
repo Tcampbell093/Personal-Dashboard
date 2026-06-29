@@ -31,9 +31,11 @@
   **transaction import** — read-only bank evidence in `imported_transactions` + an Imported activity
   section, separate from the manual ledger) and **1B.3A.1** (Imported-activity usability — 10-row
   default + Show more/less + Account/Status/Date filters — and verification-harness cleanup hardening)
-  are **done**. **Matching is still not functional** — no
-  webhooks or transaction matching yet; **read-only, no money movement**. Next: **1B.3B**
-  (webhook-triggered automatic sync), then matching (bills → income incl. split deposits → transfers),
+  and **1B.3B** (verified Plaid webhooks → automatic transaction sync: a public, signature-verified
+  `/api/webhooks/plaid`, durable idempotent `plaid_webhook_events`, synchronous bounded processing reusing
+  the existing sync, manual button retained) are **done**. **Matching is still not functional** — no
+  transaction matching yet; **read-only, no money movement**. Next: matching (bills → income incl. split
+  deposits → transfers),
   the **manual→linked authority-handoff** transition (deferred from 1B.2), and repair/disconnect
   hardening. Real Chase/BofA need eligible Production/OAuth (a later owner step). See
   `docs/BANK_INTEGRATION_SECURITY.md` and `docs/DECISIONS.md` ADR-027/028/029/030. (The active approved

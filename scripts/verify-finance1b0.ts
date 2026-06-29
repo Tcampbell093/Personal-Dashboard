@@ -307,9 +307,12 @@ async function main() {
   // NOTE: the transaction-sync + listing routes are intentionally added by Finance
   // 1B.3A (separate, approved build). The forward invariant: no WEBHOOK route and
   // no money-movement/import route exist yet.
-  ok("[21] no webhook / money-movement bank routes exist",
-    !existsSync("app/api/finances/connections/[id]/webhook") && !existsSync("app/api/finances/accounts/import") &&
-    !existsSync("app/api/plaid") && !existsSync("app/api/webhooks"));
+  // NOTE: the verified Plaid webhook (app/api/webhooks/plaid) is intentionally
+  // added by Finance 1B.3B (separate, approved build). The 1B.0 invariant: no
+  // money-movement / import bank routes exist.
+  ok("[21] no money-movement / account-import bank routes exist",
+    !existsSync("app/api/finances/accounts/import") && !existsSync("app/api/plaid") &&
+    !existsSync("app/api/finances/move-money"));
   const schemaSrc = read("db/schema.ts");
   ok("[22] no LATER-phase connection tables exist yet (mappings/imported/sync/match)",
     !/pgTable\(\s*["'](provider_account_mappings|connection_sync_requests|connection_sync_runs|transaction_matches|match_evidence)["']/.test(schemaSrc));
@@ -317,7 +320,7 @@ async function main() {
   // 0009/0010, the rename added none, 1B.1 added 0011).
   const migFiles = existsSync("db/migrations") ? readdirSync("db/migrations").filter((f) => f.endsWith(".sql")) : [];
   const maxMig = migFiles.map((f) => parseInt(f.slice(0, 4), 10)).reduce((a, b) => Math.max(a, b), -1);
-  ok("[23] migrations are sequential + additive/constraint-only (latest is 1B.3A's 0014)", maxMig === 14);
+  ok("[23] migrations are sequential + additive/constraint-only (latest is 1B.3B's 0015)", maxMig === 15);
   // [24] no external provider API call: no plaid.com API URL anywhere in code.
   ok("[24] no external provider API call occurs (no plaid.com API URL in code)",
     !/https?:\/\/[^"'\s]*plaid\.com/.test(providerBlob + read("app/finances/page.tsx")));

@@ -15,7 +15,14 @@
 #
 # [functions."generate-daily-briefing"]
 #   schedule = "0 11 * * *"
+#
+# Finance 1B.3B webhook processors (schedules declared IN-CODE via `config`):
+#   • process-plaid-webhooks-background.mts — Netlify BACKGROUND Function (active
+#     primary processor; HTTP-triggered by the webhook route; ~15-min, auto-retry).
+#   • drain-plaid-webhooks.mts — scheduled recovery BACKSTOP (active; every 10 min
+#     via `export const config = { schedule }` — catches events the background
+#     invocation missed; atomic claims prevent double-processing).
 
 [functions]
-  # .mts scheduled functions live here
+  # .mts scheduled + background functions live here
   directory = "netlify/functions"

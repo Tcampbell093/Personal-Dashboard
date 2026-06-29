@@ -913,6 +913,47 @@ export const importedTransactions = pgTable(
   ],
 );
 
+// Finance 1B.3B: durable webhook-event lifecycle. `received` → `processing` →
+// `processed`; `failed` (retryable, bounded); `ignored` (validly signed but an
+// unsupported type/code — no sync).
+export const webhookEventStatus = pgEnum("webhook_event_status", ["received", "processing", "processed", "failed", "ignored"]);
+
+/* Finance 1B.3B — a verified Plaid webhook delivery. Stores ONLY bounded,
+ * non-secret metadata (NO access token, encryption fields, raw payload, account
+ * numbers, or transaction data). A webhook is just a NOTIFICATION — the
+ * authoritative transactions are always retrieved through `/transactions/sync`.
+ * Idempotent by `bodyHash` (an identical re-delivery is deduped). Not tied to a
+ * user via the body — the connection is resolved server-side by providerItemId. */
+export const plaidWebhookEvents = pgTable(
+  "plaid_webhook_events",
+  {
+    id: serial("id").primaryKey(),
+    provider: varchar("provider", { length: 40 }).notNull().default("plaid"),
+    environment: varchar("environment", { length: 20 }).notNull().default("sandbox"),
+    webhookType: varchar("webhook_type", { length: 60 }).notNull(),
+    webhookCode: varchar("webhook_code", { length: 80 }).notNull(),
+    // Non-secret Plaid item_id (used to resolve the connection server-side).
+    providerItemId: varchar("provider_item_id", { length: 255 }).notNull(),
+    providerRequestId: varchar("provider_request_id", { length: 120 }),
+    // SHA-256 hex of the verified raw body — the durable idempotency key.
+    bodyHash: varchar("body_hash", { length: 64 }).notNull(),
+    status: webhookEventStatus("status").notNull().default("received"),
+    receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+    processingStartedAt: timestamp("processing_started_at", { withTimezone: true }),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    lastErrorCode: varchar("last_error_code", { length: 80 }),
+    lastErrorMessage: varchar("last_error_message", { length: 300 }),
+    ...timestamps,
+  },
+  (t) => [
+    index("plaid_webhook_events_status_idx").on(t.status, t.webhookCode),
+    index("plaid_webhook_events_item_idx").on(t.providerItemId),
+    // Durable idempotency: an identical re-delivery (same verified body) dedups.
+    uniqueIndex("plaid_webhook_events_body_hash_uq").on(t.bodyHash),
+  ],
+);
+
 /* -------------------------------------------------------------- signals --- */
 
 export const signalSources = pgTable("signal_sources", {

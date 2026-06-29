@@ -28,7 +28,9 @@ function cutoffIso(range: DateRange): string | null {
   return d.toISOString().slice(0, 10);
 }
 
-export function ImportedActivity({ connections }: { connections: ConnectionView[] }) {
+interface AutoStatus { configured: boolean; processorConfigured: boolean; lastSyncedAt: string | null; pending: boolean; failed: boolean }
+
+export function ImportedActivity({ connections, autoStatus }: { connections: ConnectionView[]; autoStatus: AutoStatus }) {
   const [txns, setTxns] = useState<ImportedTransactionView[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [syncing, setSyncing] = useState<number | null>(null);
@@ -123,11 +125,20 @@ export function ImportedActivity({ connections }: { connections: ConnectionView[
         )}
       </div>
 
-      {connections.some((c) => c.lastTransactionSyncedAt) && (
-        <p className="sub">
-          Last synced {new Date(connections.map((c) => c.lastTransactionSyncedAt).filter(Boolean).sort().reverse()[0] as string).toLocaleString()}.
-        </p>
-      )}
+      <p className="sub">
+        {!autoStatus.configured
+          ? "Automatic updates aren’t configured — use Sync transactions to import new activity."
+          : !autoStatus.processorConfigured
+            ? "Automatic processing is not fully configured — notifications can be received, but background processing requires configuration. You can still Sync transactions manually."
+            : autoStatus.pending
+              ? "A bank notification was received — syncing new activity…"
+              : autoStatus.failed
+                ? "Automatic sync didn’t complete and will retry. You can also Sync transactions manually."
+                : "Automatic updates are on — new activity imports when your bank reports it. You can also sync manually."}
+        {autoStatus.lastSyncedAt && (
+          <> Last automatic sync {new Date(autoStatus.lastSyncedAt).toLocaleString()}.</>
+        )}
+      </p>
 
       {error && <p className="taskadd-error" role="alert">{error}</p>}
 

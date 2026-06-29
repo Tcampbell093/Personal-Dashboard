@@ -29,7 +29,9 @@ import type {
   PublicCredentialExchange,
   RemovedTransactionRef,
   TransactionSyncPage,
+  VerifiedWebhook,
 } from "../types";
+import { verifyPlaidWebhook, WebhookVerificationError } from "./webhook";
 import { MutationDuringPaginationError } from "../types";
 import { toXantherAmount } from "../amount";
 import { plaidClient } from "./client";
@@ -106,6 +108,9 @@ export const plaidAdapter: BankProvider = {
 
   async createLinkSession(input: CreateLinkSessionInput): Promise<LinkSession> {
     const client = plaidClient();
+    // Finance 1B.3B: attach the webhook URL (server-only env) so new Items send
+    // SYNC_UPDATES_AVAILABLE. Omitted when unset (manual sync still works).
+    const webhook = process.env.PLAID_WEBHOOK_URL;
     const resp = await client.linkTokenCreate({
       user: { client_user_id: String(input.userId) },
       client_name: "Xanther",
@@ -115,8 +120,32 @@ export const plaidAdapter: BankProvider = {
       products: [Products.Transactions],
       country_codes: [CountryCode.Us],
       language: "en",
+      ...(webhook ? { webhook } : {}),
     });
     return { linkToken: resp.data.link_token, expiresAt: resp.data.expiration };
+  },
+
+  // Finance 1B.3B: verify a Plaid webhook (ES256 signature + raw-body hash + iat),
+  // then parse the verified body for the bounded event fields.
+  async verifyWebhook(input: { headers: Readonly<Record<string, string>>; rawBody: string }): Promise<VerifiedWebhook> {
+    const { bodyHash } = await verifyPlaidWebhook(input.rawBody, input.headers);
+    let body: { webhook_type?: string; webhook_code?: string; item_id?: string; request_id?: string };
+    try {
+      body = JSON.parse(input.rawBody);
+    } catch {
+      throw new WebhookVerificationError("MALFORMED_BODY", "Webhook body is not valid JSON.");
+    }
+    if (!body.webhook_type || !body.webhook_code || !body.item_id) {
+      throw new WebhookVerificationError("INCOMPLETE_BODY", "Webhook body is missing required fields.");
+    }
+    return {
+      providerItemId: body.item_id,
+      webhookType: body.webhook_type,
+      webhookCode: body.webhook_code,
+      providerRequestId: body.request_id ?? null,
+      bodyHash,
+      verified: true,
+    };
   },
 
   async exchangePublicCredential(input: { publicToken: string }): Promise<PublicCredentialExchange> {
@@ -217,8 +246,13 @@ export const plaidAdapter: BankProvider = {
 
   // Deferred to later Finance 1B phases — fail loudly if called now.
   createUpdateLinkSession: notImplemented("createUpdateLinkSession"),
-  verifyWebhook: notImplemented("verifyWebhook"),
 };
+
+/** Finance 1B.3B: update an existing Item's webhook URL (Sandbox). Standalone
+ * (not a BankProvider method); never logs the access token. */
+export async function updateItemWebhook(access: ProviderAccessToken, webhookUrl: string): Promise<void> {
+  await plaidClient().itemWebhookUpdate({ access_token: access, webhook: webhookUrl });
+}
 
 /**
  * SANDBOX-ONLY test helper: mint a public token for a fake Sandbox institution

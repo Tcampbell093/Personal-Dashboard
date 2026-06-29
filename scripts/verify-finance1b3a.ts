@@ -332,7 +332,9 @@ async function main() {
   console.log("\n[/finances UI]");
   ok("[40] /finances shows Imported activity", /Imported activity/.test(pageSrc) && /ImportedActivity/.test(pageSrc));
   ok("[41] Sync-transactions control renders", /Sync transactions/.test(uiSrc) && /transactions\/sync/.test(uiSrc));
-  ok("[42] last-sync timestamp renders", /lastTransactionSyncedAt|Last synced/.test(uiSrc));
+  // NOTE: Finance 1B.3B refined this to a richer auto-sync status ("Last automatic
+  // sync …" from `autoStatus.lastSyncedAt").
+  ok("[42] last-sync timestamp renders", /lastSyncedAt|Last automatic sync|Last synced/.test(uiSrc));
   ok("[43] description/merchant renders", /merchantName|descriptionCurrent/.test(uiSrc));
   ok("[44] signed amount renders correctly (+/−)", /\+.*−|amount >= 0 \? "\+"/.test(uiSrc) || /n >= 0 \? "\+" : "−"/.test(uiSrc));
   ok("[45] account label renders", /accountLabel/.test(uiSrc));
@@ -347,7 +349,10 @@ async function main() {
   /* ============ scope protection ============ */
   console.log("\n[scope protection]");
   ok("[53] Sandbox only (sync enforces environment === 'sandbox')", /environment !== ["']sandbox["']/.test(svcSrc));
-  ok("[54/55] no webhook route / no OAuth work in this build", !existsSync("app/api/finances/connections/[id]/webhook") && !existsSync("app/api/webhooks") && !/verifyWebhook\(/.test(svcSrc));
+  // NOTE: verified webhooks are intentionally added by Finance 1B.3B (separate,
+  // approved build). The 1B.3A invariant: the manual transaction-sync SERVICE does
+  // no webhook/OAuth work (the webhook route reuses this same sync service).
+  ok("[54/55] manual transaction-sync service has no webhook/OAuth work", !/verifyWebhook|oauth|redirect_uri/i.test(svcSrc));
   ok("[56] no automatic synchronization (manual route only)", !/setInterval|cron|scheduler|background/i.test(stripComments(svcSrc)));
   ok("[57/58/59] no bill/income/transfer matching or pairing", !/matchBill|matchIncome|pairTransfer|confirmFrom/i.test(svcSrc));
   ok("[60] no AI categorization", !/anthropic|openai|classify|categorizeWithAI|messages\.create/i.test(svcSrc + adapterSrc));

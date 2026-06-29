@@ -7,8 +7,10 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { verifySessionToken, COOKIE_NAME, isAuthConfigured } from "@/lib/session";
 
-// Reachable without a session.
-const PUBLIC_PATHS = new Set(["/login", "/api/login", "/api/logout"]);
+// Reachable without a session. The Plaid webhook (Finance 1B.3B) is PUBLIC by
+// design — Plaid (not the owner) calls it, and its trust is the verified ES256
+// signature, NOT the login session — so it must not be gated.
+const PUBLIC_PATHS = new Set(["/login", "/api/login", "/api/logout", "/api/webhooks/plaid"]);
 
 export async function middleware(req: NextRequest) {
   if (!isAuthConfigured()) return NextResponse.next();

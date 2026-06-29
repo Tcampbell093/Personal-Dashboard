@@ -260,9 +260,12 @@ async function main() {
   // deferred (notImplemented).
   ok("[52] adapter transaction sync normalizes amounts to Xanther's convention",
     /normalizePlaidTransactionAmount/.test(adapterSrc) && /outflow_positive/.test(adapterSrc));
-  ok("[53] update mode + webhook remain deferred (notImplemented)",
-    /createUpdateLinkSession: notImplemented/.test(adapterSrc) && /verifyWebhook: notImplemented/.test(adapterSrc));
-  ok("[54] no webhook", /verifyWebhook: notImplemented/.test(adapterSrc) && !existsSync("app/api/finances/connections/webhook") && !existsSync("app/api/webhooks"));
+  // NOTE: verified webhooks are intentionally added by Finance 1B.3B (separate,
+  // approved build). The 1B.1 invariant becomes: update mode is still deferred.
+  ok("[53] update mode (createUpdateLinkSession) remains deferred (notImplemented)",
+    /createUpdateLinkSession: notImplemented/.test(adapterSrc));
+  ok("[54] the webhook is VERIFIED (signature/raw-body hash), not a blind receiver",
+    /verifyPlaidWebhook/.test(adapterSrc) && /Plaid-Verification/.test(read("lib/providers/plaid/webhook.ts")));
   ok("[55] no transaction matching", !/match/i.test(svcSrc) && !existsSync("lib/services/matching.ts"));
   ok("[56] no money movement (no transfer/payment code; comments excluded)",
     !/transfer|payment|moveMoney|paymentInitiation/i.test(stripComments(svcSrc + adapterSrc)));
