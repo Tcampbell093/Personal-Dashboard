@@ -9,10 +9,11 @@
 > only; technical identifiers (routes, DB, env vars, the `Personal-Dashboard` repo) keep their
 > original names. See `docs/DECISIONS.md` ADR-026.
 
-**Last updated:** 2026-06-26 · **Reflects branch:** `main` (Finance 1B.3A.1 committed `130b2d8`; Finance 1B.3B uncommitted)
+**Last updated:** 2026-06-29 · **Reflects branch:** `main` (Finance 1B.3B committed & pushed `3f7e617`; awaiting deployment config + live Sandbox webhook verification)
 
-> **Finance 1B.3B — verified Plaid Sandbox webhooks + automatic transaction sync — implemented
-> (uncommitted).** A **public** `POST /api/webhooks/plaid` cryptographically verifies the Plaid webhook
+> **Finance 1B.3B — verified Plaid Sandbox webhooks + automatic transaction sync — committed & pushed
+> (`3f7e617`); awaiting deployment config + live Sandbox webhook verification.** A **public** `POST
+> /api/webhooks/plaid` cryptographically verifies the Plaid webhook
 > (ES256 signature via `jose` + raw-body hash + 5-min `iat`), durably records a bounded non-secret event
 > (`plaid_webhook_events`, migration `0015`, idempotent by body hash), then **ack's promptly** and runs
 > the existing fetch→buffer→atomic sync **in a Netlify Background Function** (`process-plaid-webhooks-
@@ -26,6 +27,10 @@
 > scheduled drainer needs no HTTP secret. The auto-update UI status is truthful (configured / processor-
 > not-configured / received / syncing / failed / last sync). Still Sandbox-only, read-only, no
 > matching/Production/OAuth/money-movement. See `docs/DECISIONS.md` ADR-032.
+> **Deployment status (2026-06-29, names only):** migration `0015` is **applied** to the shared Neon DB;
+> `PLAID_WEBHOOK_URL` and `PLAID_WEBHOOK_PROCESSOR_SECRET` are **not yet configured** (must be set in
+> Netlify); the owner's BofA Sandbox Item has **no webhook configured yet** (left unchanged until the
+> deployed URL is set). Live Sandbox webhook verification is pending. See `docs/HANDOFF.md`.
 
 > **Finance 1B.3A.1 — Imported-activity usability + test-cleanup hardening — implemented (uncommitted).**
 > `/finances` Imported Activity now shows the most recent **10** transactions with **Show more/less** +

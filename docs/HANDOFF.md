@@ -12,9 +12,12 @@
 
 ## Next approved task
 
-### Finance 1B.3B — verified Plaid Sandbox webhooks + automatic transaction sync
+### Finance 1B.3B — verified Plaid Sandbox webhooks + automatic transaction sync (committed `3f7e617`)
 
-- **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** A **public** `POST
+- **Status:** **APPROVED · COMMITTED & PUSHED to `main` (`3f7e6170ac92503173cb22499239aef452cd7edf`);
+  working tree clean at completion.** Now **awaiting deployment configuration + live Sandbox webhook
+  verification** (see "Deployment status" below — this is operational follow-up, **not** a new finance
+  feature). A **public** `POST
   /api/webhooks/plaid` (gate-exempt) cryptographically verifies the Plaid webhook (ES256 via `jose` +
   exact-raw-body SHA-256 + 5-min `iat`; keys cached by env+kid), durably records a bounded non-secret
   event (`plaid_webhook_events`, migration `0015`, idempotent by `body_hash`), then **ack's promptly**
@@ -32,10 +35,35 @@
   reliability, **+ `[A1]–[A20]` access control: header auth, timing-safe compare, fail-closed,
   unauthorized-does-no-work, no-credential-leak, server-to-server only, drainer-recovers-without-secret,
   no-unauthenticated-processing invariant**). Sandbox-only, read-only, **no** matching/Production/OAuth/
-  money-movement. **Deployment:** set `PLAID_WEBHOOK_URL` **and `PLAID_WEBHOOK_PROCESSOR_SECRET`** in
-  Netlify + apply migration `0015`; the background + scheduled functions are active in-code (see
-  `docs/BANK_INTEGRATION_SECURITY.md`). The next approved bank gate after review is **transaction
-  matching** (bills → income → transfers) — separate authorization required.
+  money-movement.
+- **Deployment status (checked 2026-06-29; names only, no values):**
+  - **Migration `0015_bouncy_mandrill.sql`: APPLIED** to the shared Neon database (`plaid_webhook_events`
+    table + `webhook_event_status` enum + indexes present; migration history shows 16 entries through
+    `0015`). Do **not** re-run.
+  - **`PLAID_WEBHOOK_URL`: not configured locally** (absent from `.env` and `.env.local`). Must be set in
+    Netlify (server-only) as `https://<deployed-xanther-domain>/api/webhooks/plaid`.
+  - **`PLAID_WEBHOOK_PROCESSOR_SECRET`: not configured locally** (absent from `.env` and `.env.local`).
+    Must be set in Netlify (server-only, strong random, dedicated — never reused from another secret).
+  - **Owner's Bank of America Sandbox Item webhook: NOT configured** (read-only `itemGet` check; no
+    mutation, token never exposed). It was **not** updated because `PLAID_WEBHOOK_URL` is unset locally
+    and the deployed domain cannot be safely determined — set the env vars + deploy first, then update the
+    Item via `configureConnectionWebhook` (or let a new Link include the URL).
+  - **Live Sandbox webhook verification: PENDING** (requires the deployed endpoint).
+- **Owner deployment + live-verification checklist:**
+  1. Confirm the Netlify deploy of commit `3f7e617` completed.
+  2. Confirm both env vars are set in Netlify: `PLAID_WEBHOOK_URL` and `PLAID_WEBHOOK_PROCESSOR_SECRET`.
+  3. Confirm migration `0015` is applied (already APPLIED to shared Neon — no action unless deploying a
+     fresh database).
+  4. Update the existing BofA Sandbox Item webhook if needed (via `configureConnectionWebhook`, or
+     reconnect only if Plaid explicitly requires it).
+  5. Fire a Plaid Sandbox `SYNC_UPDATES_AVAILABLE` webhook (`/sandbox/item/fire_webhook`).
+  6. Confirm the event is accepted (route returns `{ ok: true }`; a row appears in `plaid_webhook_events`).
+  7. Confirm the background worker processes it (event status → `processed`).
+  8. Confirm Imported Activity on `/finances` updates **without** pressing Sync transactions.
+  9. Confirm firing the webhook again creates **no duplicate** imported transactions (idempotent).
+  10. Confirm **manual Sync transactions** still works.
+- The next approved bank gate after deployment/verification is **transaction matching** (bills → income →
+  transfers) — separate authorization required.
 
 ### Finance 1B.3A.1 — Imported-activity usability + test-cleanup hardening (committed `130b2d8`)
 
