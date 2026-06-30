@@ -309,8 +309,12 @@ export async function computeFinancialOutlook(
   const overdueCount = openBills.filter((b) => b.dueDate! < today).length;
 
   // Next payday: soonest upcoming payday-flagged income, else soonest income.
+  // Only still-scheduled occurrences are "expected" — a received or
+  // evidence-confirmed (1B.4B) occurrence already happened and is in the balance
+  // (manual ledger or provider-authoritative linked snapshot); counting it as
+  // expected would double-count.
   const upcoming = income
-    .filter((i) => i.payDate >= today)
+    .filter((i) => i.payDate >= today && i.status === "scheduled")
     .sort((a, b) => a.payDate.localeCompare(b.payDate));
   const nextPayday = upcoming.find((i) => i.isPayday) ?? upcoming[0] ?? null;
   const nextPaydayDate = nextPayday?.payDate ?? null;
@@ -318,7 +322,7 @@ export async function computeFinancialOutlook(
   // Income arriving before the next payday (e.g. side income), not the payday itself.
   const expectedIncomeBeforePayday = nextPaydayDate
     ? income
-        .filter((i) => i.payDate >= today && i.payDate < nextPaydayDate)
+        .filter((i) => i.payDate >= today && i.payDate < nextPaydayDate && i.status === "scheduled")
         .reduce((s, i) => s + i.expectedAmount, 0)
     : 0;
 

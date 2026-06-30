@@ -26,16 +26,27 @@ export interface MatchSuggestion {
   primary: TxnRef; secondary: TxnRef | null; target: TargetRef | null;
   amountDifference: number | null; dateDifferenceDays: number | null;
   confirmable: boolean; confirmBlockedReason: string | null;
+  confirmMode: "manual_workflow" | "linked_evidence" | null;
+  confirmation: { mode: string; confirmedAmount: number; confirmedDate: string | null; confirmedAt: string } | null;
   createdAt: string; reviewedAt: string | null; rejectionReason: string | null;
 }
 
 const TYPE_LABEL: Record<SuggestionType, string> = { bill_payment: "Bill payment", income_receipt: "Income", transfer_pair: "Transfer" };
 const CONF_LABEL = { high: "High confidence", medium: "Medium confidence", low: "Low confidence" } as const;
 const blockedNote = (reason: string | null): string =>
-  reason === "transfer_model_gap" ? "Confirmation isn’t supported yet for transfers."
-  : reason === "linked_account" ? "Confirmation isn’t supported yet for linked accounts."
+  reason === "account_combination" ? "Confirmation is not yet supported for this account combination."
   : reason === "no_destination" ? "Assign a destination account before confirming."
   : "Confirmation isn’t available for this suggestion yet.";
+
+// The confirmation dialog must state exactly what will (and will NOT) happen.
+function dialogText(s: MatchSuggestion): string {
+  if (s.suggestionType === "transfer_pair") return "This will mark the transfer confirmed using both imported bank transactions as evidence. It will not create new movements or change linked balances.";
+  if (s.suggestionType === "income_receipt" && s.confirmMode === "linked_evidence") return "This will mark the scheduled income as received using the imported bank transaction as evidence. It will not change the linked account balance.";
+  if (s.suggestionType === "bill_payment") return `This will mark ${s.target?.name ?? "the bill"} paid using the ${money(Math.abs(s.primary.amount))} transaction on ${s.primary.date ?? "its posted date"}.`;
+  return `This will mark ${s.target?.name ?? "the income"} received using the ${money(Math.abs(s.primary.amount))} transaction on ${s.primary.date ?? "its posted date"}.`;
+}
+// Evidence confirmations always show the dialog (they carry the "no balance change" notice).
+const needsDialog = (s: MatchSuggestion) => s.confirmMode === "linked_evidence" || s.confidence !== "high";
 
 export function SuggestedMatches({ initialPendingCount = 0 }: { initialPendingCount?: number }) {
   const [items, setItems] = useState<MatchSuggestion[]>([]);
@@ -46,14 +57,15 @@ export function SuggestedMatches({ initialPendingCount = 0 }: { initialPendingCo
   const [confirmingId, setConfirmingId] = useState<number | null>(null); // medium-confidence in-card confirm
   const [error, setError] = useState<string | null>(null);
   const [type, setType] = useState<TypeFilter>("all");
+  const [view, setView] = useState<"pending" | "confirmed">("pending");
   const [visible, setVisible] = useState(PAGE);
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch("/api/finances/matches?status=pending");
+      const res = await fetch(`/api/finances/matches?status=${view}`);
       if (res.ok) { const data = (await res.json()) as { suggestions: MatchSuggestion[] }; setItems(data.suggestions); }
     } catch { /* keep current list */ } finally { setLoaded(true); }
-  }, []);
+  }, [view]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -78,22 +90,27 @@ export function SuggestedMatches({ initialPendingCount = 0 }: { initialPendingCo
   }, [busyId, refresh]);
 
   const filtered = useMemo(() => (type === "all" ? items : items.filter((s) => s.suggestionType === type)), [items, type]);
-  useEffect(() => { setVisible(PAGE); }, [type]);
+  useEffect(() => { setVisible(PAGE); }, [type, view]);
   const shown = filtered.slice(0, visible);
 
-  const emptyMessage = !ran && items.length === 0
-    ? "Run Find matches after importing transactions."
-    : filtered.length === 0 && items.length > 0
-      ? "No suggestions for this filter."
-      : ran
-        ? "No likely matches found."
-        : "No suggestions yet.";
+  const emptyMessage = view === "confirmed"
+    ? "No confirmed matches yet."
+    : !ran && items.length === 0
+      ? "Run Find matches after importing transactions."
+      : filtered.length === 0 && items.length > 0
+        ? "No suggestions for this filter."
+        : ran
+          ? "No likely matches found."
+          : "No suggestions yet.";
 
   return (
     <div className="fin-imported">
       <div className="fin-imported-actions">
         <button type="button" className="btn" disabled={generating} aria-busy={generating} onClick={generate}>
           {generating ? "Finding matches…" : "Find matches"}
+        </button>
+        <button type="button" className="linkbtn" onClick={() => setView((v) => (v === "pending" ? "confirmed" : "pending"))}>
+          {view === "pending" ? "Show confirmed" : "Show pending"}
         </button>
       </div>
       <p className="fin-form-note">
@@ -151,11 +168,17 @@ export function SuggestedMatches({ initialPendingCount = 0 }: { initialPendingCo
 
                 <p className="sub fin-match-why">{s.explanation}</p>
 
-                {confirmingId === s.id ? (
+                {s.status === "confirmed" && s.confirmation ? (
+                  <p className="sub fin-match-evidence">
+                    <span className="fin-tag good">{s.confirmation.mode === "linked_evidence" ? "Confirmed using bank evidence" : "Confirmed"}</span>
+                    {" "}{money(s.confirmation.confirmedAmount)}{s.confirmation.confirmedDate ? ` on ${s.confirmation.confirmedDate}` : ""} · {new Date(s.confirmation.confirmedAt).toLocaleDateString()}
+                    {s.confirmation.mode === "linked_evidence" && <> · no balance change</>}
+                  </p>
+                ) : s.status === "confirmed" ? (
+                  <p className="sub fin-match-evidence"><span className="fin-tag good">Confirmed</span></p>
+                ) : confirmingId === s.id ? (
                   <div className="fin-match-confirm" role="group" aria-label="Confirm this match">
-                    <p className="sub">
-                      This will mark <strong>{s.target?.name}</strong> as {s.suggestionType === "bill_payment" ? "paid" : "received"} using the {money(Math.abs(s.primary.amount))} transaction on {s.primary.date ?? "its posted date"}. Continue?
-                    </p>
+                    <p className="sub">{dialogText(s)} Continue?</p>
                     <div className="fin-match-actions">
                       <button type="button" className="btn" disabled={busyId != null} onClick={() => act(s.id, "confirm")}>Yes, confirm</button>
                       <button type="button" className="linkbtn" onClick={() => setConfirmingId(null)}>Cancel</button>
@@ -169,7 +192,7 @@ export function SuggestedMatches({ initialPendingCount = 0 }: { initialPendingCo
                         className="btn"
                         disabled={busyId != null}
                         aria-busy={busyId === s.id}
-                        onClick={() => (s.confidence === "high" ? act(s.id, "confirm") : setConfirmingId(s.id))}
+                        onClick={() => (needsDialog(s) ? setConfirmingId(s.id) : act(s.id, "confirm"))}
                       >
                         Confirm
                       </button>

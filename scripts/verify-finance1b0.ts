@@ -320,8 +320,8 @@ async function main() {
   // 0009/0010, the rename added none, 1B.1 added 0011).
   const migFiles = existsSync("db/migrations") ? readdirSync("db/migrations").filter((f) => f.endsWith(".sql")) : [];
   const maxMig = migFiles.map((f) => parseInt(f.slice(0, 4), 10)).reduce((a, b) => Math.max(a, b), -1);
-  // NOTE: 0016 added by Finance 1B.4A (additive transaction_match_suggestions table).
-  ok("[23] migrations are sequential + additive/constraint-only (latest is 1B.4A's 0016)", maxMig === 16);
+  // NOTE: 0016 (1B.4A) + 0017 (1B.4B financial_event_evidence) are additive.
+  ok("[23] migrations are sequential + additive/constraint-only (latest is 1B.4B's 0017)", maxMig === 17);
   // [24] no external provider API call: no plaid.com API URL anywhere in code.
   ok("[24] no external provider API call occurs (no plaid.com API URL in code)",
     !/https?:\/\/[^"'\s]*plaid\.com/.test(providerBlob + read("app/finances/page.tsx")));

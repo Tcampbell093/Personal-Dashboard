@@ -26,6 +26,7 @@ import {
   incomeAllocations,
   financialAccounts,
   transactionMatchSuggestions,
+  financialEventEvidence,
 } from "@/db/schema";
 import { localToday } from "@/lib/time";
 import { payBill, receiveIncome, FinanceError } from "./finances";
@@ -53,6 +54,34 @@ export const BANDS = { high: 80, medium: 60 } as const; // high ≥80, medium 60
 
 const num = (s: string | null | undefined): number => (s == null ? 0 : Number(s));
 const round = (n: number): number => Math.round(n);
+
+// Deterministic evidence identity (idempotent confirmation, no duplicates).
+const incomeEventKey = (occId: number) => `income:${occId}`;
+const transferEventKey = (a: number, b: number) => `transfer:${Math.min(a, b)}:${Math.max(a, b)}`;
+
+/** Confirmation routing for a suggestion, given account linked-state. Returns the
+ * mode that confirmation WOULD use, or a blocked reason. Pure + shared by the view
+ * and the confirm path so they never disagree. `linkedOf(id)` → true if linked. */
+function planConfirmation(
+  type: "bill_payment" | "income_receipt" | "transfer_pair",
+  opts: { incomeDests?: number[]; primaryAcct?: number | null; secondaryAcct?: number | null; linkedOf: (id: number) => boolean },
+): { confirmable: boolean; mode: "manual_workflow" | "linked_evidence" | null; blocked: string | null } {
+  if (type === "bill_payment") return { confirmable: true, mode: "manual_workflow", blocked: null };
+  if (type === "income_receipt") {
+    const dests = opts.incomeDests ?? [];
+    if (!dests.length) return { confirmable: false, mode: null, blocked: "no_destination" };
+    // Any linked destination → evidence-only (no movement); all-manual → manual workflow.
+    return dests.some((d) => opts.linkedOf(d))
+      ? { confirmable: true, mode: "linked_evidence", blocked: null }
+      : { confirmable: true, mode: "manual_workflow", blocked: null };
+  }
+  // transfer_pair: only linked→linked (both sides mapped to linked accounts) is
+  // evidence-confirmable; any manual/unmapped side fails closed (no hybrid double-count).
+  const a = opts.primaryAcct, b = opts.secondaryAcct;
+  if (a == null || b == null) return { confirmable: false, mode: null, blocked: "account_combination" };
+  if (opts.linkedOf(a) && opts.linkedOf(b)) return { confirmable: true, mode: "linked_evidence", blocked: null };
+  return { confirmable: false, mode: null, blocked: "account_combination" };
+}
 
 /** Calendar-day distance between two YYYY-MM-DD date-only strings (tz-safe). */
 export function calendarDayDiff(a: string | null, b: string | null): number | null {
@@ -259,6 +288,10 @@ export interface MatchSuggestionView {
   target: { kind: "bill" | "income" | "transfer"; id: number | null; name: string; amount: number | null; date: string | null } | null;
   amountDifference: number | null; dateDifferenceDays: number | null;
   confirmable: boolean; confirmBlockedReason: string | null;
+  // How confirmation WOULD/DID apply: existing manual workflow vs evidence-only.
+  confirmMode: "manual_workflow" | "linked_evidence" | null;
+  // Present once confirmed via the evidence table (income/transfer) — the durable proof.
+  confirmation: { mode: string; confirmedAmount: number; confirmedDate: string | null; confirmedAt: string } | null;
   createdAt: string; reviewedAt: string | null; rejectionReason: string | null;
 }
 
@@ -301,6 +334,17 @@ export async function getMatchSuggestionViews(userId: number, opts: { status?: s
   const allocs = incomeIds.length ? await db.select().from(incomeAllocations).where(and(eq(incomeAllocations.userId, userId), isNull(incomeAllocations.deletedAt), inArray(incomeAllocations.incomeId, incomeIds))) : [];
   const allocByIncome = new Map<number, number[]>();
   for (const a of allocs) { const arr = allocByIncome.get(a.incomeId) ?? []; arr.push(a.accountId); allocByIncome.set(a.incomeId, arr); }
+  // Evidence rows for confirmed suggestions (matched by the same deterministic key).
+  const evRows = await db.select().from(financialEventEvidence).where(eq(financialEventEvidence.userId, userId));
+  const evByKey = new Map(evRows.map((e) => [e.eventKey, e]));
+  // Destinations for an income occurrence (split allocations, else single dest).
+  const incomeDests = (id: number | null): number[] => {
+    if (id == null) return [];
+    const split = allocByIncome.get(id);
+    if (split && split.length) return split;
+    const o = incomeMap.get(id);
+    return o?.destinationAccountId != null ? [o.destinationAccountId] : [];
+  };
 
   const txnView = (id: number | null) => {
     if (id == null) return null;
@@ -309,34 +353,39 @@ export async function getMatchSuggestionViews(userId: number, opts: { status?: s
     return { id: t.id, amount: num(t.amount), date: t.postedDate, description: t.merchantName ?? t.descriptionCurrent, accountLabel: t.financialAccountId != null ? (acctName.get(t.financialAccountId) ?? "Linked account") : "Not added to Xanther" };
   };
 
+  const linkedOf = (id: number) => acctLinked.get(id) === true;
   return rows.map((r) => {
     const reasons = JSON.parse(r.reasonCodes) as string[];
     let target: MatchSuggestionView["target"] = null;
-    let confirmable = false; let confirmBlockedReason: string | null = null;
+    const prim = txnMap.get(r.primaryTransactionId);
+    const sec = r.secondaryTransactionId != null ? txnMap.get(r.secondaryTransactionId) : undefined;
+    let plan: ReturnType<typeof planConfirmation>;
     if (r.suggestionType === "bill_payment") {
       const b = r.billId != null ? billMap.get(r.billId) : undefined;
       target = { kind: "bill", id: r.billId, name: b?.name ?? "Bill", amount: b ? num(b.expectedAmount) : null, date: b?.dueDate ?? null };
-      confirmable = true; // payBill is safe (linked paid-account → mark paid, no balance change)
+      plan = planConfirmation("bill_payment", { linkedOf });
     } else if (r.suggestionType === "income_receipt") {
       const o = r.incomeOccurrenceId != null ? incomeMap.get(r.incomeOccurrenceId) : undefined;
       target = { kind: "income", id: r.incomeOccurrenceId, name: o?.source ?? "Income", amount: o ? num(o.expectedAmount) : null, date: o?.payDate ?? null };
-      // Confirmable only if every destination is a manual account (receiveIncome
-      // rejects linked destinations — provider-authoritative balance).
-      const dests = (allocByIncome.get(r.incomeOccurrenceId ?? -1) ?? (o?.destinationAccountId != null ? [o.destinationAccountId] : []));
-      if (!dests.length) { confirmable = false; confirmBlockedReason = "no_destination"; }
-      else if (dests.some((d) => acctLinked.get(d))) { confirmable = false; confirmBlockedReason = "linked_account"; }
-      else confirmable = true;
+      plan = planConfirmation("income_receipt", { incomeDests: incomeDests(r.incomeOccurrenceId), linkedOf });
     } else {
       target = null; // transfer pair: both sides are imported transactions
-      confirmable = false; confirmBlockedReason = "transfer_model_gap";
+      plan = planConfirmation("transfer_pair", { primaryAcct: prim?.financialAccountId ?? null, secondaryAcct: sec?.financialAccountId ?? null, linkedOf });
     }
-    if (r.status !== "pending") { confirmable = false; }
+    let confirmable = plan.confirmable; const confirmBlockedReason = plan.blocked;
+    if (r.status !== "pending") confirmable = false;
+    // Evidence (income/transfer) for a confirmed suggestion → durable proof display.
+    const key = r.suggestionType === "income_receipt" && r.incomeOccurrenceId != null ? incomeEventKey(r.incomeOccurrenceId)
+      : r.suggestionType === "transfer_pair" && r.secondaryTransactionId != null ? transferEventKey(r.primaryTransactionId, r.secondaryTransactionId)
+      : null;
+    const ev = key ? evByKey.get(key) : undefined;
+    const confirmation = ev ? { mode: ev.confirmationMode, confirmedAmount: num(ev.confirmedAmount), confirmedDate: ev.confirmedDate, confirmedAt: ev.confirmedAt.toISOString() } : null;
     return {
       id: r.id, suggestionType: r.suggestionType, status: r.status,
       score: r.score, confidence: r.confidence, reasonCodes: reasons, explanation: explain(r.suggestionType, reasons, r.dateDifferenceDays),
       primary: txnView(r.primaryTransactionId)!, secondary: txnView(r.secondaryTransactionId),
       target, amountDifference: r.amountDifference != null ? num(r.amountDifference) : null, dateDifferenceDays: r.dateDifferenceDays,
-      confirmable, confirmBlockedReason,
+      confirmable, confirmBlockedReason, confirmMode: plan.mode, confirmation,
       createdAt: r.createdAt.toISOString(), reviewedAt: r.reviewedAt ? r.reviewedAt.toISOString() : null, rejectionReason: r.rejectionReason,
     };
   }).filter((v) => v.primary != null);
@@ -353,11 +402,17 @@ type ReceiveIncomeFn = typeof receiveIncome;
 
 /**
  * Owner-confirm a suggestion. Ownership + eligibility are SERVER-derived (the
- * browser supplies only the suggestion id). We claim the suggestion atomically
- * (pending→confirmed), then apply the existing approved workflow; on failure we
- * REVERT the claim (compensating update — neon-http has no interactive
- * transactions) so the suggestion stays recoverably pending and no half-state
- * persists. Transfer pairs and linked-account income FAIL CLOSED (model gap).
+ * browser supplies only the suggestion id). Routing:
+ *   • bill → existing safe payBill (linked paid-account → mark paid, no movement).
+ *   • manual-destination income → existing receiveIncome (writes its movement).
+ *   • linked-destination income → EVIDENCE-ONLY (no movement; occurrence →
+ *     `received_evidence`; the provider-authoritative balance already has it).
+ *   • linked→linked transfer pair → EVIDENCE-ONLY (no movement, no transfer row).
+ *   • any manual/unmapped transfer combination → FAIL CLOSED (no hybrid double-count).
+ * We claim the suggestion atomically (pending→confirmed) then apply; on failure we
+ * REVERT the claim + remove any evidence we wrote (neon-http has no interactive
+ * transactions) so no half-state persists. Repeated/concurrent confirm is
+ * idempotent (the claim gate + unique evidence key).
  */
 export async function confirmMatchSuggestion(userId: number, id: number, opts?: { payBillFn?: PayBillFn; receiveIncomeFn?: ReceiveIncomeFn }): Promise<MatchSuggestionView> {
   const _payBill = opts?.payBillFn ?? payBill;
@@ -368,41 +423,95 @@ export async function confirmMatchSuggestion(userId: number, id: number, opts?: 
   if (row.status === "confirmed") return (await getMatchSuggestionViews(userId, { status: "confirmed" })).find((v) => v.id === id) ?? (() => { throw new MatchError(409, "Already confirmed."); })();
   if (row.status !== "pending") throw new MatchError(409, "This suggestion can no longer be confirmed.");
 
-  // Fail closed for unsupported confirmations (model gap) — never invent behavior.
-  if (row.suggestionType === "transfer_pair") throw new MatchError(422, "Transfer confirmation is not yet supported (transfer model gap).");
+  // Account linked-state (server-derived).
+  const accts = await db.select().from(financialAccounts).where(and(eq(financialAccounts.userId, userId), isNull(financialAccounts.deletedAt)));
+  const linkedOf = (aid: number) => accts.find((a) => a.id === aid)?.balanceSource === "linked";
 
-  // Revalidate evidence is still active + posted.
+  // Revalidate primary evidence: active, posted, owner-scoped (by suggestion).
   const prim = (await db.select().from(importedTransactions).where(eq(importedTransactions.id, row.primaryTransactionId)))[0];
   if (!prim || prim.status !== "active" || prim.deletedAt != null) throw new MatchError(409, "The matched transaction is no longer available.");
   if (prim.isPending) throw new MatchError(409, "A pending transaction cannot confirm a record.");
+
+  // Transfer needs both sides up front.
+  let sec: typeof importedTransactions.$inferSelect | undefined;
+  if (row.suggestionType === "transfer_pair") {
+    if (row.secondaryTransactionId == null) throw new MatchError(422, "A transfer needs both transactions; the second side is missing.");
+    sec = (await db.select().from(importedTransactions).where(eq(importedTransactions.id, row.secondaryTransactionId)))[0];
+    if (!sec || sec.status !== "active" || sec.deletedAt != null) throw new MatchError(409, "The matched transaction is no longer available.");
+    if (sec.isPending) throw new MatchError(409, "A pending transaction cannot confirm a record.");
+  }
+
+  // Determine the confirmation plan (must agree with the view).
+  const incomeDests = row.incomeOccurrenceId != null ? await destinationsForIncome(userId, row.incomeOccurrenceId) : [];
+  const plan = planConfirmation(row.suggestionType, { incomeDests, primaryAcct: prim.financialAccountId, secondaryAcct: sec?.financialAccountId ?? null, linkedOf });
+  if (!plan.confirmable) {
+    if (plan.blocked === "account_combination") throw new MatchError(422, "Confirmation is not yet supported for this account combination.");
+    if (plan.blocked === "no_destination") throw new MatchError(422, "Assign a destination account before confirming.");
+    throw new MatchError(422, "Confirmation is not supported for this suggestion.");
+  }
+
+  // Per-type direction + window revalidation (never trust the stored candidate alone).
+  if (row.suggestionType === "income_receipt" && !(num(prim.amount) > 0)) throw new MatchError(409, "An income deposit must be an inflow.");
+  if (row.suggestionType === "transfer_pair") {
+    const out = num(prim.amount), inc = num(sec!.amount);
+    if (!(out < 0) || !(inc > 0)) throw new MatchError(409, "A transfer needs one outflow and one inflow.");
+    if (prim.financialAccountId === sec!.financialAccountId) throw new MatchError(409, "A transfer must move between different accounts.");
+    if (Math.abs(Math.abs(out) - inc) > TOLERANCES.transfer.absUsd) throw new MatchError(409, "The transfer amounts no longer match.");
+    const dd = calendarDayDiff(prim.postedDate, sec!.postedDate);
+    if (dd == null || dd > TOLERANCES.transfer.windowDays) throw new MatchError(409, "The transfer dates are out of range.");
+  }
+  // Linked-income deposit must land in the linked destination it confirms.
+  if (row.suggestionType === "income_receipt" && plan.mode === "linked_evidence") {
+    if (prim.financialAccountId == null || !linkedOf(prim.financialAccountId) || !incomeDests.includes(prim.financialAccountId)) {
+      throw new MatchError(409, "The deposit does not belong to the linked destination account.");
+    }
+  }
 
   // Atomic claim: pending → confirmed. Only the winner proceeds.
   const claim = await db.update(transactionMatchSuggestions).set({ status: "confirmed", reviewedAt: new Date(), updatedAt: new Date() }).where(and(eq(transactionMatchSuggestions.id, id), eq(transactionMatchSuggestions.userId, userId), eq(transactionMatchSuggestions.status, "pending"))).returning({ id: transactionMatchSuggestions.id });
   if (!claim.length) throw new MatchError(409, "This suggestion can no longer be confirmed.");
 
+  let wroteEvidenceKey: string | null = null;
   try {
     if (row.suggestionType === "bill_payment") {
       const bill = (await db.select().from(financialEntries).where(and(eq(financialEntries.id, row.billId!), eq(financialEntries.userId, userId), isNull(financialEntries.deletedAt))))[0];
       if (!bill || !BILL_ELIGIBLE.includes(bill.status)) throw new MatchError(409, "The bill is no longer payable.");
-      // Use the imported transaction's account as the paid-from account (linked →
-      // payBill marks paid with NO balance change) and its posted amount as actual.
       const applied = await _payBill(userId, row.billId!, prim.financialAccountId ?? null, Math.abs(num(prim.amount)));
       if (!applied) throw new MatchError(409, "The bill could not be confirmed (already changed).");
     } else if (row.suggestionType === "income_receipt") {
-      // receiveIncome fails closed (throws FinanceError) if any destination is linked.
-      const applied = await _receiveIncome(userId, row.incomeOccurrenceId!, num(prim.amount), prim.postedDate ?? undefined);
-      if (!applied) throw new MatchError(409, "The income could not be confirmed (already changed).");
+      const key = incomeEventKey(row.incomeOccurrenceId!);
+      await assertEvidenceTxnsFree(userId, [row.primaryTransactionId], key);
+      if (plan.mode === "manual_workflow") {
+        const applied = await _receiveIncome(userId, row.incomeOccurrenceId!, num(prim.amount), prim.postedDate ?? undefined);
+        if (!applied) throw new MatchError(409, "The income could not be confirmed (already changed).");
+        await recordEvidence(userId, { eventType: "income_receipt", mode: "manual_workflow", incomeOccurrenceId: row.incomeOccurrenceId!, primaryTransactionId: row.primaryTransactionId, amount: num(prim.amount), date: prim.postedDate, eventKey: key });
+        wroteEvidenceKey = key;
+      } else {
+        // LINKED EVIDENCE: no movement, no balance change. Occurrence → received_evidence.
+        await recordEvidence(userId, { eventType: "income_receipt", mode: "linked_evidence", incomeOccurrenceId: row.incomeOccurrenceId!, primaryTransactionId: row.primaryTransactionId, amount: num(prim.amount), date: prim.postedDate, eventKey: key });
+        wroteEvidenceKey = key;
+        const upd = await db.update(incomeEntries).set({ status: "received_evidence", receivedAt: new Date(), actualAmount: String(num(prim.amount).toFixed(2)), updatedAt: new Date() }).where(and(eq(incomeEntries.id, row.incomeOccurrenceId!), eq(incomeEntries.userId, userId), eq(incomeEntries.status, "scheduled"))).returning({ id: incomeEntries.id });
+        if (!upd.length) {
+          const cur = (await db.select({ s: incomeEntries.status }).from(incomeEntries).where(eq(incomeEntries.id, row.incomeOccurrenceId!)))[0];
+          if (cur?.s !== "received_evidence") throw new MatchError(409, "The income occurrence is no longer schedulable.");
+        }
+      }
+    } else { // transfer_pair (plan ensured linked→linked)
+      const key = transferEventKey(row.primaryTransactionId, row.secondaryTransactionId!);
+      await assertEvidenceTxnsFree(userId, [row.primaryTransactionId, row.secondaryTransactionId!], key);
+      await recordEvidence(userId, { eventType: "transfer", mode: "linked_evidence", primaryTransactionId: row.primaryTransactionId, secondaryTransactionId: row.secondaryTransactionId, amount: Math.abs(num(prim.amount)), date: prim.postedDate, eventKey: key });
+      wroteEvidenceKey = key;
     }
   } catch (e) {
-    // Compensate: revert the claim so the suggestion stays pending + recoverable.
+    // Compensate: remove any evidence we wrote + revert the claim → recoverable.
+    if (wroteEvidenceKey) await db.delete(financialEventEvidence).where(and(eq(financialEventEvidence.userId, userId), eq(financialEventEvidence.eventKey, wroteEvidenceKey))).catch(() => {});
     await db.update(transactionMatchSuggestions).set({ status: "pending", reviewedAt: null, updatedAt: new Date() }).where(eq(transactionMatchSuggestions.id, id)).catch(() => {});
     if (e instanceof MatchError) throw e;
     if (e instanceof FinanceError) throw new MatchError(e.status === 400 ? 422 : e.status, e.message);
     throw new MatchError(500, "Could not confirm the suggestion.");
   }
 
-  // Supersede competing pending suggestions that would reuse the same evidence
-  // transaction or the same finance record (no incompatible double-confirm).
+  // Supersede competing pending suggestions reusing the same transaction/record.
   const competeTxn = [row.primaryTransactionId, row.secondaryTransactionId].filter((x): x is number => x != null);
   await db.update(transactionMatchSuggestions).set({ status: "superseded", updatedAt: new Date() }).where(and(eq(transactionMatchSuggestions.userId, userId), eq(transactionMatchSuggestions.status, "pending"), ne(transactionMatchSuggestions.id, id), inArray(transactionMatchSuggestions.primaryTransactionId, competeTxn)));
   if (row.billId != null) await db.update(transactionMatchSuggestions).set({ status: "superseded", updatedAt: new Date() }).where(and(eq(transactionMatchSuggestions.userId, userId), eq(transactionMatchSuggestions.status, "pending"), ne(transactionMatchSuggestions.id, id), eq(transactionMatchSuggestions.billId, row.billId)));
@@ -411,6 +520,37 @@ export async function confirmMatchSuggestion(userId: number, id: number, opts?: 
   const view = (await getMatchSuggestionViews(userId, { status: "confirmed" })).find((v) => v.id === id);
   if (!view) throw new MatchError(500, "Confirmation succeeded but the view could not be loaded.");
   return view;
+}
+
+/** Destinations (account ids) for an income occurrence — split allocations, else
+ * the single destination. */
+async function destinationsForIncome(userId: number, incomeId: number): Promise<number[]> {
+  const allocs = await db.select({ accountId: incomeAllocations.accountId }).from(incomeAllocations).where(and(eq(incomeAllocations.userId, userId), isNull(incomeAllocations.deletedAt), eq(incomeAllocations.incomeId, incomeId)));
+  if (allocs.length) return allocs.map((a) => a.accountId);
+  const o = (await db.select({ d: incomeEntries.destinationAccountId }).from(incomeEntries).where(eq(incomeEntries.id, incomeId)))[0];
+  return o?.d != null ? [o.d] : [];
+}
+
+/** Reject confirmation if an evidence transaction is already bound to a DIFFERENT
+ * event (one imported transaction cannot confirm incompatible events). */
+async function assertEvidenceTxnsFree(userId: number, txnIds: number[], thisKey: string): Promise<void> {
+  const rows = await db.select().from(financialEventEvidence).where(eq(financialEventEvidence.userId, userId));
+  for (const e of rows) {
+    if (e.eventKey === thisKey) continue;
+    if (txnIds.includes(e.primaryTransactionId) || (e.secondaryTransactionId != null && txnIds.includes(e.secondaryTransactionId))) {
+      throw new MatchError(409, "An imported transaction is already used to confirm another event.");
+    }
+  }
+}
+
+/** Insert a durable evidence row (idempotent by event key). */
+async function recordEvidence(userId: number, e: { eventType: "income_receipt" | "transfer"; mode: "manual_workflow" | "linked_evidence"; incomeOccurrenceId?: number; transferId?: number | null; primaryTransactionId: number; secondaryTransactionId?: number | null; amount: number; date: string | null; eventKey: string }): Promise<void> {
+  await db.insert(financialEventEvidence).values({
+    userId, eventType: e.eventType, confirmationMode: e.mode,
+    incomeOccurrenceId: e.incomeOccurrenceId ?? null, transferId: e.transferId ?? null,
+    primaryTransactionId: e.primaryTransactionId, secondaryTransactionId: e.secondaryTransactionId ?? null,
+    confirmedAmount: String(e.amount.toFixed(2)), confirmedDate: e.date, eventKey: e.eventKey,
+  }).onConflictDoNothing({ target: [financialEventEvidence.userId, financialEventEvidence.eventKey] });
 }
 
 /** Owner-reject a suggestion. Mutates NO finance record. The rejected row is kept

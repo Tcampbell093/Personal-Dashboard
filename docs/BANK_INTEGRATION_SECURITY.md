@@ -227,12 +227,34 @@ would reuse the same evidence. The confirmed suggestion row is the durable **evi
 transaction confirmed which record, the score/reasons, `reviewedAt`) — no columns were added to
 bills/income/transfers. **No raw Plaid payload, token, or secret is stored** in `transaction_match_suggestions`.
 
+## Evidence-only confirmation (Finance 1B.4B)
+
+The two cases 1B.4A failed closed are now safely confirmable via an **evidence-only** path:
+**linked-account income receipts** and **linked→linked transfer pairs**. Confirming records that the
+imported bank transactions **prove** the planned event happened — it **never recreates bank activity**.
+For linked accounts the evidence path **must not** (and does not) create an account movement, alter a
+manual or provider balance, recompute a provider snapshot, write a synthetic debit/credit, alter the
+Plaid transaction or sync cursor, create a duplicate receipt, or double-count a transfer; the money
+already lives in the **provider-authoritative linked balance**. Durable model: `financial_event_evidence`
+(`manual_workflow` vs `linked_evidence`, unique `eventKey` → idempotent/no-duplicate) + a new
+`income_status` value `received_evidence` (a linked occurrence marked received with **no** movement). The
+confirm route routes: bill → `payBill`; manual-destination income → `receiveIncome` (its movement);
+**linked income → evidence-only**; **linked→linked transfer → evidence-only**; **mixed linked/manual
+transfer → fail closed** (HTTP 422, no hybrid double-count); manual→manual keeps the existing
+`createTransfer`/`completeTransfer` workflow. Confirmation is owner-only (server-derived ownership),
+revalidates eligibility (removed/pending → rejected; foreign owner → 404; missing transfer side → fail
+closed; a transaction already bound to another event → rejected), is idempotent (claim gate), and yields
+exactly one evidence row under concurrency (unique key); on any failure it reverts the claim and deletes
+the evidence it wrote. No raw Plaid payload, token, or secret is stored. The owner sees the proof in a
+**Show confirmed** view (evidence badge + amount/date + both transfer transactions) and an income label
+“Confirmed (bank evidence)”.
+
 ## What is NOT functional yet (deferred to later 1B phases)
 
-No transfer confirmation or linked-destination income confirmation (model gap — see 1B.4A above),
-update/repair mode, real Chase/BofA (needs eligible Production + OAuth), or any money movement. **Before
-Production:** Plaid Production onboarding + OAuth redirect registration, real-data 90-day history policy,
-and operational monitoring.
+No reversal of evidence-only confirmations, no mixed linked/manual transfer confirmation (fails closed),
+no update/repair mode, no real Chase/BofA (needs eligible Production + OAuth), and no money movement.
+**Before Production:** Plaid Production onboarding + OAuth redirect registration, real-data 90-day history
+policy, and operational monitoring.
 
 ## Approved first-version defaults (owner-approved)
 

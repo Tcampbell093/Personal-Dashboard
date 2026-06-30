@@ -126,6 +126,11 @@ export const incomeStatus = pgEnum("income_status", [
   "received",
   "cancelled",
   "skipped",
+  // Finance 1B.4B: occurrence confirmed by LINKED bank evidence (an imported
+  // transaction proves the deposit). Distinct from `received`, which implies a
+  // manual account_movement; `received_evidence` writes NO movement (the deposit
+  // already lives in the provider-authoritative linked balance).
+  "received_evidence",
 ]);
 
 // Finance 1A.4: recurring-income cadence (a payday schedule, distinct from the
@@ -1009,6 +1014,53 @@ export const transactionMatchSuggestions = pgTable(
     index("transaction_match_suggestions_type_idx").on(t.suggestionType),
     // One row per candidate relationship per owner → idempotent generation.
     uniqueIndex("transaction_match_suggestions_key_uq").on(t.userId, t.matchKey),
+  ],
+);
+
+/* ------------------------------------ evidence confirmation (1B.4B) -------- */
+
+// Finance 1B.4B: an owner-confirmed relationship between imported bank evidence
+// and a planned financial event. `manual_workflow` = the existing manual-domain
+// completion (a movement was written, e.g. manual-destination income). The new
+// `linked_evidence` mode records that imported transactions PROVE a linked-account
+// event happened, WITHOUT any movement/balance/snapshot/cursor change (the money
+// already lives in the provider-authoritative linked balance).
+export const eventEvidenceType = pgEnum("event_evidence_type", ["income_receipt", "transfer"]);
+export const eventConfirmationMode = pgEnum("event_confirmation_mode", ["manual_workflow", "linked_evidence"]);
+
+export const financialEventEvidence = pgTable(
+  "financial_event_evidence",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    eventType: eventEvidenceType("event_type").notNull(),
+    confirmationMode: eventConfirmationMode("confirmation_mode").notNull(),
+    // Exactly one event reference matches `eventType` (income → incomeOccurrenceId;
+    // transfer → transferId, which may be null when no planned transfer row exists —
+    // the two imported transactions are themselves the durable proof).
+    incomeOccurrenceId: integer("income_occurrence_id").references(() => incomeEntries.id, { onDelete: "cascade" }),
+    transferId: integer("transfer_id").references(() => accountTransfers.id, { onDelete: "set null" }),
+    // Imported-transaction evidence: income references exactly one; a transfer
+    // references exactly two (an outflow `primary` + an inflow `secondary`).
+    primaryTransactionId: integer("primary_transaction_id")
+      .notNull()
+      .references(() => importedTransactions.id, { onDelete: "cascade" }),
+    secondaryTransactionId: integer("secondary_transaction_id").references(() => importedTransactions.id, { onDelete: "cascade" }),
+    confirmedAmount: numeric("confirmed_amount", { precision: 14, scale: 2 }).notNull(),
+    confirmedDate: date("confirmed_date"),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }).defaultNow().notNull(),
+    // Deterministic identity → idempotent confirmation + no duplicate evidence.
+    eventKey: varchar("event_key", { length: 240 }).notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    index("financial_event_evidence_user_idx").on(t.userId, t.eventType),
+    index("financial_event_evidence_income_idx").on(t.incomeOccurrenceId),
+    index("financial_event_evidence_primary_idx").on(t.primaryTransactionId),
+    // One evidence relationship per owner per event → idempotent + no duplicates.
+    uniqueIndex("financial_event_evidence_key_uq").on(t.userId, t.eventKey),
   ],
 );
 

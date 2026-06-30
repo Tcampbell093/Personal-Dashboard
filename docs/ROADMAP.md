@@ -37,12 +37,15 @@
   manual button retained) are **done** (committed `3f7e617`; live + verified end-to-end). **1B.4A**
   (**deterministic transaction-matching SUGGESTIONS** — bill/income/transfer-pair, 0–100 score +
   confidence + reason codes, manual *Find matches*, owner Confirm/Reject reusing the existing
-  bill/income workflows; transfer + linked-income confirmation fail closed as a documented model gap) is
-  **done** (implemented, uncommitted; `scripts/verify-finance1b4a.ts` 82/82). **No AI, no money movement,
-  Sandbox-only, owner-confirmed.** Next: **transfer-confirmation model** (an evidence-only path that
-  doesn't conflict with provider-authoritative balances), linked-destination income confirmation, then
-  the **manual→linked authority-handoff** transition (deferred from 1B.2), and repair/disconnect
-  hardening. Real Chase/BofA need eligible Production/OAuth (a later owner step). See
+  bill/income workflows) is **done** (production-verified). **1B.4B** (**evidence-only confirmation** for
+  **linked-account income receipts** + **linked→linked transfer pairs** — imported transactions PROVE the
+  event with **no** movement/balance/provider-snapshot/cursor change; `financial_event_evidence` +
+  `income_status.received_evidence`; mixed linked/manual transfers fail closed; manual→manual keeps the
+  existing workflow) is **done** (implemented, uncommitted; `scripts/verify-finance1b4b.ts` 79/79).
+  **No AI, no money movement, Sandbox-only, owner-confirmed.** Next: the **manual→linked authority-
+  handoff** transition (deferred from 1B.2), reversal of evidence confirmations, mixed linked/manual
+  transfer support, and repair/disconnect hardening. Real Chase/BofA need eligible Production/OAuth (a
+  later owner step). See
   `docs/BANK_INTEGRATION_SECURITY.md` and `docs/DECISIONS.md` ADR-027/028/029/030. (The active approved
   task is always in `docs/HANDOFF.md`.)
 - **Personal knowledge and editable memory** — structured, inspectable, editable personal data.

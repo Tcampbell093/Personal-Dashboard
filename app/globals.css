@@ -1260,6 +1260,7 @@ textarea.taskadd-field:focus {
 .fin-match-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 8px; }
 .fin-match-blocked { color: var(--aware); }
 .fin-match-confirm { margin-top: 8px; padding: 8px 10px; border: 1px dashed color-mix(in srgb, var(--aware) 50%, var(--line)); border-radius: 4px; }
+.fin-match-evidence { margin: 8px 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 
 /* Finance 1B.2 — discovered provider accounts + linked accounts */
 .fin-pa-list { list-style: none; margin: 8px 0 0; padding: 0 0 0 10px; border-left: 2px solid var(--line); }

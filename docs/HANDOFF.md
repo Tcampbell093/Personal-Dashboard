@@ -12,6 +12,31 @@
 
 ## Next approved task
 
+### Finance 1B.4B — evidence-only confirmation for linked income + transfers
+
+- **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** The two cases 1B.4A failed closed —
+  **linked-account income receipts** and **linked→linked transfer pairs** — are now owner-confirmable via
+  an **evidence-only** path that records *“these imported bank transactions prove this planned event
+  happened”* with **no** account movement, manual/provider balance change, provider-snapshot recompute,
+  synthetic debit/credit, Plaid-transaction or sync-cursor change, duplicate receipt, or double-counted
+  transfer (the money already lives in the provider-authoritative linked balance). New additive table
+  `financial_event_evidence` (migration `0017_rare_leader.sql`, `manual_workflow` vs `linked_evidence`,
+  unique `eventKey`) + a new `income_status` value `received_evidence`. The confirm route
+  (`POST /api/finances/matches/[id]/confirm`) routes: bill → `payBill`; manual income → `receiveIncome`;
+  **linked income → evidence-only**; **linked→linked transfer → evidence-only**; **mixed linked/manual
+  transfer → fail closed (422)**; manual→manual keeps the existing transfer workflow. UI: Suggested
+  matches shows Confirm for linked income/transfers behind a dialog stating exactly what will (and won't)
+  change, plus a **Show confirmed** evidence view; income manager labels evidence-confirmed occurrences
+  “Confirmed (bank evidence)”. `computeFinancialOutlook` excludes non-scheduled occurrences from expected
+  income (no double-count). Files: `db/schema.ts`, `db/migrations/0017_*`, `lib/services/matching.ts`,
+  `lib/services/finances.ts`, `components/finances/{suggested-matches,income-manager}.tsx`,
+  `app/globals.css`, `scripts/verify-finance1b4b.ts` + 6 docs (+ stale-guard NOTE updates in
+  `verify-finance1b0/1b4a`). `scripts/verify-finance1b4b.ts` = **79/79**; all regressions green; typecheck
+  + build + secret scan clean; browser-verified (desktop + 375px). **No AI, no money movement,
+  Sandbox-only, owner-confirmed.** Recommended commit: `feat(finance): add linked transaction evidence
+  confirmation`. The next approved bank gate after review is the **manual→linked authority-handoff** (or
+  evidence reversal / mixed-transfer support) — separate authorization required.
+
 ### Finance 1B.4A — deterministic transaction-matching suggestions
 
 - **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** Xanther now SUGGESTS how imported

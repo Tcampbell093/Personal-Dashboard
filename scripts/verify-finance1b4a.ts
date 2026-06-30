@@ -229,7 +229,10 @@ async function main() {
   /* ============ transfer confirmation (model gap) [37-42] ============ */
   console.log("\n[transfer confirmation — fail closed]");
   const transferLive = (await getMatchSuggestionViews(U, { status: "pending" })).find((s) => s.suggestionType === "transfer_pair");
-  ok("[37] transfer confirmation is gated (model gap → not confirmable)", !!transferLive && transferLive.confirmable === false && transferLive.confirmBlockedReason === "transfer_model_gap");
+  // NOTE: Finance 1B.4B makes linked→linked transfers confirmable via evidence; a
+  // manual/mixed transfer pair (this fixture's two manual test accounts) is still
+  // gated, now with reason `account_combination`.
+  ok("[37] transfer confirmation is gated for non-linked-pair (not confirmable)", !!transferLive && transferLive.confirmable === false && transferLive.confirmBlockedReason === "account_combination");
   ok("[38] both transaction-evidence links are preserved", !!transferLive && transferLive.primary.id != null && transferLive.secondary?.id != null);
   const movBeforeXfer = (await db.select().from(accountMovements).where(eq(accountMovements.userId, U))).length;
   let xfer42 = false;
@@ -264,7 +267,9 @@ async function main() {
   ok("[53] Confirm and Reject render", /Confirm/.test(uiSrc) && /Reject/.test(uiSrc));
   ok("[54] default list is bounded", /const PAGE = 5/.test(uiSrc));
   ok("[55] show more/less works", /Show more/.test(uiSrc) && /Show less/.test(uiSrc));
-  ok("[56] medium-confidence confirmation dialog renders", /confirmingId/.test(uiSrc) && /Yes, confirm/.test(uiSrc) && /confidence === "high" \? act/.test(uiSrc));
+  // NOTE: 1B.4B routes the in-card confirm dialog through `needsDialog(s)` (medium
+  // confidence OR any evidence-only confirmation).
+  ok("[56] medium-confidence confirmation dialog renders", /confirmingId/.test(uiSrc) && /Yes, confirm/.test(uiSrc) && /needsDialog\(s\)/.test(uiSrc));
   ok("[57] empty states are truthful", /No suggestions yet/.test(uiSrc) && /Run Find matches/.test(uiSrc) && /No likely matches found/.test(uiSrc));
   ok("[58] mobile 375px layout remains usable (responsive, no fixed wide widths)", /flex-wrap/.test(read("app/globals.css").match(/fin-match-actions[\s\S]{0,120}/)?.[0] ?? "") && !/width:\s*[4-9]\d\dpx/.test(uiSrc));
 

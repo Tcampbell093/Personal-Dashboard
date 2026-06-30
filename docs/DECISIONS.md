@@ -592,6 +592,59 @@
   + typecheck + build + all regressions green + secret scan clean. Owner's real Sandbox connection
   untouched. Older suites' superseded `!/plaid/i`/migration/scope guards updated (disclosed NOTEs).
 
+### ADR-034 — Finance 1B.4B: evidence-only confirmation for linked income + transfers
+- **Classification:** Owner-approved decision (owner approved the 1B.4B scope).
+- **Detail:** Adds a SAFE **evidence-only** confirmation path for the two cases 1B.4A failed closed:
+  **linked-account income receipts** and **linked→linked transfer pairs**. Confirming records *“these
+  imported bank transactions PROVE this planned event happened”* — it **never** recreates bank activity.
+  **Core safety rule (linked):** evidence confirmation creates **no** account movement, no manual/provider
+  balance change, no provider-snapshot recompute, no synthetic debit/credit, no Plaid-transaction or
+  sync-cursor change, no duplicate receipt, no double-counted transfer, and calls **no** money-movement
+  API. The money already lives in the **provider-authoritative linked balance**. No AI, Sandbox-only.
+  - **Model (smallest additive):** new table `financial_event_evidence` (migration `0017`) +
+    a new `income_status` value **`received_evidence`** (additive `ALTER TYPE ADD VALUE` — distinct from
+    `received`, which implies a manual movement). The evidence table distinguishes **`manual_workflow`**
+    (the existing movement-writing completion) from **`linked_evidence`** (movement-free proof), keyed by
+    a deterministic `eventKey` (`income:{occId}` / `transfer:{minTxn}:{maxTxn}`, **unique per owner** →
+    idempotent, no duplicates). Income evidence references exactly one imported transaction; transfer
+    evidence references exactly two (an outflow + an inflow on **different owner accounts**). No raw Plaid
+    payload, token, or secret. *(A transfer needs no `account_transfers` row — 1B.4A transfer suggestions
+    carry no planned transfer; the two imported transactions are themselves the durable proof.)*
+  - **Linked-income lifecycle:** revalidate the suggestion is pending; the imported transaction is active,
+    posted, an **inflow**, owner-scoped, and belongs to the **linked destination**; the occurrence is
+    still scheduled; no competing evidence. Then write a `linked_evidence` evidence row, set the
+    occurrence to **`received_evidence`** + actual amount + posted date, mark the suggestion confirmed,
+    and supersede competitors — **with no movement.** `computeFinancialOutlook` now excludes non-scheduled
+    occurrences from “expected income” (the projection already did) so an evidence-confirmed deposit is
+    never double-counted.
+  - **Transfer lifecycle:** revalidate both transactions active+posted, opposite directions, different
+    accounts, amounts within tolerance, dates within window, neither reused incompatibly; write one
+    `linked_evidence` transfer evidence row referencing both — **no movement, no transfer record, no
+    balance change.**
+  - **Account-combination matrix:** linked→linked = evidence-only; linked↔manual (mixed) = **fail closed**
+    (HTTP 422, “not yet supported for this account combination” — no hybrid double-count); manual→manual
+    continues to use the **existing** `createTransfer`/`completeTransfer` workflow (imported transactions
+    only exist on linked accounts, so a transfer *pair* never involves a manual side anyway). Bill +
+    manual-destination income confirmation are unchanged from 1B.4A.
+  - **Atomicity (neon-http):** confirm claims the suggestion atomically, writes evidence (+ income status)
+    or the manual workflow, and on any failure **reverts the claim and deletes the evidence it wrote** —
+    no half-state. Repeated confirm is idempotent (claim gate); concurrent confirm yields exactly one
+    evidence row (unique `eventKey`). Removed/pending transaction → rejected; foreign owner → 404; a
+    missing transfer second side → fail closed; a transaction already bound to another event → rejected.
+  - **UI:** Suggested matches now shows **Confirm** for linked income + linked→linked transfers, always
+    behind a dialog stating exactly what will (and will NOT) change; mixed transfers show
+    “Confirmation is not yet supported for this account combination”. A **Show confirmed** view renders an
+    evidence badge (“Confirmed using bank evidence · amount · date · no balance change”) and, for
+    transfers, both evidence transactions. Income manager labels evidence-confirmed occurrences
+    “Confirmed (bank evidence)”.
+- **Evidence:** `scripts/verify-finance1b4b.ts` (**79/79** — linked-income evidence [1–18], transfer
+  evidence [19–38], account combinations [39–43], bill + manual-income regression [44–49], UI [50–59],
+  domain boundaries [60–70], owner protection [71–81]) + all regressions green + typecheck + build +
+  secret scan + browser run. Owner's BofA connection + Plaid Checking + 19 imported transactions + request
+  222 preserved; no movement/balance/snapshot/cursor change on any linked confirmation.
+- **Known limitations:** Sandbox-only; reversal of evidence-only confirmations is out of scope;
+  linked↔manual mixed transfers remain unsupported (fail closed); deterministic only (no AI).
+
 ### ADR-033 — Finance 1B.4A: deterministic transaction-matching suggestions
 - **Classification:** Owner-approved decision (owner approved the 1B.4A scope + the fail-closed
   confirmation-safety refinement).

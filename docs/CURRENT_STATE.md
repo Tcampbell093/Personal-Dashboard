@@ -9,7 +9,24 @@
 > only; technical identifiers (routes, DB, env vars, the `Personal-Dashboard` repo) keep their
 > original names. See `docs/DECISIONS.md` ADR-026.
 
-**Last updated:** 2026-06-30 · **Reflects branch:** `main` (Finance 1B.3B live + verified; **Finance 1B.4A — deterministic transaction-matching suggestions — implemented, uncommitted**)
+**Last updated:** 2026-06-30 · **Reflects branch:** `main` (Finance 1B.4A live + production-verified; **Finance 1B.4B — evidence-only confirmation for linked income + transfers — implemented, uncommitted**)
+
+> **Finance 1B.4B — evidence-only confirmation for linked income + transfers — implemented (uncommitted).**
+> The two cases 1B.4A failed closed — **linked-account income receipts** and **linked→linked transfer
+> pairs** — can now be owner-confirmed via an **evidence-only** path: imported bank transactions PROVE the
+> planned event happened, with **no** account movement, manual/provider balance change, provider-snapshot
+> recompute, synthetic debit/credit, Plaid-transaction or sync-cursor change, duplicate receipt, or
+> double-counted transfer (the money already lives in the provider-authoritative linked balance). New
+> additive table `financial_event_evidence` (migration `0017`) distinguishes **`manual_workflow`** (the
+> existing movement-writing completion) from **`linked_evidence`** (movement-free proof), keyed uniquely
+> per owner for idempotency; plus a new additive `income_status` value **`received_evidence`**. The
+> confirm route routes bill → `payBill`, manual-destination income → `receiveIncome`, **linked income →
+> evidence-only** (occurrence → `received_evidence`, no movement), **linked→linked transfer → evidence-
+> only** (no movement, no transfer row); **mixed linked/manual transfers fail closed** (no hybrid
+> double-count); manual→manual keeps the existing transfer workflow. Suggested matches now shows Confirm
+> for linked income/transfers behind a dialog stating exactly what will (and won't) change, plus a
+> **Show confirmed** evidence view. `scripts/verify-finance1b4b.ts` = **79/79**. **No AI, Sandbox-only,
+> owner-confirmed.** See `docs/DECISIONS.md` ADR-034.
 
 > **Finance 1B.4A — deterministic transaction-matching suggestions — implemented (uncommitted).**
 > Xanther now **suggests** how imported bank evidence may relate to the owner's finance records —

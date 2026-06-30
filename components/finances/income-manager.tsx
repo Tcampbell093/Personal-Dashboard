@@ -86,7 +86,9 @@ export function IncomeManager({
   const scheduled = income
     .filter((i) => i.status === "scheduled")
     .sort((a, b) => a.payDate.localeCompare(b.payDate));
-  const received = income.filter((i) => i.status === "received");
+  // `received_evidence` (1B.4B) is a received occurrence confirmed by linked bank
+  // evidence (no movement) — display it alongside received.
+  const received = income.filter((i) => i.status === "received" || i.status === "received_evidence");
   const inactive = income.filter((i) => i.status === "skipped" || i.status === "cancelled");
 
   const setStatus = (id: number, status: string) =>
@@ -183,7 +185,7 @@ export function IncomeManager({
             <div className="fin-income-head">
               <div>
                 <div className="main">
-                  {i.source} <span className="fin-tag good">Confirmed received</span>
+                  {i.source} <span className="fin-tag good">{i.status === "received_evidence" ? "Confirmed (bank evidence)" : "Confirmed received"}</span>
                 </div>
                 <div className="sub">
                   {money(i.actualAmount ?? i.expectedAmount)} · {shortDate(i.receivedAt)} · {destinationSummary(i)}

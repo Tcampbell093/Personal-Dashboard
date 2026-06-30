@@ -250,6 +250,20 @@ duplicate manual income movements; uncertain matches need owner approval; recurr
   `payBill`/`receiveIncome` workflows (transfer + linked-destination income confirmation fail closed —
   model gap). The confirmed suggestion row IS the durable evidence link; **no columns were added to
   bills/income/transfers.** See `docs/DECISIONS.md` ADR-033.
+- **1B.4B — DONE (evidence-only linked confirmation)** — additive migration `0017_rare_leader.sql` adds
+  enums `event_evidence_type` (`income_receipt|transfer`), `event_confirmation_mode`
+  (`manual_workflow|linked_evidence`), a new `income_status` value **`received_evidence`** (additive
+  `ALTER TYPE ADD VALUE` — distinct from `received`, which implies a manual movement), and the
+  **`financial_event_evidence`** table: `userId`, `eventType`, `confirmationMode`, `incomeOccurrenceId`
+  (FK, nullable), `transferId` (FK, nullable — a 1B.4A transfer pair has no planned transfer row, so the
+  two imported transactions are the proof), `primaryTransactionId` (FK; income = the one inflow, transfer
+  = the outflow side), `secondaryTransactionId` (FK; transfer inflow side), `confirmedAmount`,
+  `confirmedDate`, `confirmedAt`, `eventKey` (**unique per `(userId, eventKey)`** → idempotent, no
+  duplicate evidence: `income:{occId}` / `transfer:{minTxn}:{maxTxn}`), timestamps. **Stores NO raw Plaid
+  payload, token, or secret.** A `linked_evidence` confirmation writes **no** account_movement / balance /
+  provider-snapshot / cursor change; a linked income occurrence becomes **`received_evidence`** (the
+  durable proof is the evidence row). `computeFinancialOutlook` now excludes non-scheduled occurrences
+  from expected income (no double-count). See `docs/DECISIONS.md` ADR-034.
 - **1B.1 — DONE (Plaid Sandbox connect)** — additive migration `0011_rapid_sasquatch.sql` adds the
   `connection_status` enum + the **`financial_connections`** table: `userId`, `provider` (`plaid`),
   `providerItemId` (unique within `(user_id, provider)`), `institutionId`/`institutionName`, the
