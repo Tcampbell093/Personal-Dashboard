@@ -640,6 +640,18 @@
     needs no HTTP secret and stays the recovery path when the trigger is unauthorized/fails. If the secret
     is unset, the UI says background processing isn't fully configured (manual sync still works).
     **Invariant:** no unauthenticated/incorrectly-authenticated caller can cause webhook-event processing.
+  - **Worker-dispatch correction (live-deploy fix):** the Next.js login middleware (a Netlify **edge
+    function**) matched `/.netlify/functions/*`, so it **307'd the server-to-server worker trigger to
+    /login** and the worker was never invoked (events stuck at `received`, `attemptCount=0`). Fix
+    (narrow, defense-in-depth): the middleware now **bypasses `/.netlify/functions/`** (early code return
+    + matcher exclusion `\.netlify/functions`) — owner pages/APIs stay gated, and worker authorization is
+    still the in-function `X-Xanther-Webhook-Processor-Key` check. The route's trigger is no longer
+    fire-and-forget: it uses `redirect: "manual"`, **classifies the response**, and treats only the
+    documented Netlify Background Function acceptance (**HTTP 202**) as a successful dispatch — a login
+    redirect / HTML fallback / 401 / 404 / 5xx / network error is a bounded, non-secret, non-URL logged
+    failure that leaves the durable event recoverable by the scheduled drainer. **Invariant:** a verified
+    event is never reported as dispatched merely because the trigger was redirected to or rendered by the
+    login page.
   - **UI status (truthful):** the owner-facing line distinguishes not-configured / **processor-not-
     configured** / notification received (syncing) / automatic sync failed (retrying) / automatic updates
     on + last automatic sync — it never claims automatic updates are working merely because a URL is set.

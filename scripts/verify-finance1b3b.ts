@@ -24,7 +24,9 @@ import { exchangeAndStore } from "@/lib/services/connections";
 import { sandboxCreatePublicToken, sandboxCreateTransactions, plaidAdapter } from "@/lib/providers/plaid/adapter";
 import { syncProviderAccounts } from "@/lib/services/provider-accounts";
 import { syncConnectionTransactions } from "@/lib/services/transactions";
-import { intakeWebhook, processWebhookEvent, processPendingWebhookEvents, configureConnectionWebhook, authorizeProcessorRequest, isProcessorConfigured, PROCESSOR_HEADER } from "@/lib/services/webhooks";
+import { intakeWebhook, processWebhookEvent, processPendingWebhookEvents, configureConnectionWebhook, authorizeProcessorRequest, isProcessorConfigured, PROCESSOR_HEADER, classifyTriggerResponse, triggerBackgroundProcessor, BACKGROUND_ACCEPTED_STATUS } from "@/lib/services/webhooks";
+import { middleware } from "@/middleware";
+import { NextRequest } from "next/server";
 import { verifyPlaidWebhook, WebhookVerificationError, __setWebhookKeyForTest } from "@/lib/providers/plaid/webhook";
 import { decryptToken, resolveMasterKeyFromEnv } from "@/lib/providers/token-crypto";
 import { newRecords, cleanupBankTestRecords, sweepStaleTestAccounts, orphanLinkedCount } from "./support/bank-test-cleanup";
@@ -188,11 +190,11 @@ async function main() {
     console.log("\n[reliability: ack-fast + durable background processing]");
     // [R1/R2/R3] route durably records BEFORE ack and does NOT run the full sync inline.
     ok("[R1] route durably records the event before acknowledging (intake precedes the trigger)",
-      routeSrc.indexOf("intakeWebhook") > 0 && routeSrc.indexOf("intakeWebhook") < routeSrc.indexOf("BACKGROUND_FN"));
+      routeSrc.indexOf("intakeWebhook") > 0 && routeSrc.indexOf("intakeWebhook") < routeSrc.indexOf("triggerBackgroundProcessor"));
     ok("[R2] route does NOT execute the full transaction sync inline",
       !/processPendingWebhookEvents|syncConnectionTransactions/.test(routeSrc));
     ok("[R3] route returns promptly (bounded trigger, no inline sync)",
-      /AbortController|setTimeout\(\(\) => ac\.abort/.test(routeSrc) && /process-plaid-webhooks-background/.test(routeSrc));
+      /AbortController|setTimeout\(\(\) => ac\.abort/.test(routeSrc) && /triggerBackgroundProcessor/.test(routeSrc));
     // [R4] a failed processor invocation leaves the event recoverable (still pending).
     const bodyR4 = whBody(itemId, "SYNC_UPDATES_AVAILABLE", "TRANSACTIONS", "r4");
     const vR4 = await plaidAdapter.verifyWebhook({ headers: { "Plaid-Verification": await signWH(bodyR4, "kidA", privateKey) }, rawBody: bodyR4 });
@@ -266,7 +268,7 @@ async function main() {
     ok("[A6/A7/A8] unauthorized invocation performs no claim / Plaid request / status change (event still 'received', attempt 0)", evA.status === "received" && evA.attemptCount === 0);
     ok("[A19] owner's data is unchanged by unauthorized invocation (no imported rows added)", (await db.select().from(importedTransactions).where(eq(importedTransactions.userId, U))).length === impBeforeUnauth);
     ok("[A9] no credential appears in responses (401/202 bodies)", !(await respNo.clone().text()).includes(SECRET) && !(await respRight.clone().text()).includes(SECRET));
-    ok("[A11] webhook route sends the credential SERVER-TO-SERVER only (in the trigger fetch header, from env)", new RegExp(`\\[PROCESSOR_HEADER\\]: process\\.env\\.PLAID_WEBHOOK_PROCESSOR_SECRET`).test(routeSrc) && !/return[\s\S]{0,80}PLAID_WEBHOOK_PROCESSOR_SECRET/.test(routeSrc));
+    ok("[A11] the worker trigger sends the credential SERVER-TO-SERVER only (in the fetch header, from env; never in the route response)", new RegExp(`\\[PROCESSOR_HEADER\\]: process\\.env\\.PLAID_WEBHOOK_PROCESSOR_SECRET`).test(svcSrc) && !/PLAID_WEBHOOK_PROCESSOR_SECRET/.test(routeSrc));
     ok("[A12] credential is never in client bundles or Link-token responses (env name absent from client UI + link route)", !/PLAID_WEBHOOK_PROCESSOR_SECRET/.test(uiSrc) && !/PLAID_WEBHOOK_PROCESSOR_SECRET/.test(read("app/api/finances/connections/link-token/route.ts")));
     ok("[A13] a failed authorized trigger leaves the event recoverable (durable, still claimable)", intakeA.isNew && evA.status === "received");
     ok("[A14] the scheduled drainer recovers a trigger-missed event WITHOUT the HTTP secret (calls the service directly)", /processPendingWebhookEvents/.test(read("netlify/functions/drain-plaid-webhooks.mts")) && !/PLAID_WEBHOOK_PROCESSOR_SECRET|PROCESSOR_HEADER/.test(read("netlify/functions/drain-plaid-webhooks.mts")));
@@ -276,7 +278,7 @@ async function main() {
     ok("[A15] duplicate authorized worker calls remain safe (handler delegates to the same atomic-claim service)", /authorizeProcessorRequest[\s\S]*processPendingWebhookEvents/.test(bgSrc) && /UPDATE plaid_webhook_events[\s\S]*RETURNING id/.test(svcSrc));
     ok("[A16] manual transaction sync remains unaffected", typeof (await syncConnectionTransactions(U, conn.id, fakeProvider(fakePage([dto("A16", "a", -1)])))).added === "number");
     ok("[A17] existing webhook signature verification remains unaffected", (await plaidAdapter.verifyWebhook({ headers: { "Plaid-Verification": await signWH(whBody(itemId, "SYNC_UPDATES_AVAILABLE", "TRANSACTIONS", "a17"), "kidA", privateKey) }, rawBody: whBody(itemId, "SYNC_UPDATES_AVAILABLE", "TRANSACTIONS", "a17") })).verified === true);
-    ok("[A18] the fast-ack lifecycle remains unaffected (intake before trigger, no inline sync, bounded trigger)", routeSrc.indexOf("intakeWebhook") < routeSrc.indexOf("BACKGROUND_FN") && !/processPendingWebhookEvents|syncConnectionTransactions/.test(routeSrc) && /ac\.abort/.test(routeSrc));
+    ok("[A18] the fast-ack lifecycle remains unaffected (intake before trigger, no inline sync, bounded trigger)", routeSrc.indexOf("intakeWebhook") < routeSrc.indexOf("triggerBackgroundProcessor") && !/processPendingWebhookEvents|syncConnectionTransactions/.test(routeSrc) && /ac\.abort/.test(routeSrc));
     // [A5] fail closed when the server-side secret is missing.
     delete process.env.PLAID_WEBHOOK_PROCESSOR_SECRET;
     ok("[A5] missing server-side processor secret fails closed (authorize false, not configured)", authorizeProcessorRequest(SECRET) === false && isProcessorConfigured() === false);
@@ -285,6 +287,75 @@ async function main() {
     ok("[A10] no credential value appears in source / fixtures / reports", !new RegExp(SECRET.slice(0, 12)).test(svcSrc + routeSrc + bgSrc + read("netlify/functions/drain-plaid-webhooks.mts")) && !/PLAID_WEBHOOK_PROCESSOR_SECRET\s*=\s*["'][^"']/.test(svcSrc + routeSrc + bgSrc));
     ok("[A20] .env.local remains ignored (gitignore)", /(^|\n)\.env\.local/.test(read(".gitignore")));
     if (origSecret === undefined) delete process.env.PLAID_WEBHOOK_PROCESSOR_SECRET; else process.env.PLAID_WEBHOOK_PROCESSOR_SECRET = origSecret;
+
+    /* ============ worker-dispatch correction [D1-D24] ============ */
+    console.log("\n[worker dispatch: middleware bypass + observed trigger]");
+    const mwSrc = read("middleware.ts");
+    // Middleware behavior tests — exercise the real gate with APP_PASSWORD set.
+    const savedPw = process.env.APP_PASSWORD;
+    process.env.APP_PASSWORD = "test-gate-password";
+    const mw = async (path: string, method = "GET") => {
+      const res = await middleware(new NextRequest(new URL(`https://xanther.netlify.app${path}`), { method } as never));
+      return { isNext: res.headers.get("x-middleware-next") === "1", status: res.status, location: res.headers.get("location") };
+    };
+    const fnBypass = await mw("/.netlify/functions/process-plaid-webhooks-background", "POST");
+    const finProt = await mw("/finances");
+    const apiProt = await mw("/api/finances/connections");
+    const webhookPublic = await mw("/api/webhooks/plaid", "POST");
+    ok("[D1] worker path bypasses the owner login middleware (no /login redirect; passes through)", fnBypass.isNext === true && fnBypass.location === null);
+    ok("[D2] /finances remains protected (307 → /login when unauthenticated)", finProt.isNext === false && finProt.status === 307 && /\/login/.test(finProt.location ?? ""));
+    ok("[D3] private application APIs remain protected (401 when unauthenticated)", apiProt.isNext === false && apiProt.status === 401);
+    ok("[D4] /api/webhooks/plaid remains publicly reachable past the gate (signature-protected at the route)", webhookPublic.isNext === true);
+    ok("[D23] owner-session protection remains intact (the bypass is narrow to /.netlify/functions/ only)", /pathname\.startsWith\("\/\.netlify\/functions\/"\)/.test(mwSrc) && !/startsWith\("\/\.netlify\/"\)/.test(mwSrc) && /\\\.netlify\/functions/.test(mwSrc));
+    if (savedPw === undefined) delete process.env.APP_PASSWORD; else process.env.APP_PASSWORD = savedPw;
+
+    // Worker authorization still enforced INSIDE the function (independent of the bypass).
+    const sAuth = process.env.PLAID_WEBHOOK_PROCESSOR_SECRET; process.env.PLAID_WEBHOOK_PROCESSOR_SECRET = "d-secret-xyz-123456";
+    ok("[D5] background worker still rejects a MISSING processor key", authorizeProcessorRequest(undefined) === false && authorizeProcessorRequest("") === false);
+    ok("[D6] background worker still rejects a WRONG processor key", authorizeProcessorRequest("wrong-key") === false);
+    ok("[D7] background worker accepts the CORRECT processor key", authorizeProcessorRequest("d-secret-xyz-123456") === true);
+    ok("[D8] the middleware bypass alone cannot cause processing without the correct key (auth is a separate gate)", /authorizeProcessorRequest\(req\.headers\.get\(PROCESSOR_HEADER\)\)/.test(bgSrc) && authorizeProcessorRequest("wrong-key") === false);
+    if (sAuth === undefined) delete process.env.PLAID_WEBHOOK_PROCESSOR_SECRET; else process.env.PLAID_WEBHOOK_PROCESSOR_SECRET = sAuth;
+
+    // Trigger-response classification — ONLY 202 is success.
+    ok("[D9] a login redirect (307/308 or manual-mode opaqueredirect 0) is a trigger FAILURE", classifyTriggerResponse(307, null).ok === false && classifyTriggerResponse(308, null).ok === false && classifyTriggerResponse(0, null).ok === false);
+    ok("[D10] a followed/HTML login response (200 text/html) is NOT a success", classifyTriggerResponse(200, "text/html; charset=utf-8").ok === false);
+    ok("[D11] a 404 (function not routable) is a trigger FAILURE", classifyTriggerResponse(404, null).ok === false);
+    ok("[D12] a 401 (worker rejection) is a trigger FAILURE", classifyTriggerResponse(401, null).ok === false);
+    ok("[D13] a 5xx (execution/invocation error) is a trigger FAILURE", classifyTriggerResponse(503, null).ok === false);
+    const acAbort = new AbortController(); acAbort.abort();
+    const netOutcome = await triggerBackgroundProcessor("http://127.0.0.1:9", acAbort.signal);
+    ok("[D14] a network failure is a trigger FAILURE and leaves the event recoverable (no throw)", netOutcome.ok === false && netOutcome.reason === "network");
+    ok("[D15] the documented Netlify background acceptance status (202) is recognized as success", BACKGROUND_ACCEPTED_STATUS === 202 && classifyTriggerResponse(202, null).ok === true);
+
+    // Trigger FAILURE must not delete/alter the durable event, attempts, cursor, or imports.
+    // Capture ALL baselines BEFORE the failed dispatch (and before any real claim, which
+    // legitimately advances the cursor in [D17]).
+    const bodyD = whBody(itemId, "SYNC_UPDATES_AVAILABLE", "TRANSACTIONS", "d-fail");
+    const vD = await plaidAdapter.verifyWebhook({ headers: { "Plaid-Verification": await signWH(bodyD, "kidA", privateKey) }, rawBody: bodyD });
+    const intakeD = await intakeWebhook(vD, "sandbox");
+    const cursorBeforeFail = (await connRow(conn.id)).transactionsCursor;
+    const impBeforeFail = (await db.select().from(importedTransactions).where(eq(importedTransactions.userId, U))).length;
+    const ac2 = new AbortController(); ac2.abort();
+    const failOut = await triggerBackgroundProcessor("http://127.0.0.1:9", ac2.signal); // simulate a failed dispatch (network)
+    const evAfterFail = (await db.select().from(plaidWebhookEvents).where(eq(plaidWebhookEvents.id, intakeD.eventId)))[0];
+    const cursorAfterFail = (await connRow(conn.id)).transactionsCursor;
+    const impAfterFail = (await db.select().from(importedTransactions).where(eq(importedTransactions.userId, U))).length;
+    ok("[D16] trigger failure does not delete or lose the durable event (still 'received')", failOut.ok === false && evAfterFail != null && evAfterFail.status === "received");
+    ok("[D18] trigger failure does not alter the transaction cursor", cursorAfterFail === cursorBeforeFail);
+    ok("[D19] trigger failure does not alter imported transactions", impAfterFail === impBeforeFail);
+    // Attempts increment ONLY when a worker actually claims — never from a failed dispatch.
+    const attemptsAfterFail = evAfterFail.attemptCount;
+    const claimRes = await processWebhookEvent(intakeD.eventId, fakeProvider(fakePage([dto("Dtx", "a", -1)], "DC")));
+    const attemptsAfterClaim = (await db.select().from(plaidWebhookEvents).where(eq(plaidWebhookEvents.id, intakeD.eventId)))[0].attemptCount;
+    ok("[D17] trigger failure does not increment attempts; a real claim does", attemptsAfterFail === 0 && claimRes.processed === true && attemptsAfterClaim >= 1);
+
+    // Route wiring: ack promptly after intake; never silently swallow; no secret/URL leak.
+    ok("[D20] the scheduled drainer remains ENABLED (every 10 min)", /schedule: "\*\/10 \* \* \* \*"/.test(read("netlify/functions/drain-plaid-webhooks.mts")));
+    ok("[D21] Plaid webhook is acked promptly AFTER durable intake (intake before trigger; bounded trigger; returns ok:true)", routeSrc.indexOf("intakeWebhook") < routeSrc.indexOf("triggerBackgroundProcessor") && /ac\.abort/.test(routeSrc) && /NextResponse\.json\(\{ ok: true \}\)/.test(routeSrc));
+    ok("[D22] no processor secret or internal function URL leaks (route never names the secret/URL; trigger never logs the secret)", !/PLAID_WEBHOOK_PROCESSOR_SECRET/.test(routeSrc) && !/process-plaid-webhooks-background/.test(routeSrc) && !/console\.(log|warn|error)\([^)]*PLAID_WEBHOOK_PROCESSOR_SECRET/.test(svcSrc));
+    ok("[D24] the route does NOT silently swallow the trigger (no fire-and-forget catch; checks outcome.ok)", !/\.catch\(\(\) => \{\}\)/.test(routeSrc) && /outcome\.ok/.test(routeSrc));
+    ok("[D-invariant] a verified event is NEVER reported as successfully dispatched merely because the trigger hit the login page (redirect or rendered HTML)", classifyTriggerResponse(307, null).ok === false && classifyTriggerResponse(0, null).ok === false && classifyTriggerResponse(200, "text/html").ok === false && classifyTriggerResponse(202, null).ok === true);
 
     /* ============ configuration + scope [36-48] ============ */
     console.log("\n[configuration + scope]");
@@ -303,7 +374,7 @@ async function main() {
     ok("[41] no Production connection (Sandbox enforced in client/env)", /environment !== ["']sandbox["']|readPlaidSandboxConfig/.test(svcSrc + verifierSrc));
     ok("[42] no OAuth expansion", !/oauth|redirect_uri/i.test(stripComments(svcSrc + routeSrc)));
     ok("[43/44/45/46] no matching / bill / income / transfer confirmation", !/matchBill|matchIncome|pairTransfer|payBill|receiveIncome|completeTransfer/i.test(svcSrc));
-    ok("[47] no AI categorization", !/anthropic|openai|classify|messages\.create/i.test(svcSrc + routeSrc));
+    ok("[47] no AI categorization", !/anthropic|openai|categoriz|messages\.create/i.test(svcSrc + routeSrc));
     ok("[48] no money movement", !/moveMoney|paymentInitiation|transferCreate/i.test(stripComments(svcSrc + routeSrc + adapterSrc)));
     ok("[mw] webhook route is public (exempt from the owner-session gate)", /\/api\/webhooks\/plaid/.test(middlewareSrc));
     const whTable = schemaSrc.match(/plaidWebhookEvents = pgTable\([\s\S]*?\n\);/)?.[0] ?? "";

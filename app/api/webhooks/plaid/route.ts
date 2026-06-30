@@ -15,10 +15,8 @@
 
 import { NextResponse } from "next/server";
 import { plaidAdapter } from "@/lib/providers/plaid/adapter";
-import { intakeWebhook, PROCESSOR_HEADER } from "@/lib/services/webhooks";
+import { intakeWebhook, triggerBackgroundProcessor } from "@/lib/services/webhooks";
 import { readPlaidSandboxConfig } from "@/lib/providers/plaid/env";
-
-const BACKGROUND_FN = "/.netlify/functions/process-plaid-webhooks-background";
 
 export async function POST(request: Request) {
   // 1. Exact raw bytes (NOT request.json() — the body hash is whitespace-sensitive).
@@ -47,23 +45,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Could not record the webhook." }, { status: 500 });
   }
 
-  // 5. Trigger the DURABLE background processor (it ack's 202 quickly and runs the
-  // sync asynchronously with retries). We do NOT run the sync inline. The internal
-  // processor secret is sent SERVER-TO-SERVER ONLY (never returned to Plaid/browser).
-  // A trigger failure — including a missing secret — is harmless: the event is durable
-  // and the ENABLED scheduled drainer + stale-claim recovery will process it.
+  // 5. Trigger the DURABLE background processor and OBSERVE the result. The internal
+  // processor secret is sent SERVER-TO-SERVER ONLY (never returned to Plaid/browser),
+  // and a login redirect is NOT silently followed. Only the documented Netlify
+  // Background Function acceptance (202) counts as a successful dispatch — a redirect/
+  // HTML-fallback/401/404/5xx/network error is recorded as a bounded operational
+  // failure (no secret, no internal URL). Either way the durable event remains at
+  // `received` and the ENABLED scheduled drainer + stale-claim recovery will process
+  // it; we never mark it processed here. We do NOT run the sync inline.
   if (intake.supported && intake.isNew) {
-    try {
-      const base = process.env.URL || new URL(request.url).origin;
-      const ac = new AbortController();
-      const t = setTimeout(() => ac.abort(), 2500); // bound the trigger; never block the ack
-      await fetch(`${base}${BACKGROUND_FN}`, {
-        method: "POST",
-        headers: { [PROCESSOR_HEADER]: process.env.PLAID_WEBHOOK_PROCESSOR_SECRET ?? "" },
-        signal: ac.signal,
-      }).catch(() => {});
-      clearTimeout(t);
-    } catch { /* event durable → recovered by the backstop */ }
+    const base = process.env.URL || new URL(request.url).origin;
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), 2500); // bound the trigger; never block the ack
+    const outcome = await triggerBackgroundProcessor(base, ac.signal);
+    clearTimeout(t);
+    if (!outcome.ok) {
+      // Bounded, non-secret, non-URL diagnostic. The event stays recoverable.
+      console.warn(`[webhook] worker dispatch not accepted (reason=${outcome.reason}, status=${outcome.status ?? "n/a"}); event ${intake.eventId} left for scheduled drainer.`);
+    }
   }
 
   // 6. Prompt acknowledgement: the notification was safely received (NOT "synced").

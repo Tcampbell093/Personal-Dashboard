@@ -156,7 +156,15 @@ then the route **ack's promptly** (Plaid's 10-second window) and processing happ
 background** — the route does **not** run the full sync inline. The **active primary processor** is a
 **Netlify Background Function** (`netlify/functions/process-plaid-webhooks-background.mts`; the
 `-background` suffix → returns 202, runs ~15 min, Netlify auto-retries), triggered by the route only
-after the event is durably stored. It claims pending/failed/**stale-`processing`** events **atomically**
+after the event is durably stored. **Middleware bypass + observed dispatch (live-deploy fix):** the
+login middleware (a Netlify **edge function**) must **bypass `/.netlify/functions/`** — otherwise it
+307's the server-to-server worker trigger to `/login` and the worker is never invoked. The bypass is
+narrow (only `/.netlify/functions/`; owner pages/APIs stay gated) and does **not** weaken worker auth
+(still the in-function `X-Xanther-Webhook-Processor-Key` check). The route's trigger uses
+`redirect: "manual"`, **inspects the response status**, and treats **only HTTP 202** (Netlify background
+acceptance) as a successful dispatch; a login redirect / HTML fallback / 401 / 404 / 5xx / network error
+is a bounded, non-secret, non-URL logged failure that leaves the event for the drainer — it is **never**
+silently treated as success. It claims pending/failed/**stale-`processing`** events **atomically**
 (overlapping invocations can't double-process), runs the existing fetch→buffer→atomic sync, marks
 `processed` only on success, and on failure preserves the event (bounded retry) + the prior cursor +
 imported state. **Stale-claim recovery:** a `processing` claim older than **5 minutes** (a crashed/

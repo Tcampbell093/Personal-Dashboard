@@ -62,6 +62,73 @@ export function isProcessorConfigured(): boolean {
   return Boolean(process.env.PLAID_WEBHOOK_PROCESSOR_SECRET);
 }
 
+/* ----------------------------------------------------------------------------
+ * Background-worker dispatch (Finance 1B.3B dispatch correction).
+ *
+ * The webhook route triggers the durable Background Function over HTTP. That
+ * trigger must NOT silently treat a login redirect / HTML fallback / auth
+ * rejection / missing-function / server error as success — doing so hid the
+ * runtime defect where the owner-session middleware 307'd the worker path to
+ * /login. We classify the actual response and only treat the documented Netlify
+ * Background Function acceptance status (202) as a successful dispatch.
+ *
+ * IMPORTANT: dispatch success means only "the worker was accepted for async
+ * execution" — NOT that the event was processed. The worker still authorizes
+ * itself (X-Xanther-Webhook-Processor-Key) and marks the event processed only on
+ * a real sync. A failed dispatch leaves the durable event at `received` for the
+ * scheduled drainer to recover. */
+export const BACKGROUND_FN_PATH = "/.netlify/functions/process-plaid-webhooks-background";
+/** Netlify Background Functions reply 202 Accepted on accepted async invocation. */
+export const BACKGROUND_ACCEPTED_STATUS = 202;
+
+export type TriggerReason =
+  | "login_redirect" // 3xx / opaqueredirect → the owner-session gate (or any redirect)
+  | "html_fallback" // 200 text/html → Next.js page fallback, NOT the function
+  | "unauthorized" // 401/403 → reached something that rejected us
+  | "not_found" // 404 → function not routable at this path
+  | "server_error" // 5xx → invocation/execution error
+  | "network" // fetch threw / aborted → never reached the platform
+  | "unexpected"; // any other non-202 status
+export type TriggerOutcome = { ok: true; status: number } | { ok: false; reason: TriggerReason; status: number | null };
+
+/**
+ * Classify a worker-trigger response. ONLY 202 (Netlify background acceptance)
+ * is success. A login redirect surfaces as a 3xx or, under `redirect: "manual"`,
+ * an opaqueredirect (status 0) — both are failures, never silent successes.
+ */
+export function classifyTriggerResponse(status: number, contentType: string | null): TriggerOutcome {
+  const ct = (contentType ?? "").toLowerCase();
+  if (status === BACKGROUND_ACCEPTED_STATUS) return { ok: true, status };
+  if (status === 0 || (status >= 300 && status < 400)) return { ok: false, reason: "login_redirect", status }; // incl. opaqueredirect
+  if (status === 401 || status === 403) return { ok: false, reason: "unauthorized", status };
+  if (status === 404) return { ok: false, reason: "not_found", status };
+  if (status >= 500) return { ok: false, reason: "server_error", status };
+  if (ct.includes("text/html")) return { ok: false, reason: "html_fallback", status }; // e.g. a 200 login page
+  return { ok: false, reason: "unexpected", status };
+}
+
+/**
+ * Fire the worker trigger and report a bounded outcome. Uses `redirect: "manual"`
+ * so a login redirect is NEVER silently followed. Never throws, never logs/returns
+ * the processor secret or the internal function URL. A failure leaves the durable
+ * event recoverable by the scheduled drainer.
+ */
+export async function triggerBackgroundProcessor(baseUrl: string, signal?: AbortSignal): Promise<TriggerOutcome> {
+  try {
+    const res = await fetch(`${baseUrl}${BACKGROUND_FN_PATH}`, {
+      method: "POST",
+      redirect: "manual", // a 307→/login must surface as a failure, not be followed
+      headers: { [PROCESSOR_HEADER]: process.env.PLAID_WEBHOOK_PROCESSOR_SECRET ?? "" },
+      signal,
+    });
+    // undici returns an opaqueredirect (type set, status 0) for a manual-mode 3xx.
+    if (res.type === "opaqueredirect") return { ok: false, reason: "login_redirect", status: 0 };
+    return classifyTriggerResponse(res.status, res.headers.get("content-type"));
+  } catch {
+    return { ok: false, reason: "network", status: null }; // aborted/unreachable → recoverable
+  }
+}
+
 export interface IntakeResult { eventId: number; isNew: boolean; supported: boolean; }
 
 /**
