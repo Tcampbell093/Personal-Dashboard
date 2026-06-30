@@ -954,6 +954,64 @@ export const plaidWebhookEvents = pgTable(
   ],
 );
 
+/* ----------------------------------------- transaction matching (1B.4A) --- */
+
+// Finance 1B.4A: deterministic, SUGGESTION-ONLY matching between imported bank
+// evidence and the owner's finance records. A suggestion never mutates either
+// side — only an explicit owner confirmation does, and only through the existing
+// approved bill/income workflows (transfers + linked-account income are reported
+// as a model gap and fail closed). No AI, no money movement, Sandbox-only.
+export const matchSuggestionType = pgEnum("match_suggestion_type", ["bill_payment", "income_receipt", "transfer_pair"]);
+// pending → owner-decidable. confirmed/rejected are terminal owner decisions
+// (preserved for audit). superseded = no longer valid (e.g. a referenced record
+// changed / a transaction was removed) — never silently deleted.
+export const matchSuggestionStatus = pgEnum("match_suggestion_status", ["pending", "confirmed", "rejected", "superseded"]);
+export const matchConfidence = pgEnum("match_confidence", ["high", "medium", "low"]);
+
+export const transactionMatchSuggestions = pgTable(
+  "transaction_match_suggestions",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    suggestionType: matchSuggestionType("suggestion_type").notNull(),
+    status: matchSuggestionStatus("status").notNull().default("pending"),
+    // Imported-transaction evidence. `primary` is the bill/income transaction, or
+    // the OUTFLOW side of a transfer pair; `secondary` is the transfer INFLOW side.
+    primaryTransactionId: integer("primary_transaction_id")
+      .notNull()
+      .references(() => importedTransactions.id, { onDelete: "cascade" }),
+    secondaryTransactionId: integer("secondary_transaction_id").references(() => importedTransactions.id, { onDelete: "cascade" }),
+    // Exactly one finance-record reference is set, matching `suggestionType`
+    // (transfer_pair references neither — both sides are imported transactions).
+    billId: integer("bill_id").references(() => financialEntries.id, { onDelete: "cascade" }),
+    incomeOccurrenceId: integer("income_occurrence_id").references(() => incomeEntries.id, { onDelete: "cascade" }),
+    transferId: integer("transfer_id").references(() => accountTransfers.id, { onDelete: "set null" }),
+    score: integer("score").notNull(), // deterministic 0–100
+    confidence: matchConfidence("confidence").notNull(),
+    // Bounded, explainable reason codes (JSON array of short codes — never a raw
+    // payload, never an unexplained number alone).
+    reasonCodes: text("reason_codes").notNull(),
+    amountDifference: numeric("amount_difference", { precision: 14, scale: 2 }),
+    dateDifferenceDays: integer("date_difference_days"),
+    // Deterministic dedup identity for a candidate relationship. Idempotent
+    // regeneration upserts by this key; a rejected identical relationship keeps
+    // its row (and its `rejected` status) and is NEVER silently reopened.
+    matchKey: varchar("match_key", { length: 240 }).notNull(),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    rejectionReason: varchar("rejection_reason", { length: 300 }),
+    ...timestamps,
+  },
+  (t) => [
+    index("transaction_match_suggestions_user_status_idx").on(t.userId, t.status),
+    index("transaction_match_suggestions_primary_idx").on(t.primaryTransactionId),
+    index("transaction_match_suggestions_type_idx").on(t.suggestionType),
+    // One row per candidate relationship per owner → idempotent generation.
+    uniqueIndex("transaction_match_suggestions_key_uq").on(t.userId, t.matchKey),
+  ],
+);
+
 /* -------------------------------------------------------------- signals --- */
 
 export const signalSources = pgTable("signal_sources", {

@@ -235,6 +235,21 @@ duplicate manual income movements; uncertain matches need owner approval; recurr
   cryptographically and the connection is resolved by `providerItemId`. `financial_connections` is
   unchanged (the existing transaction-sync state is reused).
   See `docs/DECISIONS.md` ADR-030.
+- **1B.4A — DONE (deterministic transaction-matching suggestions)** — additive migration
+  `0016_curved_nekra.sql` adds enums `match_suggestion_type` (`bill_payment|income_receipt|transfer_pair`),
+  `match_suggestion_status` (`pending|confirmed|rejected|superseded`), `match_confidence`
+  (`high|medium|low`) + the **`transaction_match_suggestions`** table: `userId`, `suggestionType`,
+  `status`, `primaryTransactionId` (FK imported_transactions; the bill/income txn or transfer outflow
+  side), `secondaryTransactionId` (FK; transfer inflow side), `billId`/`incomeOccurrenceId`/`transferId`
+  (exactly one set, matching the type; transfer pairs reference neither), `score` (0–100), `confidence`,
+  `reasonCodes` (JSON array of bounded codes), `amountDifference`, `dateDifferenceDays`, `matchKey`
+  (**unique per `(userId, matchKey)`** — idempotent generation + dedup; a rejected identical relationship
+  keeps its row and is never reopened), `reviewedAt`, `rejectionReason`, timestamps. **Stores NO raw Plaid
+  payload, token, or provider secret.** Ownership is server-derived. A suggestion is SUGGESTION-ONLY —
+  it mutates neither side; only an owner confirmation applies an effect, and only through the existing
+  `payBill`/`receiveIncome` workflows (transfer + linked-destination income confirmation fail closed —
+  model gap). The confirmed suggestion row IS the durable evidence link; **no columns were added to
+  bills/income/transfers.** See `docs/DECISIONS.md` ADR-033.
 - **1B.1 — DONE (Plaid Sandbox connect)** — additive migration `0011_rapid_sasquatch.sql` adds the
   `connection_status` enum + the **`financial_connections`** table: `userId`, `provider` (`plaid`),
   `providerItemId` (unique within `(user_id, provider)`), `institutionId`/`institutionName`, the

@@ -473,6 +473,8 @@ export interface HomeMoney {
   nextIncomeDate: string | null;
   nextIncomeText: string | null; // e.g. "Estimated $900" | "Amount unknown" | "Estimated $800–$1,200"
   hasUnconfirmedIncome: boolean; // an expected occurrence whose date has passed
+  // Finance 1B.4A: compact count of pending transaction-match suggestions to review.
+  transactionMatches: number;
 }
 
 export interface HomeMomentum {

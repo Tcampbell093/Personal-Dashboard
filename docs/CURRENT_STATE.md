@@ -9,7 +9,26 @@
 > only; technical identifiers (routes, DB, env vars, the `Personal-Dashboard` repo) keep their
 > original names. See `docs/DECISIONS.md` ADR-026.
 
-**Last updated:** 2026-06-29 · **Reflects branch:** `main` (Finance 1B.3B committed & pushed `3f7e617`; awaiting deployment config + live Sandbox webhook verification)
+**Last updated:** 2026-06-30 · **Reflects branch:** `main` (Finance 1B.3B live + verified; **Finance 1B.4A — deterministic transaction-matching suggestions — implemented, uncommitted**)
+
+> **Finance 1B.4A — deterministic transaction-matching suggestions — implemented (uncommitted).**
+> Xanther now **suggests** how imported bank evidence may relate to the owner's finance records —
+> **suggestion-only, owner-confirmed, deterministic (no AI), Sandbox-scoped, no money movement.** Three
+> types: `bill_payment`, `income_receipt`, `transfer_pair`. A new durable table
+> `transaction_match_suggestions` (migration `0016`, additive) stores each candidate with a bounded
+> **0–100 score**, **confidence band** (high ≥80 / medium 60–79 / low 50–59; min 50 to persist),
+> explainable **reason codes**, and amount/date differences. Generation is a manual **Find matches**
+> button (`POST /api/finances/matches/generate`) — idempotent (upsert by `(userId, matchKey)`), preserves
+> confirmed/rejected decisions, supersedes invalid ones, never reopens a rejected relationship, and
+> mutates **no** bill/income/transfer/movement/balance/snapshot/cursor. Owner **Confirm/Reject** via
+> `/api/finances/matches/[id]/confirm|reject`. **Confirmation = fail-closed reuse:** bill confirm reuses
+> `payBill` (linked paid-account → mark paid + evidence, no balance change); income confirm reuses
+> `receiveIncome` (manual destination only); **transfer confirmation + linked-destination income are a
+> documented model gap and fail closed** (the UI shows "confirmation not yet supported" and offers no
+> Confirm button — still reviewable/rejectable). `/finances` gains a **Suggested matches** section
+> (pending default, type filters, confidence + explanation, bounded 5 + show more/less, medium-confidence
+> confirm dialog, truthful empty states); Home shows only a compact "N transaction matches need review"
+> count. `scripts/verify-finance1b4a.ts` = **82/82**. See `docs/DECISIONS.md` ADR-033.
 
 > **Finance 1B.3B — verified Plaid Sandbox webhooks + automatic transaction sync — committed & pushed
 > (`3f7e617`); awaiting deployment config + live Sandbox webhook verification.** A **public** `POST

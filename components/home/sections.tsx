@@ -136,6 +136,12 @@ export function MoneyAwareness({ section }: { section: HomeSection<HomeMoney> })
               <span className="act">see /finances</span>
             </div>
           )}
+          {section.data!.transactionMatches > 0 && (
+            <div className="home-statline num">
+              <span>{section.data!.transactionMatches} transaction {section.data!.transactionMatches === 1 ? "match needs" : "matches need"} review</span>
+              <span>see /finances</span>
+            </div>
+          )}
           <div className="home-statline num">
             <span>Bills before payday</span>
             <span>{money(section.data!.billsDueBeforePayday)}</span>

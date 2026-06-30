@@ -1242,6 +1242,25 @@ textarea.taskadd-field:focus {
 .fin-txn-count { margin: 8px 0 0; }
 .fin-txn-pager { display: flex; gap: 14px; margin-top: 10px; }
 
+/* Finance 1B.4A — suggested matches */
+.fin-chip {
+  appearance: none; background: var(--ink); color: var(--text); border: 1px solid var(--line);
+  border-radius: 999px; padding: 4px 12px; font-size: 13px; cursor: pointer;
+}
+.fin-chip:hover { border-color: var(--explore); }
+.fin-chip.on { background: color-mix(in srgb, var(--explore) 22%, var(--ink)); border-color: var(--explore); color: var(--text); }
+.fin-match-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.fin-match-card { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+.fin-match-head { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 2px; }
+.fin-tag.conf-high { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, var(--line)); }
+.fin-tag.conf-medium { color: var(--aware); border-color: color-mix(in srgb, var(--aware) 40%, var(--line)); }
+.fin-tag.conf-low { color: var(--muted-dim); }
+.fin-match-target { margin: 2px 0 0; }
+.fin-match-why { margin: 2px 0 0; font-style: italic; }
+.fin-match-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 8px; }
+.fin-match-blocked { color: var(--aware); }
+.fin-match-confirm { margin-top: 8px; padding: 8px 10px; border: 1px dashed color-mix(in srgb, var(--aware) 50%, var(--line)); border-radius: 4px; }
+
 /* Finance 1B.2 — discovered provider accounts + linked accounts */
 .fin-pa-list { list-style: none; margin: 8px 0 0; padding: 0 0 0 10px; border-left: 2px solid var(--line); }
 .fin-pa-row { padding: 8px 0; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; }

@@ -44,6 +44,8 @@ import { ScheduleManager } from "@/components/finances/schedule-manager";
 import { TransferManager } from "@/components/finances/transfer-manager";
 import { ConnectionManager } from "@/components/finances/connection-manager";
 import { ImportedActivity } from "@/components/finances/imported-activity";
+import { SuggestedMatches } from "@/components/finances/suggested-matches";
+import { countPendingMatches } from "@/lib/services/matching";
 import type { MovementView, ProjectionHorizon, ForecastItem, ConnectionView } from "@/lib/types";
 
 const HORIZONS: { key: ProjectionHorizon; label: string }[] = [
@@ -173,6 +175,13 @@ export default async function FinancesPage({
     console.error("FinancesPage: connections load failed.", err);
   }
 
+  let pendingMatchCount = 0;
+  try {
+    pendingMatchCount = await countPendingMatches(userId);
+  } catch (err) {
+    console.error("FinancesPage: match count load failed.", err);
+  }
+
   const summary = computeCashSummary(accounts);
   const projection = computeProjection({ accounts, bills, income, transfers, horizon, today });
   const accountOptions = accounts
@@ -282,6 +291,16 @@ export default async function FinancesPage({
           <span className="tier-sub">bank evidence · read-only · separate from Xanther activity</span>
         </div>
         <ImportedActivity connections={connections} autoStatus={autoStatus} />
+      </section>
+
+      {/* 1b.4a — Suggested matches (deterministic, suggestion-only, owner-confirmed) */}
+      <section className="tier">
+        <div className="tier-head">
+          <span className="tier-tick" style={{ background: "var(--explore)" }} />
+          <span className="tier-name">Suggested matches</span>
+          <span className="tier-sub">deterministic · suggestion-only · you confirm</span>
+        </div>
+        <SuggestedMatches initialPendingCount={pendingMatchCount} />
       </section>
 
       {/* 2b — Projected balances (deterministic forecast, separate from actual) */}

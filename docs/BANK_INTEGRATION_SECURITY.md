@@ -200,11 +200,39 @@ UI says they aren't configured); without `PLAID_WEBHOOK_PROCESSOR_SECRET`, the b
 closed (the UI says background processing isn't fully configured) and the scheduled drainer still
 recovers events — the manual button works in both cases.
 
+## Transaction-matching suggestions (Finance 1B.4A)
+
+Xanther now **suggests** relationships between imported bank evidence and the owner's finance records —
+**deterministic (no AI), suggestion-only, owner-confirmed, Sandbox-scoped, no money movement.** A
+suggestion is just a proposal: it **mutates neither side** (no bill paid, income received, transfer
+completed, movement, balance, provider snapshot, or transaction cursor; the imported transaction is
+never hidden). Three types only: `bill_payment`, `income_receipt`, `transfer_pair`. Each is scored
+**0–100** with bounded **reason codes** + a **confidence band** (high ≥80 / medium 60–79 / low 50–59;
+min 50 to persist) using documented amount tolerances + America/New_York date windows. Generation is a
+manual **Find matches** action, idempotent by `(userId, matchKey)`, preserving confirmed/rejected
+decisions and never reopening a rejected relationship.
+
+**Suggestion vs. confirmation.** Only an explicit owner **Confirm** applies an effect, and only through
+the EXISTING approved workflows — **Xanther never confirms its own suggestion, and there is no automatic
+confirmation.** Bill confirm reuses `payBill` (a linked paid-account → marks paid + links the imported
+transaction as evidence, with **no** balance change — the provider snapshot stays authoritative). Income
+confirm reuses `receiveIncome` (manual destination only). **Transfer confirmation and linked-destination
+income confirmation are a documented MODEL GAP and FAIL CLOSED** (HTTP 422 / not-confirmable in the UI):
+imported transactions are evidence on a provider-authoritative linked account, `completeTransfer` rejects
+linked accounts, and there is no evidence-only transfer-confirmation path — confirming would double-count,
+so the behavior is **not invented**. Confirmation claims the suggestion atomically and reverts on failure
+(neon-http has no interactive transactions), revalidates eligibility (removed/pending transaction →
+rejected), is owner-scoped (foreign owner → 404), idempotent, and supersedes competing suggestions that
+would reuse the same evidence. The confirmed suggestion row is the durable **evidence link** (which
+transaction confirmed which record, the score/reasons, `reviewedAt`) — no columns were added to
+bills/income/transfers. **No raw Plaid payload, token, or secret is stored** in `transaction_match_suggestions`.
+
 ## What is NOT functional yet (deferred to later 1B phases)
 
-No transaction matching, bill/income/transfer confirmation, update/repair mode, real Chase/BofA
-(needs eligible Production + OAuth), or any money movement. **Before Production:** Plaid Production
-onboarding + OAuth redirect registration, real-data 90-day history policy, and operational monitoring.
+No transfer confirmation or linked-destination income confirmation (model gap — see 1B.4A above),
+update/repair mode, real Chase/BofA (needs eligible Production + OAuth), or any money movement. **Before
+Production:** Plaid Production onboarding + OAuth redirect registration, real-data 90-day history policy,
+and operational monitoring.
 
 ## Approved first-version defaults (owner-approved)
 

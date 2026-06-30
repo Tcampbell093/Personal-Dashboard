@@ -12,6 +12,30 @@
 
 ## Next approved task
 
+### Finance 1B.4A — deterministic transaction-matching suggestions
+
+- **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** Xanther now SUGGESTS how imported
+  bank evidence may relate to the owner's finance records — **suggestion-only, owner-confirmed,
+  deterministic (no AI), Sandbox-scoped, no money movement.** New additive table
+  `transaction_match_suggestions` (migration `0016_curved_nekra.sql`) + service `lib/services/matching.ts`
+  + routes `app/api/finances/matches/{,generate,[id]/confirm,[id]/reject}` + UI
+  `components/finances/suggested-matches.tsx` (a **Suggested matches** section on `/finances`) + a compact
+  Home count. Three types (`bill_payment`, `income_receipt`, `transfer_pair`), 0–100 score + confidence
+  band + bounded reason codes + amount/date diffs; manual **Find matches** generation (idempotent, upsert
+  by `(userId, matchKey)`, preserves confirmed/rejected, supersedes invalid, never reopens a rejected
+  relationship); owner **Confirm/Reject**. **Confirmation = fail-closed reuse:** bill → `payBill` (linked
+  paid-account → mark paid + evidence, no balance change); income → `receiveIncome` (manual destination
+  only); **transfer + linked-destination income fail closed (documented model gap)** — the UI shows
+  "confirmation not yet supported" and offers no Confirm button (still reviewable/rejectable). A suggestion
+  mutates **no** bill/income/transfer/movement/balance/snapshot/cursor; the confirmed suggestion row is
+  the durable evidence link (no columns added to bills/income/transfers). `scripts/verify-finance1b4a.ts`
+  = **82/82**; all regressions green; typecheck + build + secret scan clean; browser-verified
+  (desktop + 375px) end-to-end (Find matches → bill suggestion → confirm marks only that bill paid →
+  reject leaves records unchanged → empty states truthful). Sandbox-only, read-evidence, **no AI, no
+  Production Plaid, no OAuth, no money movement.** Recommended commit: `feat(finance): add transaction
+  matching suggestions`. The next approved bank gate after review is a safe **transfer-confirmation
+  model** (evidence-only) + **linked-destination income confirmation** — separate authorization required.
+
 ### Finance 1B.3B — verified Plaid Sandbox webhooks + automatic transaction sync (committed `3f7e617`)
 
 - **Status:** **APPROVED · COMMITTED & PUSHED to `main` (`3f7e6170ac92503173cb22499239aef452cd7edf`);

@@ -592,6 +592,64 @@
   + typecheck + build + all regressions green + secret scan clean. Owner's real Sandbox connection
   untouched. Older suites' superseded `!/plaid/i`/migration/scope guards updated (disclosed NOTEs).
 
+### ADR-033 — Finance 1B.4A: deterministic transaction-matching suggestions
+- **Classification:** Owner-approved decision (owner approved the 1B.4A scope + the fail-closed
+  confirmation-safety refinement).
+- **Detail:** Xanther now SUGGESTS relationships between imported bank evidence and the owner's finance
+  records — **suggestion-only, owner-confirmed, Sandbox-scoped, no AI, no money movement**. A suggestion
+  never mutates either side; only an explicit owner confirmation applies an effect, and only through the
+  EXISTING approved workflows. New durable model `transaction_match_suggestions` (migration `0016`,
+  additive). See `db/schema.ts`, `lib/services/matching.ts`, `app/api/finances/matches/*`,
+  `components/finances/suggested-matches.tsx`.
+  - **Three suggestion types only:** `bill_payment`, `income_receipt`, `transfer_pair`. No subscriptions,
+    tax/spending categories, merchant learning, budgeting rules, AI, or split transactions.
+  - **Deterministic, explainable scoring (0–100):** every suggestion stores bounded **reason codes**
+    (`exact_amount`, `amount_within_tolerance`, `date_within_window`, `merchant_name_match`,
+    `income_source_match`, `opposite_transfer_direction`, `different_owner_accounts`, `posted_transaction`)
+    + `amountDifference` + `dateDifferenceDays` — never an unexplained number. **Confidence bands:** high
+    ≥80, medium 60–79, low 50–59; nothing below the documented **minimum score 50** is persisted/shown.
+  - **Tolerances (documented):** bill amount ±max($1, 2%), date due ±7d; income amount ±max($1, 5%) (or
+    within an estimate range), date scheduled ±5d; transfer amounts must match (±$0.01 provider rounding
+    only), date ±3d, opposite directions, different owner accounts, each transaction used once. All date
+    comparisons are **America/New_York date-only** (calendar-day diffs — never raw UTC instants).
+  - **Generation:** a manual **Find matches** button (`POST /api/finances/matches/generate`) only — NOT
+    automatic post-webhook (kept fully separate from the webhook ack path). Idempotent: upserts by
+    `(userId, matchKey)`; a pending row refreshes, while **confirmed/rejected/superseded decisions are
+    preserved and never reopened** (a rejected identical relationship is not silently regenerated).
+    Concurrent generation is duplicate-free (unique index). Invalid pending suggestions (removed
+    transaction / ineligible record) are **superseded**, never deleted.
+  - **Confirmation = fail-closed reuse (safety refinement):** **bill** confirm reuses `payBill` (a linked
+    paid-account → marks paid + links evidence, **no** balance change / movement; a manual account →
+    the existing movement). **Income** confirm reuses `receiveIncome` (manual destination only;
+    linked-destination income is **not confirmable** — the UI shows "confirmation not yet supported for
+    linked accounts" and offers no Confirm button). **Transfer** confirmation is a documented **MODEL
+    GAP** and **always fails closed** (HTTP 422): imported transactions are evidence on a
+    provider-authoritative linked account, `completeTransfer` rejects linked accounts, and there is no
+    evidence-only transfer-confirmation path — confirming would double-count, so we **do not invent
+    behavior**. Transfer + linked-income suggestions are still generated, displayed, reviewed, and
+    rejectable. **Xanther never confirms its own suggestion.**
+  - **Atomicity (neon-http, no interactive transactions):** confirm CLAIMS the suggestion atomically
+    (pending→confirmed), applies the workflow, and on any failure REVERTS the claim (compensating update)
+    so no half-state persists; everything is idempotent + revalidates current eligibility (removed/pending
+    transaction → rejected; foreign owner → 404). Confirming supersedes competing pending suggestions that
+    would reuse the same transaction or record.
+  - **Evidence model:** the confirmed suggestion row IS the durable evidence link (it records which
+    imported transaction confirmed which bill/income, the score/reasons, and `reviewedAt`) — no new
+    columns were added to bills/income/transfers. The suggestion is kept after confirmation.
+  - **Surfaces:** `/finances` gains a compact **Suggested matches** section (pending by default, type
+    filters, confidence + plain-English explanation, Confirm/Reject, bounded to 5 + show more/less,
+    medium-confidence in-card confirmation dialog, truthful empty states). Home shows only a compact
+    **"N transaction matches need review"** count (no list). `/manage` unchanged; task ranking unchanged.
+- **Evidence:** `scripts/verify-finance1b4a.ts` (**82/82** — generation/scoring/bands/reason-codes,
+  idempotency + concurrency, supersede, bill + income confirmation via existing workflows, transfer +
+  removed/pending + foreign-owner fail-closed, rejection + no-silent-regeneration, UI presence, domain
+  protection [generation mutates no bill/income/transfer/movement/balance/snapshot/cursor], scope
+  guardrails, owner protection) + all regressions green + typecheck + build + secret scan + browser run.
+  Owner's BofA connection + Plaid Checking + 19 imported transactions + request 222 preserved.
+- **Known limitations:** Sandbox-only; transfer confirmation + linked-destination income confirmation are
+  deferred (model gap — would need an evidence-only confirmation path that doesn't conflict with
+  provider-authoritative balances); deterministic only (no AI/merchant learning); manual generation only.
+
 ### ADR-032 — Finance 1B.3B: verified Plaid Sandbox webhooks + automatic sync
 - **Classification:** Owner-approved decision (owner approved the 1B.3B scope).
 - **Detail:** Adds **automatic** transaction sync via a verified Plaid webhook — still Sandbox-only,

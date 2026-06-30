@@ -287,7 +287,9 @@ async function main() {
     // approved build). The 1B.2 invariant: the ACCOUNT-sync service has no webhook
     // handling.
     ok("[54] account-sync service performs no webhook handling", !/verifyWebhook|webhook/i.test(svcSrc));
-    ok("[55] no transaction matching", !/match/i.test(stripComments(svcSrc)) && !existsSync("lib/services/matching.ts"));
+    // NOTE: a transaction-matching service is sanctioned by Finance 1B.4A; this guard now
+    // only asserts the 1B.2 PROVIDER-ACCOUNTS service itself performs no matching.
+    ok("[55] provider-accounts service performs no transaction matching", !/match/i.test(stripComments(svcSrc)));
     ok("[56] no bill/income/transfer evidence confirmation", !/confirm.*(bill|income|transfer).*evidence|evidence.*confirm/i.test(stripComments(svcSrc)));
     ok("[57] no money movement", !/transfer|payment|moveMoney|paymentInitiation/i.test(stripComments(svcSrc + adapterSrc)));
     ok("[58] Finance 1B.1 remains intact", existsSync("lib/services/connections.ts") && /pgTable\(\s*["']financial_connections["']/.test(schemaSrc));

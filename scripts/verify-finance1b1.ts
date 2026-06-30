@@ -266,7 +266,9 @@ async function main() {
     /createUpdateLinkSession: notImplemented/.test(adapterSrc));
   ok("[54] the webhook is VERIFIED (signature/raw-body hash), not a blind receiver",
     /verifyPlaidWebhook/.test(adapterSrc) && /Plaid-Verification/.test(read("lib/providers/plaid/webhook.ts")));
-  ok("[55] no transaction matching", !/match/i.test(svcSrc) && !existsSync("lib/services/matching.ts"));
+  // NOTE: a transaction-matching service is sanctioned by Finance 1B.4A; this guard now
+  // only asserts the 1B.1 CONNECTIONS service itself performs no matching.
+  ok("[55] connection service performs no transaction matching", !/match/i.test(svcSrc));
   ok("[56] no money movement (no transfer/payment code; comments excluded)",
     !/transfer|payment|moveMoney|paymentInitiation/i.test(stripComments(svcSrc + adapterSrc)));
   ok("[57] Finance 1A.4 remains intact", /pgTable\(\s*["']income_schedules["']/.test(schemaSrc) && existsSync("lib/services/income-schedules.ts"));

@@ -30,6 +30,7 @@ import {
   allocationsByIncome,
 } from "@/lib/services/finances";
 import { listTransfers, toTransferViews } from "@/lib/services/transfers";
+import { countPendingMatches } from "@/lib/services/matching";
 import { computeProjection } from "@/lib/services/finance-projection";
 import { linkedBalanceMap } from "@/lib/services/provider-accounts";
 import {
@@ -142,7 +143,7 @@ async function loadComingUp(userId: number): Promise<HomeComingItem[]> {
 }
 
 async function loadMoney(userId: number): Promise<HomeMoney> {
-  const [outlook, acctRows, linkedSnap, bills, incomeRows, allocRows, transfers] = await Promise.all([
+  const [outlook, acctRows, linkedSnap, bills, incomeRows, allocRows, transfers, transactionMatches] = await Promise.all([
     computeFinancialOutlook(userId),
     listAccounts(userId),
     linkedBalanceMap(userId),
@@ -150,6 +151,7 @@ async function loadMoney(userId: number): Promise<HomeMoney> {
     listIncome(userId),
     listAllocations(userId),
     listTransfers(userId).then(toTransferViews),
+    countPendingMatches(userId),
   ]);
   // Finance 1B.2: resolve linked accounts' provider balances (manual unchanged).
   const accounts = toAccountViews(acctRows, linkedSnap);
@@ -194,6 +196,7 @@ async function loadMoney(userId: number): Promise<HomeMoney> {
     nextIncomeDate: projection.nextIncomeDate,
     nextIncomeText,
     hasUnconfirmedIncome,
+    transactionMatches,
   };
 }
 
