@@ -324,7 +324,8 @@ async function main() {
   // NOTE: 0018 (1B.5A category/rule tables) is additive.
   // NOTE: 0019 (1B.5B financial_insight_dismissals) is additive.
   // NOTE: 0020 (1C.0A credit_* tables) is additive.
-  ok("[23] migrations are sequential + additive/constraint-only (latest is 1C.0A's 0020)", maxMig === 20);
+  // NOTE: 0021 (1C.0A review fix — live-only partial unique indexes on credit scores + inquiries).
+  ok("[23] migrations are sequential + additive/constraint-only (latest is 1C.0A's 0021)", maxMig === 21);
   // [24] no external provider API call: no plaid.com API URL anywhere in code.
   ok("[24] no external provider API call occurs (no plaid.com API URL in code)",
     !/https?:\/\/[^"'\s]*plaid\.com/.test(providerBlob + read("app/finances/page.tsx")));

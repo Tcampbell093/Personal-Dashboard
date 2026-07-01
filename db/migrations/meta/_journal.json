@@ -148,6 +148,13 @@
       "when": 1782923703505,
       "tag": "0020_new_sentinel",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1782927055475,
+      "tag": "0021_needy_jack_power",
+      "breakpoints": true
     }
   ]
 }

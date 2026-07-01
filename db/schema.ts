@@ -1199,7 +1199,9 @@ export const creditScoreSnapshots = pgTable(
   (t) => [
     index("credit_score_snapshots_user_idx").on(t.userId),
     // One snapshot per (owner, source, model, date, score) → idempotent, no silent duplicate.
-    uniqueIndex("credit_score_snapshots_uq").on(t.userId, t.source, t.scoringModel, t.asOfDate, t.score),
+    // Partial: only LIVE rows participate, so a soft-deleted snapshot never blocks
+    // (or silently swallows) an identical re-entry.
+    uniqueIndex("credit_score_snapshots_uq").on(t.userId, t.source, t.scoringModel, t.asOfDate, t.score).where(sql`${t.deletedAt} is null`),
   ],
 );
 
@@ -1285,7 +1287,9 @@ export const creditInquiries = pgTable(
   (t) => [
     index("credit_inquiries_user_idx").on(t.userId),
     // Guard against clearly-identical duplicates (same creditor + date + type).
-    uniqueIndex("credit_inquiries_uq").on(t.userId, t.creditorName, t.inquiryDate, t.inquiryType),
+    // Partial (live-only) for the same reason as scores — a soft-deleted inquiry
+    // must not block re-entering an identical one.
+    uniqueIndex("credit_inquiries_uq").on(t.userId, t.creditorName, t.inquiryDate, t.inquiryType).where(sql`${t.deletedAt} is null`),
   ],
 );
 

@@ -63,6 +63,14 @@ async function main() {
   const ovStale = await C.computeCreditOverview(U, { now: NOW });
   ok("[10] stale-data warning is truthful", ovStale.staleScore === false); // latest is 5 days old → not stale
 
+  // [R1] REVIEW FIX — soft-deleted score duplicate lifecycle (create → delete → re-add identical).
+  await resetCredit();
+  const rs1 = await C.createScore(U, { score: 711, source: "experian", scoringModel: "FICO 8", asOfDate: "2026-06-15" });
+  await C.deleteScore(U, rs1.id);
+  const rs2 = await C.createScore(U, { score: 711, source: "experian", scoringModel: "FICO 8", asOfDate: "2026-06-15" });
+  const rs3 = await C.createScore(U, { score: 711, source: "experian", scoringModel: "FICO 8", asOfDate: "2026-06-15" });
+  ok("[R1] delete-then-re-add identical score returns a defined new live row (no undefined); live duplicate stays idempotent", !!rs2 && rs2.score === 711 && rs2.id !== rs1.id && !!rs3 && rs3.id === rs2.id && (await C.listScores(U)).length === 1);
+
   await resetCredit();
   /* ================= accounts + utilization [11-24] ================= */
   console.log("\n[accounts + utilization]");
@@ -117,6 +125,11 @@ async function main() {
   const inqSum = C.computeInquiries(await C.listInquiries(U), NOW);
   ok("[34] hard inquiry count is correct", inqSum.hardCount === 2);
   ok("[35] soft inquiry is excluded from hard-inquiry guidance", inqSum.softCount === 1 && inqSum.recentHardCount === 2);
+  // [R2] REVIEW FIX — soft-deleted inquiry duplicate lifecycle (same partial-index fix as scores).
+  const ri1 = await C.createInquiry(U, { creditorName: "ReAdd Lender", inquiryDate: ago(30), inquiryType: "hard" });
+  await db.update(creditInquiries).set({ deletedAt: new Date() }).where(eq(creditInquiries.id, ri1.id));
+  const ri2 = await C.createInquiry(U, { creditorName: "ReAdd Lender", inquiryDate: ago(30), inquiryType: "hard" });
+  ok("[R2] delete-then-re-add identical inquiry returns a defined new live row", !!ri2 && ri2.id !== ri1.id && (await C.listInquiries(U)).filter((i) => i.creditorName === "ReAdd Lender").length === 1);
   const ovInq = await C.computeCreditOverview(U, { now: NOW });
   const ovInq2 = await C.computeCreditOverview(U, { now: NOW });
   ok("[36] recent-inquiry observation is deterministic", JSON.stringify(ovInq.observations.filter((o) => o.type === "recent_hard_inquiries")) === JSON.stringify(ovInq2.observations.filter((o) => o.type === "recent_hard_inquiries")) && ovInq.observations.some((o) => o.type === "recent_hard_inquiries"));
@@ -147,6 +160,12 @@ async function main() {
   const after = (await C.listGoals(U)).filter((g) => g.id === g2.id);
   ok("[45] repeated goal update is idempotent", after.length === 1 && after[0].priority === "high" && before.id === after[0].id);
   ok("[46] invalid target is rejected", await threw(() => C.createGoal(U, { goalType: "utilization_target", targetValue: 150 })) && await threw(() => C.createGoal(U, { goalType: "score_target", targetValue: 50 })));
+  // [R3] REVIEW FIX — retyping a goal re-validates the EXISTING target against the NEW type.
+  const rg = await C.createGoal(U, { goalType: "score_target", targetValue: 700 });
+  const rgRejected = await threw(() => C.updateGoal(U, rg.id, { goalType: "utilization_target" })); // 700% invalid utilization
+  const rgUnchanged = (await C.listGoals(U)).find((g) => g.id === rg.id)!;
+  const rgValid = await C.updateGoal(U, rg.id, { goalType: "debt_balance_target", targetValue: 1500 }); // valid retype with new target
+  ok("[R3] goalType change re-validates existing target (score 700 → utilization rejected; goal unchanged; valid retype allowed)", rgRejected && rgUnchanged.goalType === "score_target" && Number(rgUnchanged.targetValue) === 700 && rgValid.goalType === "debt_balance_target" && Number(rgValid.targetValue) === 1500);
   ok("[47] foreign-owner goal access is rejected", await threw(() => C.updateGoal(FOREIGN, g1.id, { status: "abandoned" })) && (await C.listGoals(FOREIGN)).length === 0);
 
   await resetCredit();
@@ -240,6 +259,10 @@ async function main() {
   ok("[89] add/edit late-payment flow renders", /LateForm/.test(uiSrc) && /Save late-payment/.test(uiSrc));
   ok("[90] add/edit goal flow renders", /GoalForm/.test(uiSrc) && /Save goal/.test(uiSrc));
   ok("[91] stale-data warning renders", /over 45 days old/.test(uiSrc));
+  // [R4/R5/R6] REVIEW FIX — real edit flows (PATCH), score delete + account delete/archive, error surfacing.
+  ok("[R4] every record type has an inline Edit control that PATCHes (create-or-edit form)", /aria-label="Edit"/.test(uiSrc) && /useSubmit\(/.test(uiSrc) && /id \? "PATCH" : "POST"/.test(uiSrc) && ["ScoreForm", "AccountForm", "CollectionForm", "InquiryForm", "LateForm", "GoalForm"].every((f) => new RegExp(`<${f} record=`).test(uiSrc)));
+  ok("[R5] score deletion + account delete/archive are exposed", /deletable \/>/.test(uiSrc) && /deletable deleteLabel="Delete \/ archive" archiveable/.test(uiSrc) && /"DELETE"\)/.test(uiSrc) && /was archived \(status set to closed\)/.test(uiSrc));
+  ok("[R6] API errors are surfaced (not silent) via role=alert + server message", /role="alert"/.test(uiSrc) && /setErr\(r\.error\)/.test(uiSrc) && /setNotice\(r\.error\)/.test(uiSrc) && /\?\.error \?\?/.test(uiSrc));
   ok("[92] Home shows at most one action and one progress item", /creditAction/.test(secSrc) && /creditProgress/.test(secSrc) && /creditStale/.test(secSrc) && !/\.actions\.map|observations\.map/.test(secSrc));
   ok("[93] /manage remains unchanged", !/CreditHealth|financial health|\/finances\/credit|credit_score|credit_accounts/i.test(read("components/manage/manage-dashboard.tsx")));
   ok("[94] desktop layout is usable (renders lists + tabs)", /fin-tabs/.test(uiSrc) && /fin-credit-list/.test(uiSrc));

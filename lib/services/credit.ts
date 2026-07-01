@@ -43,6 +43,7 @@ const UTIL_EDU_NOTE = "Lower reported utilization is generally associated with h
 const NO_GUARANTEE = "This is educational guidance, not a guaranteed score change.";
 
 /* --------------------------------------------------------- helpers ------- */
+const isUniqueViolation = (e: unknown) => typeof e === "object" && e != null && (e as { code?: string }).code === "23505";
 const num = (s: string | null | undefined) => (s == null ? 0 : Number(s));
 const money = (n: number) => `$${Math.abs(Math.round(n)).toLocaleString("en-US")}`;
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -88,17 +89,22 @@ export async function createScore(userId: number, input: ScoreInput) {
   const scoringModel = input.scoringModel == null || input.scoringModel === "" ? null : reqStr(input.scoringModel, "scoringModel", 60);
   const bureau = input.bureau == null || input.bureau === "" ? null : reqStr(input.bureau, "bureau", 40);
   const notes = input.notes == null || input.notes === "" ? null : String(input.notes).slice(0, 2000);
-  const [row] = await db.insert(creditScoreSnapshots)
-    .values({ userId, score, source, bureau, scoringModel, asOfDate, notes })
-    .onConflictDoNothing({ target: [creditScoreSnapshots.userId, creditScoreSnapshots.source, creditScoreSnapshots.scoringModel, creditScoreSnapshots.asOfDate, creditScoreSnapshots.score] })
-    .returning();
-  if (!row) { // identical duplicate → return the existing one (idempotent, no silent overwrite)
-    const [existing] = await db.select().from(creditScoreSnapshots)
-      .where(and(eq(creditScoreSnapshots.userId, userId), eq(creditScoreSnapshots.source, source), eq(creditScoreSnapshots.asOfDate, asOfDate), eq(creditScoreSnapshots.score, score), isNull(creditScoreSnapshots.deletedAt)))
-      .limit(1);
-    return existing;
+  // Idempotent against LIVE rows only, so a delete-then-re-add always yields a fresh
+  // live row (a soft-deleted identical snapshot is ignored). The live-only partial
+  // unique index is the concurrency backstop: a racing duplicate insert throws 23505,
+  // which we resolve by returning the row the winner created.
+  const liveMatch = () => db.select().from(creditScoreSnapshots)
+    .where(and(eq(creditScoreSnapshots.userId, userId), eq(creditScoreSnapshots.source, source), scoringModel == null ? isNull(creditScoreSnapshots.scoringModel) : eq(creditScoreSnapshots.scoringModel, scoringModel), eq(creditScoreSnapshots.asOfDate, asOfDate), eq(creditScoreSnapshots.score, score), isNull(creditScoreSnapshots.deletedAt)))
+    .limit(1);
+  const [existing] = await liveMatch();
+  if (existing) return existing; // idempotent — no silent overwrite
+  try {
+    const [row] = await db.insert(creditScoreSnapshots).values({ userId, score, source, bureau, scoringModel, asOfDate, notes }).returning();
+    return row;
+  } catch (e) {
+    if (isUniqueViolation(e)) { const [row] = await liveMatch(); if (row) return row; }
+    throw e;
   }
-  return row;
 }
 export async function updateScore(userId: number, id: number, input: Partial<ScoreInput>) {
   await ownOrThrow(creditScoreSnapshots, userId, id);
@@ -198,10 +204,18 @@ export async function createInquiry(userId: number, input: InquiryInput) {
   const bureau = input.bureau == null || input.bureau === "" ? null : reqStr(input.bureau, "bureau", 40);
   const purpose = input.purpose == null || input.purpose === "" ? null : reqStr(input.purpose, "purpose", 120);
   const notes = input.notes == null || input.notes === "" ? null : String(input.notes).slice(0, 2000);
-  const [row] = await db.insert(creditInquiries).values({ userId, creditorName, inquiryDate, inquiryType, bureau, purpose, notes })
-    .onConflictDoNothing({ target: [creditInquiries.userId, creditInquiries.creditorName, creditInquiries.inquiryDate, creditInquiries.inquiryType] }).returning();
-  if (!row) { const [existing] = await db.select().from(creditInquiries).where(and(eq(creditInquiries.userId, userId), eq(creditInquiries.creditorName, creditorName), eq(creditInquiries.inquiryDate, inquiryDate), eq(creditInquiries.inquiryType, inquiryType), isNull(creditInquiries.deletedAt))).limit(1); return existing; }
-  return row;
+  // Same live-only idempotency as scores — a soft-deleted identical inquiry never
+  // blocks a re-entry; the partial unique index guards concurrent duplicates.
+  const liveMatch = () => db.select().from(creditInquiries).where(and(eq(creditInquiries.userId, userId), eq(creditInquiries.creditorName, creditorName), eq(creditInquiries.inquiryDate, inquiryDate), eq(creditInquiries.inquiryType, inquiryType), isNull(creditInquiries.deletedAt))).limit(1);
+  const [existing] = await liveMatch();
+  if (existing) return existing;
+  try {
+    const [row] = await db.insert(creditInquiries).values({ userId, creditorName, inquiryDate, inquiryType, bureau, purpose, notes }).returning();
+    return row;
+  } catch (e) {
+    if (isUniqueViolation(e)) { const [row] = await liveMatch(); if (row) return row; }
+    throw e;
+  }
 }
 export async function updateInquiry(userId: number, id: number, input: Partial<InquiryInput>) {
   await ownOrThrow(creditInquiries, userId, id);
@@ -270,7 +284,16 @@ export async function updateGoal(userId: number, id: number, input: Partial<Goal
   const patch: Record<string, unknown> = { updatedAt: new Date() };
   const goalType = input.goalType !== undefined ? oneOf(input.goalType, GOAL_TYPES, "goalType") : String(existing.goalType);
   if (input.goalType !== undefined) patch.goalType = goalType;
-  if (input.targetValue !== undefined) { const t = optNum(input.targetValue, "targetValue", { allowNull: false })!; validateGoalTarget(goalType, t); patch.targetValue = String(round2(t)); }
+  // Resolve the EFFECTIVE target (new value if provided, else the existing one) and
+  // validate it against the EFFECTIVE goal type whenever either changes — otherwise
+  // retyping a score target of 700 as a utilization target would slip through invalid.
+  const targetChanged = input.targetValue !== undefined;
+  const typeChanged = input.goalType !== undefined;
+  if (targetChanged || typeChanged) {
+    const effectiveTarget = targetChanged ? optNum(input.targetValue, "targetValue", { allowNull: false })! : Number(existing.targetValue);
+    validateGoalTarget(goalType, effectiveTarget);
+    if (targetChanged) patch.targetValue = String(round2(effectiveTarget));
+  }
   if (input.status !== undefined) patch.status = oneOf(input.status, GOAL_STATUSES, "status");
   if (input.priority !== undefined) patch.priority = oneOf(input.priority, ["low", "medium", "high"], "priority");
   if (input.targetDate !== undefined) patch.targetDate = optDate(input.targetDate, "targetDate");

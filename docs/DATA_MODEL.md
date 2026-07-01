@@ -281,8 +281,10 @@ duplicate manual income movements; uncertain matches need owner approval; recurr
   owner-entered** — the migration creates schema only (no score/collection/account/inquiry/late-payment
   backfill, no inferred owner data). The financial-health engine (utilization, summaries, observations,
   action cards, health) is a **calculated view**, never persisted, and mutates no bank/finance record
-  and moves no money. No credit-bureau or Credit-Karma connection exists. See `docs/DECISIONS.md`
-  ADR-037.
+  and moves no money. No credit-bureau or Credit-Karma connection exists. Follow-up migration
+  `0021_needy_jack_power.sql` makes the score + inquiry unique indexes **live-only partial**
+  (`WHERE deleted_at IS NULL`) so a soft-deleted snapshot/inquiry never blocks re-entering an identical
+  one (index-only change; no data touched). See `docs/DECISIONS.md` ADR-037.
 - **1B.5B — DONE (spending insights + opportunity detection)** — additive migration
   `0019_majestic_chimera.sql` adds **one** table, `financial_insight_dismissals`: `userId` (FK, cascade),
   `insightKey` (deterministic period-scoped key, e.g. `category_change:current_month:5`), `insightType`,

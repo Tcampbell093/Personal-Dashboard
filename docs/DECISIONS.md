@@ -648,6 +648,14 @@
   regressions green + typecheck + build + secret scan + browser run (desktop + 375px, no console errors).
   Owner's BofA connection + Plaid Checking + 19 imported transactions + request 222 preserved; no
   balance/movement/snapshot/cursor/evidence change.
+- **Review fixes (2026-07-01, branch `finance-1c0a-review`):** (1) score/inquiry unique indexes made
+  **live-only partial** (migration `0021`) + `createScore`/`createInquiry` reworked to an explicit
+  live-match-then-insert with a 23505 backstop — a delete-then-re-add of an identical snapshot now returns
+  a defined new live row instead of `undefined`; (2) the credit component gained **real inline edit
+  (PATCH) flows for all six record types**, score delete + account delete/archive, and server-error
+  surfacing via `role="alert"` (no silent close); (3) `updateGoal` now re-validates the **effective**
+  target against the **effective** goal type whenever either changes, so retyping a score target of 700
+  as a utilization target is rejected. Regression coverage added ([R1]–[R6]); harness now **127/127**.
 - **Known limitations:** all data is manual and may go stale (surfaced honestly); no bureau/Credit-Karma
   connection; estimates are illustrative, not advice; utilization needs valid limits; deterministic only
   (no AI); the Personal Advantage Engine, budgets/forecasts, and reversal/audit tooling are deferred.

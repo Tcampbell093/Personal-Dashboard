@@ -1341,7 +1341,10 @@ textarea.taskadd-field:focus {
 .fin-urg.u-medium { color: var(--muted); }
 .fin-urg.u-low { color: var(--muted-dim); }
 .fin-empty { font-size: 13px; color: var(--muted); margin: 2px 0; }
-@media (max-width: 460px) { .fin-credit-form form { flex-direction: column; align-items: stretch; } .fin-stat-row { flex-direction: column; } }
+.fin-row-actions { display: inline-flex; gap: 6px; flex-shrink: 0; }
+.fin-row-actions .fin-mini-btn { padding: 2px 8px; font-size: 11px; }
+.fin-row-actions .fin-mini-btn:disabled { opacity: 0.5; cursor: default; }
+@media (max-width: 460px) { .fin-credit-form form { flex-direction: column; align-items: stretch; } .fin-stat-row { flex-direction: column; } .fin-credit-row { flex-wrap: wrap; } }
 
 /* Finance 1B.2 — discovered provider accounts + linked accounts */
 .fin-pa-list { list-style: none; margin: 8px 0 0; padding: 0 0 0 10px; border-left: 2px solid var(--line); }
