@@ -134,12 +134,16 @@ For each section:
 - **Source data:** normalized signals (§4) of risk type — overdue/soon-due tasks/obligations/bills,
   projected shortfall (`computeProjection` warnings), overdue credit payment, unverified collection,
   recent hard inquiries, high utilization, expected-income-unconfirmed.
-- **Inclusion rules:** exactly **one** — the top-ranked risk signal per §5, subject to suppression (§5) and
-  capacity context (§10).
+- **Inclusion rules:** **at most one.** A risk is shown only when a qualifying, grounded, non-stale
+  candidate (§4) passes the documented ranking threshold (§5), the capacity rules (§10), and the safety
+  boundaries (§14) — the top-ranked such signal, subject to suppression (§5). If no candidate clears those
+  bars, the section shows its truthful empty state. **Xanther must never manufacture or promote a weak
+  risk merely to fill the slot.**
 - **Exclusion rules:** items already being handled (accepted/deferred/completed recommendation covering the
-  same source); low-confidence inferences presented as fact.
-- **Max items:** **1**.
-- **Empty state:** "No pressing risks detected from your current data."
+  same source); low-confidence inferences presented as fact; any candidate below the ranking threshold.
+- **Max items:** **at most 1** (0 when nothing qualifies).
+- **Empty state:** "No pressing risks detected from your current data." (Shown whenever no candidate clears
+  the threshold/capacity/safety bars.)
 - **Ordering:** single item; selection rationale recorded (§5 "why chosen").
 - **Evidence shown:** observation + evidence + source reference + confidence.
 - **Freshness:** signal must be within its non-stale window (§4 `staleDate`).
@@ -149,11 +153,16 @@ For each section:
 - **Source data:** normalized signals of opportunity type — spending-reduction opportunities
   (`computeInsights`), credit action cards (`computeCreditOverview` non-risk), utilization-reduction, goal
   progress within reach.
-- **Inclusion rules:** exactly **one** — top-ranked opportunity per §5; low-confidence opportunities are
-  hidden by default (consistent with existing insights behavior).
-- **Exclusion rules:** opportunities already handled/deferred; anything requiring an out-of-bounds action.
-- **Max items:** **1**.
-- **Empty state:** "No clear opportunity to act on right now."
+- **Inclusion rules:** **at most one.** An opportunity is shown only when a qualifying, grounded, non-stale
+  candidate passes the documented ranking threshold (§5), the capacity rules (§10), and the safety
+  boundaries (§14) — the top-ranked such signal; low-confidence opportunities are hidden by default
+  (consistent with existing insights behavior). If none qualifies, the section shows its truthful empty
+  state. **Xanther must never manufacture or promote a weak opportunity merely to fill the slot.**
+- **Exclusion rules:** opportunities already handled/deferred; anything requiring an out-of-bounds action;
+  any candidate below the ranking threshold.
+- **Max items:** **at most 1** (0 when nothing qualifies).
+- **Empty state:** "No clear opportunity to act on right now." (Shown whenever no candidate clears the
+  threshold/capacity/safety bars.)
 - **Evidence shown:** observation + estimated upside + tradeoff + confidence.
 - **Freshness:** within its non-stale window.
 
@@ -162,18 +171,26 @@ For each section:
   the loop's payload and the only section that becomes a **persisted recommendation** (§6, §8).
 - **Source data:** the top-ranked **actionable** signal across risk + opportunity (a recommendation may be
   the same underlying signal as the risk or opportunity, promoted to an action).
-- **Inclusion rules:** exactly **one**; must be bounded and realistic; must pass the capacity check (§10)
-  and the hard boundaries (§14).
+- **Inclusion rules:** **at most one — and never more than one.** A recommended move is shown only when a
+  qualifying, grounded, non-stale candidate passes the documented ranking threshold (§5), the capacity
+  check (§10), and the hard boundaries (§14); it must be bounded and realistic. If no candidate clears
+  those bars, the section shows its truthful empty state. **Xanther must never manufacture or promote a
+  weak recommendation merely to fill the slot** — an empty "no move today" is the correct, honest output
+  when nothing qualifies.
 - **Exclusion rules:** any move that would spend/move money, contact a person, publish, apply, or make an
-  irreversible decision; any move already accepted/active.
-- **Max items:** **1**.
-- **Empty state:** "No recommended move today — you're on top of things."
+  irreversible decision; any move already accepted/active; any candidate below the ranking threshold.
+- **Max items:** **at most 1, and never more than 1** (0 when nothing qualifies).
+- **Empty state:** "No recommended move today — you're on top of things." (Shown whenever no candidate
+  clears the threshold/capacity/safety bars.)
 - **Evidence shown:** the full recommended-move shape (§6).
 - **Freshness:** the recommendation carries an expiration (§6); a stale unaccepted recommendation is
   regenerated rather than shown expired.
 
 **Global concision rule:** the entire brief is capped at roughly **one screen above the fold on desktop**
-and a short scroll on mobile; total actionable items across sections ≤ ~8; exactly one recommended move.
+and a short scroll on mobile; total actionable items across sections ≤ ~8; **never more than one recommended
+move**, and risk/opportunity/move each show **at most one** item — shown only when a qualifying candidate
+clears the ranking/capacity/safety bars, otherwise the truthful empty state. A weak item is never promoted
+to fill a slot.
 
 ---
 
@@ -507,9 +524,13 @@ Existing Home functionality is preserved; the DCC is an orchestration layer on t
    data; unsupported domains show truthful empty states.
 2. **Deterministic ranking** — identical inputs produce identical selection + ordering; "why chosen" is
    inspectable; no AI in selection.
-3. **Concise limits** — section caps honored (Today ≤3, What changed ≤3, risk/opportunity/move = 1 each);
-   total ≤ ~8 actionable items; one recommended move.
-4. **One recommended move** — exactly one, bounded, passing capacity (§10) and hard boundaries (§14).
+3. **Concise limits** — section caps honored (Today ≤3, What changed ≤3, risk/opportunity/move **at most 1
+   each**); total ≤ ~8 actionable items; **never more than one recommended move**.
+4. **At-most-one, never-forced move** — the recommended move (and likewise risk and opportunity) appears
+   only when a qualifying, grounded, non-stale candidate clears the ranking threshold (§5), capacity check
+   (§10), and hard boundaries (§14); otherwise the truthful empty state is shown. **A weak candidate is
+   never manufactured or promoted to fill the slot,** and there is never more than one recommended move.
+   Test coverage must include the empty/no-qualifying-candidate path, not only the populated path.
 5. **Response lifecycle persistence** — accept/defer/reject/not_relevant/complete persist with the required
    fields; correctable/reversible.
 6. **Defer & recurrence** — deferred items return after `deferUntil` only if still true; rejected/
@@ -544,20 +565,54 @@ unrelated modules.
 A safe, independently reviewable sequence. **None of these is approved; each requires its own bounded
 HANDOFF task.**
 
+**Testing is not deferred to the end. Every slice ships with tests for the behavior it introduces**, so
+each slice is independently verifiable and reviewable. The final verification slice (7) remains responsible
+for **comprehensive integration, regression, and browser testing across the whole loop**, but per-slice
+behavior must already be covered by that slice's own tests — testing must **not** be postponed until slice
+7. A slice is not "done" until its own tests pass and existing suites remain green.
+
 1. **Signal contracts + deterministic providers** — define `DailySignal`, implement read-only providers
    over existing services; verify each provider is pure/owner-scoped and mutates nothing.
+   - **Tests in this slice:** provider **purity** (no writes to any source table — snapshot before/after),
+     **ownership** (owner-scoped; foreign-owner sees nothing), and **mapping correctness** (domain output →
+     `DailySignal` fields, including `class`/provenance and `sourceRefs`), plus empty-domain/empty-state
+     mapping.
 2. **Orchestration + ranking** — `collectDailySignals` (failure-isolated) + `rankSignals` (deterministic,
-   extends `lib/briefing.ts`); verify determinism, caps, diversity, suppression.
+   extends `lib/briefing.ts`).
+   - **Tests in this slice:** **deterministic ranking** (identical inputs → identical order), **tie-break**
+     rules, **category caps**, **diversity** (Finance can't crowd out other domains), **suppression/dedupe**,
+     **stale-signal handling**, the **at-most-one / no-forced-item** behavior (including the empty/no-
+     qualifying-candidate path), and **partial-failure isolation** (one provider throwing degrades only its
+     part).
 3. **Lifecycle persistence** — the minimal `daily_recommendations` table (+ optional brief log) with a
    dedicated migration at that time; live-only partial unique; foreign-owner rejection.
+   - **Tests in this slice:** **migration** applies additively; **lifecycle** transitions
+     (present → accept/defer/reject/not_relevant/complete → outcome/verify); **uniqueness** (live-only
+     partial unique; soft-deleted/superseded rows don't block re-creation); **owner isolation**
+     (foreign-owner rejected); and **recurrence** (defer-until return, reject/not-relevant cooldown,
+     resurface-only-on-material-change).
 4. **Read/respond APIs** — `GET /api/daily`, respond/outcome endpoints; idempotency; ownership.
-5. **Daily Command Center UI** — the five sections + one recommended move; empty states; response controls.
+   - **Tests in this slice:** endpoint **read** shape, **respond/outcome** happy paths + validation errors,
+     **idempotency** by `recommendationKey`, **ownership/authorization** (server-derived owner; browser
+     cannot supply a user id), and graceful-degradation response when a domain is unavailable.
+5. **Daily Command Center UI** — the five sections + **at most one** recommended move; empty states;
+   response controls.
+   - **Tests in this slice:** section rendering + **caps/empty-state** rendering (including the no-move
+     path), response controls (accept/defer/reject/not_relevant/complete) and their error surfacing,
+     evidence/provenance display, and **375px** no-overflow.
 6. **Home integration** — mount the brief above existing sections; consolidate duplicated one-liners;
    preserve existing sections + deep links; mobile.
-7. **Verification harness + browser testing** — a `verify-daily*.ts` harness (exact-ID temp records,
-   determinism, lifecycle, suppression/recurrence, partial-failure, owner protection) + desktop/375px
-   browser verification; all existing suites remain green.
+   - **Tests in this slice:** brief mounts above the fold; **existing Home sections still function** (no
+     regression); duplicated one-liners consolidated (no double-display); deep links intact; mobile
+     behavior.
+7. **Verification harness + comprehensive testing** — a `verify-daily*.ts` harness plus full integration,
+   regression, and browser testing across the whole loop (exact-ID temp records, determinism, lifecycle,
+   suppression/recurrence, partial-failure, owner protection, empty-state paths) + desktop/375px browser
+   verification; all existing suites remain green. This slice **aggregates and cross-checks** the per-slice
+   behavior — it does not introduce testing that earlier slices should already own.
 8. **Optional AI explanation layer** — a **later, separately approved** phase: rephrase the deterministic
    brief, gated by §11 (traceable, deterministic fallback, no ranking/behavior change).
+   - **Tests in this slice:** AI output remains **traceable to structured evidence**, ranking/behavior is
+     **unchanged** by AI, and **AI failure falls back** to deterministic text.
 
-Each slice preserves existing behavior and is reviewable on its own.
+Each slice preserves existing behavior, ships with its own behavior tests, and is reviewable on its own.
