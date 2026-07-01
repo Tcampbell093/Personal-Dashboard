@@ -57,9 +57,11 @@
   observations, 10 prioritized action cards, six-section health summary; **read-only, no bureau/Credit-
   Karma connection, no dispute/settlement/application automation, no money movement, no guaranteed
   score claims**; verify-first collection warnings; cash-flow-aware but never spends; Personal Advantage
-  Engine output shape prepared) is **done — reviewed, merged to `main` (commit `ca4fcdb`), and deployed**
-  (`scripts/verify-finance1c0a.ts` 127/127 after review fixes). **No AI, no money movement, Sandbox-only,
-  owner-confirmed.** Next: the **Personal Advantage Engine** (not yet approved — do not begin),
+  Engine output shape prepared) is **done — reviewed, merged to `main` (commit `ca4fcdb`), locally
+  production-build verified, and expected to auto-deploy** (`scripts/verify-finance1c0a.ts` 127/127 after
+  review fixes; live production commit/UI verification unconfirmed due to the Netlify site-level password
+  and unavailable deploy-status API). **No AI, no money movement, Sandbox-only, owner-confirmed.** Next:
+  the **Personal Advantage Engine** (not yet approved — do not begin),
   **budgets/goals/forecasts**, the **manual→linked authority-handoff** transition (deferred
   from 1B.2), reversal of evidence confirmations, mixed linked/manual transfer support, and
   repair/disconnect hardening. Real Chase/BofA

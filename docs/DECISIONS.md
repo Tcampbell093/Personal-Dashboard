@@ -656,8 +656,10 @@
   surfacing via `role="alert"` (no silent close); (3) `updateGoal` now re-validates the **effective**
   target against the **effective** goal type whenever either changes, so retyping a score target of 700
   as a utilization target is rejected. Regression coverage added ([R1]–[R6]); harness now **127/127**.
-  Reviewed and **merged to `main` (fast-forward, commit `ca4fcdb`) and deployed to Netlify**; the
-  `finance-1c0a-review` branch was deleted after merge.
+  Reviewed and **merged to `main` (fast-forward, commit `ca4fcdb`), locally production-build verified, and
+  expected to auto-deploy**; the `finance-1c0a-review` branch was deleted after merge. **Live production
+  commit/UI verification remains unconfirmed due to the Netlify site-level password and unavailable
+  deploy-status API.**
 - **Known limitations:** all data is manual and may go stale (surfaced honestly); no bureau/Credit-Karma
   connection; estimates are illustrative, not advice; utilization needs valid limits; deterministic only
   (no AI); the Personal Advantage Engine, budgets/forecasts, and reversal/audit tooling are deferred.

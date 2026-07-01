@@ -9,15 +9,16 @@
 > only; technical identifiers (routes, DB, env vars, the `Personal-Dashboard` repo) keep their
 > original names. See `docs/DECISIONS.md` ADR-026.
 
-**Last updated:** 2026-07-01 · **Reflects branch:** `main` @ `ca4fcdb` (Finance 1B.5B live; **Finance 1C.0A — manual credit profile + financial-health baseline — reviewed, merged to `main`, deployed**)
+**Last updated:** 2026-07-01 · **Reflects branch:** `main` @ `ca4fcdb` (Finance 1B.5B live; **Finance 1C.0A — manual credit profile + financial-health baseline — reviewed, merged to `main`, locally production-build verified, and expected to auto-deploy; live production verification unconfirmed**)
 
 > **Finance 1C.0A — manual credit profile + financial-health baseline — reviewed, merged to `main`
-> (commit `ca4fcdb`), deployed to Netlify.** Passed code review (three fixes landed: soft-deleted
-> score/inquiry dedupe lifecycle via live-only partial indexes + migration `0021`; full inline
-> edit/delete/archive UI with error surfacing; goal-retype target re-validation). Harness **127/127**;
-> the review branch is deleted. Netlify auto-deploys `main` (merged commit builds cleanly); the deployed
-> site is behind a Netlify site-level password so the deployed UI was verified pre-merge locally, not
-> re-inspected in the deployed environment.
+> (commit `ca4fcdb`), locally production-build verified, and expected to auto-deploy.** Passed code review
+> (three fixes landed: soft-deleted score/inquiry dedupe lifecycle via live-only partial indexes +
+> migration `0021`; full inline edit/delete/archive UI with error surfacing; goal-retype target
+> re-validation). Harness **127/127**; the review branch is deleted. **Live production commit/UI
+> verification remains unconfirmed due to the Netlify site-level password and unavailable deploy-status
+> API** — the deployed Credit UI was verified pre-merge on a local build, not re-inspected in the deployed
+> environment.
 > A **manual, owner-entered, read-only** credit profile + **deterministic** financial-health engine:
 > score snapshots (with source/bureau/model — different sources are **never averaged**, trends are
 > same-source only), revolving/installment accounts, collections, late payments, hard/soft inquiries,

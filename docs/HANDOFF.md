@@ -12,18 +12,21 @@
 
 ## Next approved task
 
-> **None in progress.** Finance 1C.0A is **reviewed, merged to `main`, and deployed** (see below). The
-> next candidate is the **Personal Advantage Engine**, which is **not yet approved — do not begin it or
-> any new feature** until the owner approves a bounded task here.
+> **None in progress.** Finance 1C.0A is **reviewed, merged to `main`, locally production-build verified,
+> and expected to auto-deploy** (see below). The next candidate is the **Personal Advantage Engine**,
+> which is **not yet approved — do not begin it or any new feature** until the owner approves a bounded
+> task here.
 
 ### Finance 1C.0A — manual credit profile + financial-health baseline
 
-- **Status:** **REVIEWED · MERGED TO `main` · DEPLOYED.** Merged via fast-forward as commit
-  `ca4fcdb93e415386781b645fa538e821b3e74408` (three review fixes — soft-deleted score/inquiry dedupe
-  lifecycle, full inline edit/delete/archive UI with error surfacing, and goal-retype validation — landed
-  on the `finance-1c0a-review` branch, then merged; that branch is now deleted locally and remotely).
-  Auto-deployed to Netlify on push to `main`; the merged commit builds cleanly (`npm run build`). A
-  **manual, owner-entered, read-only** credit profile + **deterministic** financial-health engine. Six new additive tables
+- **Status:** **REVIEWED · MERGED TO `main` · LOCALLY PRODUCTION-BUILD VERIFIED · AUTO-DEPLOY EXPECTED.**
+  Merged via fast-forward as commit `ca4fcdb93e415386781b645fa538e821b3e74408` (three review fixes —
+  soft-deleted score/inquiry dedupe lifecycle, full inline edit/delete/archive UI with error surfacing,
+  and goal-retype validation — landed on the `finance-1c0a-review` branch, then merged; that branch is now
+  deleted locally and remotely). The merged commit builds cleanly (`npm run build`) and is expected to
+  auto-deploy on push to `main`. **Live production commit/UI verification remains unconfirmed due to the
+  Netlify site-level password and unavailable deploy-status API.** A **manual, owner-entered, read-only**
+  credit profile + **deterministic** financial-health engine. Six new additive tables
   (migration `0020_new_sentinel.sql`): `credit_score_snapshots`, `credit_accounts`,
   `credit_collections`, `credit_late_payments`, `credit_inquiries`, `credit_goals` (server-validated
   varchars, no enums; idempotency via unique indexes on score + inquiry; account delete archives when a
@@ -347,8 +350,10 @@ specific build. Builds are ordered so the manual loop works end-to-end before an
 deterministic financial-health engine. Merged (fast-forward) as `ca4fcdb93e415386781b645fa538e821b3e74408`
 after three code-review fixes (soft-deleted score/inquiry dedupe lifecycle → live-only partial indexes +
 migration `0021`; full inline edit/delete/archive UI with `role="alert"` error surfacing; goal-retype
-target re-validation). Post-review harness **127/127**. Auto-deployed to Netlify on push to `main`; the
-review branch `finance-1c0a-review` has been deleted locally and remotely.
+target re-validation). Post-review harness **127/127**. Locally production-build verified and expected to
+auto-deploy on push to `main`; **live production commit/UI verification remains unconfirmed due to the
+Netlify site-level password and unavailable deploy-status API.** The review branch `finance-1c0a-review`
+has been deleted locally and remotely.
 
 **Repository state** — base production milestone `e0269a7682b303cbd99b24c3b290f61d224400ed` (1B.5B); branch
 `main`; `.env`/`.env.local` ignored + unstaged. Owner data intact and re-verified after the run: BofA
@@ -393,12 +398,15 @@ snapshots). All 19 prior verify suites green (run serially against shared Neon);
 (including add/edit/delete/archive, error display, and the delete-then-re-add score sequence), then temp
 credit data cleaned (0 residue).
 
-**Merge & deploy** — reviewed and merged to `main` (fast-forward) as `ca4fcdb`; pushed
-(`e0269a7..ca4fcdb`). Netlify auto-deploys `main`; the merged commit builds cleanly locally. The deployed
-site is served by Netlify behind a **site-level password**, so the deployed Credit UI was not re-inspected
-from local — the same access constraint noted for prior phases; a deployed production smoke remains an
-owner-triggered follow-up. The `finance-1c0a-review` branch is deleted locally and remotely; working tree
-clean; local `main` == `origin/main` == `ca4fcdb`.
+**Merge & deploy** — reviewed, merged to `main` (fast-forward) as `ca4fcdb`, pushed
+(`e0269a7..ca4fcdb`), and **locally production-build verified** (`npm run build`), and **expected to
+auto-deploy** on push to `main`. **Live production commit/UI verification remains unconfirmed due to the
+Netlify site-level password and unavailable deploy-status API** — every deployed path (including public
+routes) returns a Netlify site-level 401, there is no Netlify CLI/API token, and Netlify posts no build
+status to GitHub, so from local it cannot be confirmed that `ca4fcdb` is the running deploy nor can the
+deployed Credit UI be inspected; a deployed production smoke remains an owner-triggered follow-up. The
+`finance-1c0a-review` branch is deleted locally and remotely; working tree clean; local `main` ==
+`origin/main` == `ca4fcdb`.
 
 ### Finance 1B.5B — spending insights + financial opportunity detection — implemented — 2026-07-01
 
