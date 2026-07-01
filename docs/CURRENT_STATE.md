@@ -9,7 +9,24 @@
 > only; technical identifiers (routes, DB, env vars, the `Personal-Dashboard` repo) keep their
 > original names. See `docs/DECISIONS.md` ADR-026.
 
-**Last updated:** 2026-06-30 · **Reflects branch:** `main` (Finance 1B.4A live + production-verified; **Finance 1B.4B — evidence-only confirmation for linked income + transfers — implemented, uncommitted**)
+**Last updated:** 2026-06-30 · **Reflects branch:** `main` (Finance 1B.4B live + production-verified; **Finance 1B.5A — transaction categories + owner-approved merchant rules — implemented, uncommitted**)
+
+> **Finance 1B.5A — transaction categories + merchant rules — implemented (uncommitted).** Owner-editable
+> spending **categories** (20 defaults bootstrapped idempotently at app level), **descriptive-only**
+> category assignments on imported transactions, **deterministic** suggestions (no AI), and **explicitly**
+> owner-approved reusable **merchant rules**. New additive tables `transaction_categories`,
+> `transaction_category_assignments`, `merchant_category_rules` (migration `0018`). Categorization is
+> metadata stored separately — it changes **no** transaction field, balance, movement, provider snapshot,
+> cursor, bill/income/transfer, or matching evidence, and moves no money. A merchant rule is only ever
+> created by **explicit** owner action (a correction never silently learns one); rule behavior is
+> **Suggest** (default) or **Auto-categorize**, with optional **apply-to-existing** (unchecked by
+> default; bounded/idempotent; skips confirmed + removed). DB partial-unique indexes enforce one current
+> confirmed + one current suggested per transaction; conflict precedence is deterministic (owner > exact
+> auto rule > exact suggest rule > broader rule > non-rule suggestion > Uncategorized). `/finances` gains
+> a **Categorize transactions** review queue (bounded 10, filters, selector, Confirm/Change/Reject,
+> confidence + explanation, in-card rule dialog) + a **Categories & merchant rules** panel; Imported
+> Activity rows show the current category; Home shows a compact "N transactions need categorization"
+> count. `scripts/verify-finance1b5a.ts` = **108/108**. See `docs/DECISIONS.md` ADR-035.
 
 > **Finance 1B.4B — evidence-only confirmation for linked income + transfers — implemented (uncommitted).**
 > The two cases 1B.4A failed closed — **linked-account income receipts** and **linked→linked transfer

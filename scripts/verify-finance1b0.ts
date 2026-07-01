@@ -321,7 +321,8 @@ async function main() {
   const migFiles = existsSync("db/migrations") ? readdirSync("db/migrations").filter((f) => f.endsWith(".sql")) : [];
   const maxMig = migFiles.map((f) => parseInt(f.slice(0, 4), 10)).reduce((a, b) => Math.max(a, b), -1);
   // NOTE: 0016 (1B.4A) + 0017 (1B.4B financial_event_evidence) are additive.
-  ok("[23] migrations are sequential + additive/constraint-only (latest is 1B.4B's 0017)", maxMig === 17);
+  // NOTE: 0018 (1B.5A category/rule tables) is additive.
+  ok("[23] migrations are sequential + additive/constraint-only (latest is 1B.5A's 0018)", maxMig === 18);
   // [24] no external provider API call: no plaid.com API URL anywhere in code.
   ok("[24] no external provider API call occurs (no plaid.com API URL in code)",
     !/https?:\/\/[^"'\s]*plaid\.com/.test(providerBlob + read("app/finances/page.tsx")));

@@ -1064,6 +1064,89 @@ export const financialEventEvidence = pgTable(
   ],
 );
 
+/* ----------------------------------- transaction categories (1B.5A) ------- */
+
+// Finance 1B.5A: owner-editable spending categories + DESCRIPTIVE-ONLY category
+// assignments on imported transactions + explicit owner-approved merchant rules.
+// Categorization is metadata stored SEPARATELY — it never mutates the immutable
+// imported-transaction bank evidence (amount/date/pending/cursor/provider state)
+// and never moves money. No AI; deterministic suggestions only.
+export const transactionCategoryKind = pgEnum("transaction_category_kind", ["expense", "income", "transfer", "neutral"]);
+export const categoryAssignmentSource = pgEnum("category_assignment_source", ["owner", "merchant_rule", "deterministic_suggestion"]);
+export const categoryAssignmentStatus = pgEnum("category_assignment_status", ["suggested", "confirmed", "rejected", "superseded"]);
+export const merchantRuleMatchType = pgEnum("merchant_rule_match_type", ["exact_normalized_merchant", "description_contains", "description_starts_with"]);
+export const merchantRuleBehavior = pgEnum("merchant_rule_behavior", ["suggest", "auto"]);
+
+export const transactionCategories = pgTable(
+  "transaction_categories",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 80 }).notNull(),
+    slug: varchar("slug", { length: 80 }).notNull(), // stable id used by the default bootstrap
+    kind: transactionCategoryKind("kind").notNull().default("expense"),
+    isSystem: boolean("is_system").notNull().default(false), // a default-bootstrapped category
+    isActive: boolean("is_active").notNull().default(true),
+    sortOrder: integer("sort_order").notNull().default(0),
+    ...timestamps,
+  },
+  (t) => [
+    index("transaction_categories_user_idx").on(t.userId, t.isActive),
+    // Stable slug per owner → idempotent default bootstrap (no duplicate defaults).
+    uniqueIndex("transaction_categories_user_slug_uq").on(t.userId, t.slug),
+  ],
+);
+
+export const transactionCategoryAssignments = pgTable(
+  "transaction_category_assignments",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    transactionId: integer("transaction_id").notNull().references(() => importedTransactions.id, { onDelete: "cascade" }),
+    categoryId: integer("category_id").notNull().references(() => transactionCategories.id, { onDelete: "cascade" }),
+    source: categoryAssignmentSource("source").notNull(),
+    status: categoryAssignmentStatus("status").notNull(),
+    ruleId: integer("rule_id"), // FK added after merchant_category_rules (avoid a cycle); nullable
+    confidence: integer("confidence"), // 0–100 for suggestions; null for owner picks
+    reasonCodes: text("reason_codes").notNull().default("[]"),
+    assignedAt: timestamp("assigned_at", { withTimezone: true }).defaultNow().notNull(),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    index("transaction_category_assignments_user_idx").on(t.userId, t.status),
+    index("transaction_category_assignments_txn_idx").on(t.transactionId),
+    // At most ONE current confirmed + ONE current suggested per transaction
+    // (concurrency-safe; history rows are superseded/rejected).
+    uniqueIndex("transaction_category_assignments_confirmed_uq").on(t.transactionId).where(sql`status = 'confirmed'`),
+    uniqueIndex("transaction_category_assignments_suggested_uq").on(t.transactionId).where(sql`status = 'suggested'`),
+  ],
+);
+
+export const merchantCategoryRules = pgTable(
+  "merchant_category_rules",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 120 }).notNull(),
+    matchType: merchantRuleMatchType("match_type").notNull().default("exact_normalized_merchant"),
+    matchValue: varchar("match_value", { length: 200 }).notNull(), // owner-facing match text
+    normalizedMatchValue: varchar("normalized_match_value", { length: 200 }).notNull(), // Xanther-owned
+    categoryId: integer("category_id").notNull().references(() => transactionCategories.id, { onDelete: "cascade" }),
+    behavior: merchantRuleBehavior("behavior").notNull().default("suggest"), // suggest (default) | auto
+    priority: integer("priority").notNull().default(0),
+    isActive: boolean("is_active").notNull().default(true),
+    applyToExisting: boolean("apply_to_existing").notNull().default(false), // record of the owner's choice
+    createdFromTransactionId: integer("created_from_transaction_id").references(() => importedTransactions.id, { onDelete: "set null" }),
+    ...timestamps,
+  },
+  (t) => [
+    index("merchant_category_rules_user_idx").on(t.userId, t.isActive),
+    // No duplicate ACTIVE rule for the same match (disabled duplicates kept for history).
+    uniqueIndex("merchant_category_rules_active_uq").on(t.userId, t.matchType, t.normalizedMatchValue).where(sql`is_active`),
+  ],
+);
+
 /* -------------------------------------------------------------- signals --- */
 
 export const signalSources = pgTable("signal_sources", {

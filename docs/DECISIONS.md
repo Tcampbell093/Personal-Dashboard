@@ -592,6 +592,64 @@
   + typecheck + build + all regressions green + secret scan clean. Owner's real Sandbox connection
   untouched. Older suites' superseded `!/plaid/i`/migration/scope guards updated (disclosed NOTEs).
 
+### ADR-035 — Finance 1B.5A: transaction categories + owner-approved merchant rules
+- **Classification:** Owner-approved decision (owner approved the 1B.5A scope).
+- **Detail:** Adds owner-editable spending **categories**, **descriptive-only** category assignments on
+  imported transactions, **deterministic** category suggestions (no AI), and **explicitly** owner-approved
+  reusable **merchant rules**. New additive tables `transaction_categories`,
+  `transaction_category_assignments`, `merchant_category_rules` (migration `0018`). Service
+  `lib/services/categories.ts`; routes under `app/api/finances/categories/*`; UI
+  `components/finances/categorize.tsx` + a category tag on Imported Activity.
+  - **Core immutability boundary:** categorization is metadata stored SEPARATELY. It never mutates an
+    imported transaction's amount/date/pending/removed state, the Plaid cursor, a provider
+    balance/snapshot, a movement, a bill/income/transfer, or matching evidence — and never moves money.
+    The service contains **no** `update(importedTransactions|financialAccounts|providerAccounts)` and no
+    `transactionsCursor` write (verified).
+  - **Category model:** 20 sensible defaults bootstrapped **idempotently at the application level** (never
+    in the migration; conflict on `(userId, slug)` → do nothing, so a renamed/disabled category is never
+    overwritten); `kind` ∈ expense|income|transfer|neutral; `Uncategorized` always exists and cannot be
+    renamed/deactivated; active names are unique per owner; deactivation is **blocked while in use** (safe
+    fallback — never orphans an active assignment); categories with history are never hard-deleted.
+  - **Assignment model:** a separate `transaction_category_assignments` history. DB partial-unique indexes
+    enforce **at most one current `confirmed` + one current `suggested` per transaction** (concurrency-safe).
+    A suggestion never overwrites a confirmed owner assignment; an owner correction **supersedes** the
+    prior confirmed (history preserved); a rejected identical (txn+category) suggestion is never silently
+    reopened; removed transactions are excluded from active review but keep historical evidence.
+  - **Normalization** (`normalizeMerchant`, deterministic, conservative): lowercase + trim + collapse
+    whitespace; strip card/store markers (`#`,`*`) + harmless punctuation; strip ONE trailing 2+‑digit
+    store/transaction number **only** when the base still has ≥3 letters — so `STARBUCKS 12345`,
+    `Starbucks #12345`, and `STARBUCKS` all → `starbucks`, while unrelated merchants never collapse. The
+    original merchant/description is unchanged; the normalized value is Xanther-owned metadata.
+  - **Suggestions:** explainable signals only — exact merchant rule (90) > confirmed transfer evidence (85)
+    > prior owner confirmation (80) > broader description rule (75) > inflow→Income (70) > provider
+    category hint (55); bands High ≥85 / Medium 65–84 / Low <65; minimum **50** to persist; reason codes
+    + confidence + explanation. Generation is idempotent + concurrency-safe.
+  - **Merchant rules — explicit only:** a category correction **alone NEVER creates a rule** (no automatic
+    learning). Two owner choices at rule creation: **Suggest** (default) — future matches get a suggestion;
+    **Automatically categorize** — future matches get a confirmed `merchant_rule` assignment (never
+    overwriting an owner-confirmed one). Optional **Apply to existing uncategorized transactions**
+    (unchecked by default; bounded + idempotent; skips confirmed + removed). Duplicate active rules are
+    rejected (case-insensitive via normalization); disabling soft-keeps history; an auto rule can be
+    toggled to suggest and back.
+  - **Conflict precedence (deterministic):** owner-confirmed > exact-merchant auto rule > exact-merchant
+    suggest rule > broader owner rule > non-rule deterministic suggestion > Uncategorized; within a rank,
+    higher `priority` then older (lower id) wins — stable across runs.
+  - **Surfaces:** `/finances` gains a **Categorize transactions** review queue (uncategorized + suggested,
+    newest first, bounded to 10, filters, category selector, Confirm/Change/Reject, suggestion confidence
+    + explanation, an in-card rule dialog defaulting to Suggest with apply-to-existing unchecked) + a
+    **Categories & merchant rules** management panel; Imported Activity rows show the current category.
+    Home shows only a compact "N transactions need categorization" count. `/manage` unchanged; task
+    ranking unchanged. A small categorized/uncategorized/needs-review summary only (no charts/budgets/
+    forecasts — deferred to 1B.5B+).
+- **Evidence:** `scripts/verify-finance1b5a.ts` (**108/108** covering bootstrap/management [1–10],
+  normalization [11–17], suggestions [18–33], assignment + domain protection [34–53], merchant rules
+  [54–70], UI [71–88], domain boundaries [89–102], owner protection [103–113]) + all regressions green +
+  typecheck + build + secret scan + browser run. Owner's BofA connection + Plaid Checking + 19 imported
+  transactions + request 222 preserved; no balance/movement/snapshot/cursor/evidence change.
+- **Known limitations:** Sandbox-only; deterministic only (no AI/merchant-enrichment APIs); no
+  budgets/charts/forecasts yet; broader description rules are owner-created only; default bootstrap is
+  per-owner application-level (the migration adds schema only).
+
 ### ADR-034 — Finance 1B.4B: evidence-only confirmation for linked income + transfers
 - **Classification:** Owner-approved decision (owner approved the 1B.4B scope).
 - **Detail:** Adds a SAFE **evidence-only** confirmation path for the two cases 1B.4A failed closed:

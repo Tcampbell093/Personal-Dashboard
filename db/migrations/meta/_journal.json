@@ -127,6 +127,13 @@
       "when": 1782842187459,
       "tag": "0017_rare_leader",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1782848061765,
+      "tag": "0018_married_scarlet_spider",
+      "breakpoints": true
     }
   ]
 }

@@ -142,6 +142,12 @@ export function MoneyAwareness({ section }: { section: HomeSection<HomeMoney> })
               <span>see /finances</span>
             </div>
           )}
+          {section.data!.transactionsToCategorize > 0 && (
+            <div className="home-statline num">
+              <span>{section.data!.transactionsToCategorize} {section.data!.transactionsToCategorize === 1 ? "transaction needs" : "transactions need"} categorization</span>
+              <span>see /finances</span>
+            </div>
+          )}
           <div className="home-statline num">
             <span>Bills before payday</span>
             <span>{money(section.data!.billsDueBeforePayday)}</span>

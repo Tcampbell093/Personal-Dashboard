@@ -1262,6 +1262,22 @@ textarea.taskadd-field:focus {
 .fin-match-confirm { margin-top: 8px; padding: 8px 10px; border: 1px dashed color-mix(in srgb, var(--aware) 50%, var(--line)); border-radius: 4px; }
 .fin-match-evidence { margin: 8px 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 
+/* Finance 1B.5A — categorization */
+.fin-cat-state { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
+.fin-cat-pick { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fin-cat-pick select { background: var(--ink); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
+.fin-cat-pick option { background: var(--ink); color: var(--text); }
+.fin-cat-manage { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; margin: 8px 0; }
+.fin-cat-chiplist { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.fin-cat-newrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.fin-cat-input { background: var(--ink); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; min-width: 0; flex: 1 1 160px; }
+.fin-rule-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.fin-rule-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; justify-content: space-between; }
+.fin-rule-main { flex: 1 1 200px; min-width: 0; }
+.fin-rule-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.fin-cat-ruleopts { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
+.fin-cat-ruleopts label { display: flex; align-items: baseline; gap: 6px; }
+
 /* Finance 1B.2 — discovered provider accounts + linked accounts */
 .fin-pa-list { list-style: none; margin: 8px 0 0; padding: 0 0 0 10px; border-left: 2px solid var(--line); }
 .fin-pa-row { padding: 8px 0; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; }

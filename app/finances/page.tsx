@@ -46,6 +46,8 @@ import { ConnectionManager } from "@/components/finances/connection-manager";
 import { ImportedActivity } from "@/components/finances/imported-activity";
 import { SuggestedMatches } from "@/components/finances/suggested-matches";
 import { countPendingMatches } from "@/lib/services/matching";
+import { Categorize } from "@/components/finances/categorize";
+import { categorySummary } from "@/lib/services/categories";
 import type { MovementView, ProjectionHorizon, ForecastItem, ConnectionView } from "@/lib/types";
 
 const HORIZONS: { key: ProjectionHorizon; label: string }[] = [
@@ -182,6 +184,13 @@ export default async function FinancesPage({
     console.error("FinancesPage: match count load failed.", err);
   }
 
+  let categorySummaryView = { categorized: 0, uncategorized: 0, needsReview: 0 };
+  try {
+    categorySummaryView = await categorySummary(userId);
+  } catch (err) {
+    console.error("FinancesPage: category summary load failed.", err);
+  }
+
   const summary = computeCashSummary(accounts);
   const projection = computeProjection({ accounts, bills, income, transfers, horizon, today });
   const accountOptions = accounts
@@ -291,6 +300,16 @@ export default async function FinancesPage({
           <span className="tier-sub">bank evidence · read-only · separate from Xanther activity</span>
         </div>
         <ImportedActivity connections={connections} autoStatus={autoStatus} />
+      </section>
+
+      {/* 1b.5a — Categorize transactions (descriptive metadata + owner merchant rules) */}
+      <section className="tier">
+        <div className="tier-head">
+          <span className="tier-tick" style={{ background: "var(--explore)" }} />
+          <span className="tier-name">Categorize transactions</span>
+          <span className="tier-sub">descriptive only · you decide · {categorySummaryView.categorized} categorized · {categorySummaryView.uncategorized} uncategorized · {categorySummaryView.needsReview} to review</span>
+        </div>
+        <Categorize initialNeedsReview={categorySummaryView.uncategorized + categorySummaryView.needsReview} />
       </section>
 
       {/* 1b.4a — Suggested matches (deterministic, suggestion-only, owner-confirmed) */}

@@ -249,12 +249,30 @@ the evidence it wrote. No raw Plaid payload, token, or secret is stored. The own
 **Show confirmed** view (evidence badge + amount/date + both transfer transactions) and an income label
 “Confirmed (bank evidence)”.
 
+## Transaction categories + merchant rules (Finance 1B.5A)
+
+Imported transactions can be categorized with **descriptive-only** metadata stored in separate tables —
+categorization **never** mutates an imported transaction's amount/date/pending/removed state, the Plaid
+cursor, a provider balance/snapshot, a movement, a bill/income/transfer, or matching evidence, and it
+moves no money (the imported transaction remains immutable bank evidence). Suggestions are
+**deterministic** (exact merchant rule > confirmed transfer evidence > prior owner confirmation > broader
+description rule > inflow→Income > provider category hint; bands High/Medium/Low; minimum score to
+persist) — **no AI, no embeddings, no third-party enrichment**. A reusable **merchant rule** is created
+ONLY by explicit owner action (a category correction never silently learns one); behavior is **Suggest**
+(default) or **Auto-categorize** (a confirmed `merchant_rule` assignment that never overrides an
+owner-confirmed one), with optional **apply-to-existing** (unchecked by default; bounded + idempotent;
+skips confirmed + removed). Ownership is server-derived; foreign-owner access is rejected. DB
+partial-unique indexes guarantee at most one current confirmed + one current suggested assignment per
+transaction (concurrency-safe), and no duplicate active rule. Default categories bootstrap idempotently
+at the application level (the migration adds schema only — no auto categorization, no default rules).
+
 ## What is NOT functional yet (deferred to later 1B phases)
 
-No reversal of evidence-only confirmations, no mixed linked/manual transfer confirmation (fails closed),
-no update/repair mode, no real Chase/BofA (needs eligible Production + OAuth), and no money movement.
-**Before Production:** Plaid Production onboarding + OAuth redirect registration, real-data 90-day history
-policy, and operational monitoring.
+No spending analysis (category totals/charts/budgets/forecasts — Finance 1B.5B+), no reversal of
+evidence-only confirmations, no mixed linked/manual transfer confirmation (fails closed), no update/repair
+mode, no real Chase/BofA (needs eligible Production + OAuth), and no money movement. **Before Production:**
+Plaid Production onboarding + OAuth redirect registration, real-data 90-day history policy, and
+operational monitoring.
 
 ## Approved first-version defaults (owner-approved)
 

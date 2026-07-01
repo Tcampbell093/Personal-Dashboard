@@ -12,6 +12,27 @@
 
 ## Next approved task
 
+### Finance 1B.5A — transaction categories + owner-approved merchant rules
+
+- **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** Owner-editable spending categories
+  (20 defaults bootstrapped idempotently at app level), **descriptive-only** category assignments on
+  imported transactions, **deterministic** suggestions (no AI), and **explicitly** owner-approved merchant
+  rules. New additive tables `transaction_categories`, `transaction_category_assignments`,
+  `merchant_category_rules` (migration `0018_married_scarlet_spider.sql`). Categorization mutates **no**
+  imported-transaction field, balance, movement, provider snapshot, cursor, bill/income/transfer, or
+  matching evidence, and moves no money. A merchant rule is created ONLY by explicit owner action (a
+  correction never silently learns one); behavior **Suggest** (default) or **Auto-categorize**, optional
+  **apply-to-existing** (unchecked default; bounded/idempotent; skips confirmed+removed). DB
+  partial-unique indexes enforce one current confirmed + one current suggested per transaction; conflict
+  precedence is deterministic. Routes under `app/api/finances/categories/*` (categories CRUD, assignments
+  list/confirm/reject, suggest, rules CRUD). UI: `components/finances/categorize.tsx` (review queue
+  bounded 10, filters, selector, Confirm/Change/Reject, rule dialog, management panel) + a category tag on
+  Imported Activity + a Home count. `scripts/verify-finance1b5a.ts` = **108/108**; all regressions green;
+  typecheck + build + secret scan clean; browser-verified (desktop + 375px). **No AI, no money movement,
+  Sandbox-only, owner-confirmed.** Recommended commit: `feat(finance): add transaction categories and
+  merchant rules`. The next approved bank gate after review is **1B.5B** spending analysis (category
+  totals/charts/budgets) — separate authorization required.
+
 ### Finance 1B.4B — evidence-only confirmation for linked income + transfers
 
 - **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** The two cases 1B.4A failed closed —

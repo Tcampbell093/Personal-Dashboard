@@ -40,6 +40,8 @@ export function ImportedActivity({ connections, autoStatus }: { connections: Con
   const [account, setAccount] = useState<AccountFilter>("all");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [visible, setVisible] = useState(PAGE);
+  // Finance 1B.5A: current category state per transaction (descriptive metadata).
+  const [catMap, setCatMap] = useState<Record<number, { name: string; status: string; source: string }>>({});
 
   const refresh = useCallback(async () => {
     try {
@@ -47,6 +49,13 @@ export function ImportedActivity({ connections, autoStatus }: { connections: Con
       if (res.ok) {
         const data = (await res.json()) as { transactions: ImportedTransactionView[] };
         setTxns(data.transactions);
+      }
+      const cr = await fetch(`/api/finances/categories/assignments?filter=all&limit=500`);
+      if (cr.ok) {
+        const cd = (await cr.json()) as { transactions: { transactionId: number; category: { name: string } | null; categoryStatus: string | null; categorySource: string | null }[] };
+        const m: Record<number, { name: string; status: string; source: string }> = {};
+        for (const t of cd.transactions) if (t.category) m[t.transactionId] = { name: t.category.name, status: t.categoryStatus ?? "", source: t.categorySource ?? "" };
+        setCatMap(m);
       }
     } catch {
       /* keep current list on transient failure */
@@ -192,6 +201,10 @@ export function ImportedActivity({ connections, autoStatus }: { connections: Con
                   <span aria-hidden>·</span>
                   <span className={`fin-tag ${t.isPending ? "muted" : "sandbox"}`}>{t.isPending ? "Pending" : "Posted"}</span>
                   {t.date && (<><span aria-hidden>·</span><span>{t.date}</span></>)}
+                  <span aria-hidden>·</span>
+                  {catMap[t.id]
+                    ? <span className={`fin-tag ${catMap[t.id].status === "confirmed" ? "good" : ""}`} title={catMap[t.id].status === "suggested" ? "Suggested category" : "Confirmed category"}>{catMap[t.id].name}{catMap[t.id].status === "suggested" ? " (suggested)" : ""}</span>
+                    : <span className="fin-tag muted">Uncategorized</span>}
                 </div>
               </li>
             ))}

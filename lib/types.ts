@@ -475,6 +475,8 @@ export interface HomeMoney {
   hasUnconfirmedIncome: boolean; // an expected occurrence whose date has passed
   // Finance 1B.4A: compact count of pending transaction-match suggestions to review.
   transactionMatches: number;
+  // Finance 1B.5A: compact count of active transactions needing categorization.
+  transactionsToCategorize: number;
 }
 
 export interface HomeMomentum {

@@ -264,6 +264,23 @@ duplicate manual income movements; uncertain matches need owner approval; recurr
   provider-snapshot / cursor change; a linked income occurrence becomes **`received_evidence`** (the
   durable proof is the evidence row). `computeFinancialOutlook` now excludes non-scheduled occurrences
   from expected income (no double-count). See `docs/DECISIONS.md` ADR-034.
+- **1B.5A — DONE (transaction categories + merchant rules)** — additive migration
+  `0018_married_scarlet_spider.sql` adds enums (`transaction_category_kind`, `category_assignment_source`,
+  `category_assignment_status`, `merchant_rule_match_type`, `merchant_rule_behavior`) + 3 tables.
+  **`transaction_categories`** (`userId`, `name`, `slug` [unique per owner → idempotent default
+  bootstrap], `kind`, `isSystem`, `isActive`, `sortOrder`). **`transaction_category_assignments`** — a
+  DESCRIPTIVE-ONLY assignment history: `userId`, `transactionId` (FK imported_transactions),
+  `categoryId`, `source` (owner|merchant_rule|deterministic_suggestion), `status`
+  (suggested|confirmed|rejected|superseded), `ruleId`, `confidence`, `reasonCodes`, `assignedAt`,
+  `reviewedAt`; **partial-unique** on `transaction_id WHERE status='confirmed'` and `WHERE
+  status='suggested'` → at most one current confirmed + one current suggested per transaction
+  (concurrency-safe). **`merchant_category_rules`** (`userId`, `name`, `matchType`, `matchValue`,
+  `normalizedMatchValue` [Xanther-owned], `categoryId`, `behavior` suggest|auto, `priority`, `isActive`,
+  `applyToExisting`, `createdFromTransactionId`); **partial-unique** on
+  `(userId, matchType, normalizedMatchValue) WHERE is_active` → no duplicate active rule. **Stores NO raw
+  Plaid payload, token, or secret.** Imported transactions are never modified — categorization is
+  separate metadata; the migration creates schema only (no auto categorization, no default-rule creation;
+  defaults bootstrap idempotently at the application level). See `docs/DECISIONS.md` ADR-035.
 - **1B.1 — DONE (Plaid Sandbox connect)** — additive migration `0011_rapid_sasquatch.sql` adds the
   `connection_status` enum + the **`financial_connections`** table: `userId`, `provider` (`plaid`),
   `providerItemId` (unique within `(user_id, provider)`), `institutionId`/`institutionName`, the
