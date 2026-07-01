@@ -4,6 +4,11 @@
 > `db/migrations/0000_init.sql`. This document summarizes that schema — if the two ever
 > disagree, **`db/schema.ts` wins** and this file should be corrected. No real/personal
 > data appears here.
+>
+> **Daily Command Center — Slice 1 adds NO schema.** The `DailySignal` layer (`lib/daily/contract.ts` +
+> `lib/daily/providers.ts`) is a **read-only calculated view** over existing domain tables — it stores
+> nothing and creates no migration. The recommendation-lifecycle table (`daily_recommendations`) proposed
+> in `docs/DAILY_COMMAND_CENTER_SPEC.md` §8 is deferred to a later slice (Slice 3), not built here.
 
 ## Conventions (applied across all domain tables)
 

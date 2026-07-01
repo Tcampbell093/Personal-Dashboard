@@ -194,6 +194,13 @@ to fill a slot.
 
 ---
 
+> **Slice 1 status (implemented on branch `daily-command-center-slice1-review`, not merged):** the
+> contract (§4) and the read-only grounded providers (slice 1 of §17) are implemented in
+> `lib/daily/contract.ts` and `lib/daily/providers.ts`, verified by `scripts/verify-daily-slice1.ts`
+> (70/70). Ranking (§5), the recommended-move selection (§6), owner-response lifecycle (§7), persistence
+> (§8), APIs (§13), and UI/Home (§3/§12) remain **unimplemented** — they are later, separately-approved
+> slices.
+
 ## 4. Unified signal contract (read-only)
 
 A common, **read-only** shape every existing service can produce **without changing its stored data**. This
@@ -572,11 +579,14 @@ behavior must already be covered by that slice's own tests — testing must **no
 7. A slice is not "done" until its own tests pass and existing suites remain green.
 
 1. **Signal contracts + deterministic providers** — define `DailySignal`, implement read-only providers
-   over existing services; verify each provider is pure/owner-scoped and mutates nothing.
+   over existing services; verify each provider is pure/owner-scoped and mutates nothing. **✅ IMPLEMENTED**
+   (`lib/daily/contract.ts`, `lib/daily/providers.ts`; `scripts/verify-daily-slice1.ts` = 70/70) — on
+   branch `daily-command-center-slice1-review`, not merged.
    - **Tests in this slice:** provider **purity** (no writes to any source table — snapshot before/after),
-     **ownership** (owner-scoped; foreign-owner sees nothing), and **mapping correctness** (domain output →
-     `DailySignal` fields, including `class`/provenance and `sourceRefs`), plus empty-domain/empty-state
-     mapping.
+     **ownership** (owner-scoped; no cross-user leakage — an owner's row never surfaces for another user;
+     generic advice for an empty profile carries only null-id refs), and **mapping correctness** (domain
+     output → `DailySignal` fields, including `class`/provenance and `sourceRefs`), plus
+     empty-domain/empty-state mapping.
 2. **Orchestration + ranking** — `collectDailySignals` (failure-isolated) + `rankSignals` (deterministic,
    extends `lib/briefing.ts`).
    - **Tests in this slice:** **deterministic ranking** (identical inputs → identical order), **tie-break**

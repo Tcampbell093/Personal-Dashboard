@@ -12,39 +12,36 @@
 
 ## Next approved task
 
-### Daily Command Center / Personal Advantage Loop — documentation-only design phase
+### Daily Command Center — Slice 1 (signal contract + read-only providers)
 
-- **Status:** **APPROVED — DOCUMENTATION ONLY (no implementation).** Produce the product + technical
-  **specification** for Xanther's first Daily Command Center / Personal Advantage Loop — the smallest
-  complete daily operating loop (collect grounded facts → normalize into a signal contract → prioritize
-  deterministically → bounded daily brief → one recommended next move → owner response → persist outcome →
-  revisit). **Scope is strictly documentation:** create `docs/DAILY_COMMAND_CENTER_SPEC.md` grounded in
-  `docs/PRODUCT_ALIGNMENT.md`, `docs/PRODUCT_VISION.md`, `docs/CURRENT_STATE.md`, `docs/DATA_MODEL.md`,
-  `docs/HANDOFF.md`, and the **actual** existing Finance, Tasks, Calendar-equivalent, Goals (credit), and
-  Home implementations; and add a brief reference from `docs/PRODUCT_ALIGNMENT.md`, `docs/ROADMAP.md`, and
-  `docs/CURRENT_STATE.md`.
-- **Grounding truths the spec must respect (verified in-repo):** there is **no** calendar integration
-  (`externalCalendarId` is reserved/unused) — "schedule" is derived from obligation/bill/income/experience
-  dates; there is **no** general goals domain — only `credit_goals`; relationships/health/career/
-  travel/knowledge have **no** grounded daily data (future slots / truthful empty states); the deterministic
-  ranker `lib/briefing.ts` and `buildHomeView` already exist and are **reused**, not replaced.
-- **Explicitly out of scope / do NOT do:** no application code, schema, migration, API route, dependency,
-  AI call, or UI change; **do not generate a migration**; **do not begin or approve the Daily Command
-  Center implementation** — the spec's implementation slices (§17) are proposed, not approved, and each
-  needs its own bounded HANDOFF task. Do not rewrite historical implementation records.
-- **Definition of done:** `docs/DAILY_COMMAND_CENTER_SPEC.md` exists and covers all 17 required sections
-  grounded truthfully in existing systems; the three referencing docs link to it; a docs consistency check
-  passes; changes are documentation-only; committed and pushed. After this, the next candidate is
-  **implementation slice 1 (signal contracts + deterministic providers)** — **not yet approved to build**;
-  do not begin it or any new feature until the owner approves a bounded task here.
+- **Status:** **IMPLEMENTED ON REVIEW BRANCH — awaiting owner review (uncommitted to `main`).** Slice 1 of
+  the approved DCC spec: the shared, read-only `DailySignal` contract + grounded deterministic providers
+  that convert existing domain outputs into signals **without changing any source data**. Branch
+  `daily-command-center-slice1-review`.
+- **Delivered:** `lib/daily/contract.ts` (`DailySignal`, `SourceRef`, `CapacityReqs`, `SignalContext`,
+  `DailySignalProvider`; bounded unions for domain/class/urgency/confidence/reversibility + per-domain
+  `SIGNAL_TYPES`; `validateSignal`/`validateSignals`; deterministic date helpers + `datedUrgency`) and
+  `lib/daily/providers.ts` — **nine** read-only providers reusing existing services: tasks, obligations,
+  bills, finance (outlook), credit (observations + action cards), spending (opportunities; low-confidence
+  suppressed), goals (credit goals), data_quality (uncategorized / pending matches / stale score), and
+  experience (planned, grounded dates only). Provenance `class` is never flattened (observed_fact /
+  deterministic_calc / inferred_interpretation / recommendation). No `getDailySignals` mutates anything;
+  stable deterministic keys; explicit stale dates; unknown distinguished from zero; empty array when
+  nothing qualifies; **no relationship/health/career/calendar/general-goals/travel/knowledge providers**
+  (no grounded data). Verified by `scripts/verify-daily-slice1.ts` (**70/70**) + all regressions green,
+  typecheck, build, secret scan. **No ranking, orchestration, persistence, migration, API, UI, AI, or Home
+  integration was added** (those are later slices). **Do not merge until reviewed.** Recommended commit:
+  `feat(daily): add DailySignal contract + read-only grounded providers (DCC slice 1)`.
+- **Next candidate after review:** DCC **Slice 2 — orchestration + deterministic ranking** (collect +
+  rank, failure-isolated), per `docs/DAILY_COMMAND_CENTER_SPEC.md` §17. **Not yet approved to build.**
 
 ---
 
-**Recently completed:** (1) **Product alignment** — `docs/PRODUCT_ALIGNMENT.md` created and referenced
-(strategic sequence item 2, documentation-only). (2) **Finance 1C.0A** is **reviewed, merged to `main`,
-locally production-build verified, and expected to auto-deploy** (see the 1C.0A entry below; live
-production commit/UI verification remains unconfirmed due to the Netlify site-level password and
-unavailable deploy-status API).
+**Recently completed:** (1) **Product alignment** — `docs/PRODUCT_ALIGNMENT.md`. (2) **Daily Command Center
+design** — `docs/DAILY_COMMAND_CENTER_SPEC.md` (17-section spec + at-most-one/per-slice-testing corrections).
+(3) **Finance 1C.0A** is **reviewed, merged to `main`, locally production-build verified, and expected to
+auto-deploy** (see the 1C.0A entry below; live production commit/UI verification remains unconfirmed due to
+the Netlify site-level password and unavailable deploy-status API).
 
 ### Finance 1C.0A — manual credit profile + financial-health baseline
 
