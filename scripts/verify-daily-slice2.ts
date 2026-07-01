@@ -187,6 +187,43 @@ async function main() {
   ok("[48] identical inputs + fixed context → byte-equivalent selection (order-independent)", JSON.stringify({ r: det1.risk, o: det1.opportunity, m: det1.recommendedMove }) === JSON.stringify({ r: det2.risk, o: det2.opportunity, m: det2.recommendedMove }));
   ok("[49] move threshold constant matches the spec", MOVE_MIN === 45);
 
+  /* =========== REVIEW FIX 1 — moveScore single-counts actionability/friction [D1-D5] =========== */
+  console.log("\n[fix 1 — no double count in moveScore]");
+  // An opportunity-based move: opportunityScore already contains actionability + friction,
+  // so the move must add NEITHER again — moveScore == opportunityScore + capacityFit.
+  const oppMove = mkSig({ domain: "spending", signalType: "spending_opportunity", class: "recommendation", confidence: "high", urgency: "medium", estimatedCost: 200, capacityReqs: { timeMinutes: 90, money: 200 }, candidateAction: "trim it", key: "x:oppmove" });
+  const oppMoveRanked = rankSignals(collect([oppMove]), rctx({ availableCash: 10000 })).ranked.find((r) => r.signal.key === "x:oppmove")!;
+  const oppScore = oppMoveRanked.opportunity.score!;
+  const oppMoveBd = oppMoveRanked.move.breakdown;
+  ok("[D1] opportunity-based move base comes from the opportunity score", oppMoveBd.baseFrom === "opportunity" && oppMoveBd.base === oppScore && oppMoveBd.actionabilityInBase === true && oppMoveBd.frictionInBase === true);
+  ok("[D2] opportunity actionability is NOT counted twice (added actionability is 0)", oppMoveBd.actionability === 0);
+  ok("[D3] opportunity friction is NOT deducted twice (added friction is 0)", oppMoveBd.friction === 0);
+  ok("[D4] moveScore == opportunityScore + capacityFit (single-count)", oppMoveRanked.move.score === oppScore + numCap(oppMoveBd.capacityFit));
+  // A risk-based move: riskScore lacks actionability + friction, so they are added ONCE.
+  const riskMove = mkSig({ domain: "bills", signalType: "bill_overdue", urgency: "high", effectiveDate: ago(2), estimatedCost: 200, capacityReqs: { timeMinutes: 90, money: 200 }, candidateAction: "pay it", key: "x:riskmove" });
+  const riskMoveRanked = rankSignals(collect([riskMove]), rctx({ availableCash: 10000 })).ranked.find((r) => r.signal.key === "x:riskmove")!;
+  const riskScoreVal = riskMoveRanked.risk.score!;
+  const riskMoveBd = riskMoveRanked.move.breakdown;
+  ok("[D5] risk-based move adds actionability + friction exactly ONCE (baseFrom=risk); both breakdowns sum exactly", riskMoveBd.baseFrom === "risk" && riskMoveBd.actionabilityInBase === false && riskMoveBd.actionability === 8 && riskMoveRanked.move.score === riskScoreVal + riskMoveBd.actionability + riskMoveBd.friction + numCap(riskMoveBd.capacityFit) && (oppMoveBd.base ?? 0) + oppMoveBd.urgency + oppMoveBd.deadline + oppMoveBd.confidence + oppMoveBd.freshness + oppMoveBd.actionability + numCap(oppMoveBd.capacityFit) + oppMoveBd.friction === oppMoveBd.total && (riskMoveBd.base ?? 0) + riskMoveBd.actionability + numCap(riskMoveBd.capacityFit) + riskMoveBd.friction === riskMoveBd.total);
+
+  /* =========== REVIEW FIX 2 — no weak-diversity opportunity swap [D6-D10] =========== */
+  console.log("\n[fix 2 — diversity gated by near-points]");
+  const riskCredit = mkSig({ domain: "credit", signalType: "utilization_high", class: "deterministic_calc", urgency: "medium", confidence: "high", key: "x:risk" });
+  const topCreditOpp = mkSig({ domain: "credit", signalType: "credit_action", class: "recommendation", urgency: "high", confidence: "high", key: "x:topopp" }); // credit_action base26+urg20+conf10+fresh4+act8 = 68
+  const nearSpendOpp = mkSig({ domain: "spending", signalType: "spending_opportunity", class: "recommendation", urgency: "medium", confidence: "high", key: "x:nearopp" }); // 28+10+10+4+8 = 60 (within 10 of 68)
+  const nearSel = rankSignals(collect([riskCredit, topCreditOpp, nearSpendOpp]), rctx());
+  ok("[D6] a different-domain opportunity within 10 pts is preferred over a same-as-risk top", nearSel.risk.signalKey === "x:risk" && nearSel.opportunity.signalKey === "x:nearopp" && nearSel.opportunity.reasonSelected === "selected_through_domain_diversity_rule");
+  const farSpendOpp = mkSig({ domain: "spending", signalType: "spending_opportunity", class: "recommendation", urgency: "low", confidence: "medium", candidateAction: null, key: "x:faropp" }); // 28+0+5+4+0 = 37 (>10 below 68)
+  const farSel = rankSignals(collect([riskCredit, topCreditOpp, farSpendOpp]), rctx());
+  ok("[D7] a different-domain opportunity >10 pts weaker does NOT displace the stronger top", farSel.opportunity.signalKey === "x:topopp" && farSel.opportunity.reasonSelected !== "selected_through_domain_diversity_rule");
+  ok("[D8] the preserved top opportunity outscores the weaker different-domain one", (farSel.ranked.find((r) => r.signal.key === "x:topopp")!.opportunity.score ?? 0) - (farSel.ranked.find((r) => r.signal.key === "x:faropp")!.opportunity.score ?? 0) > 10);
+  // below-threshold different-domain candidate is never chosen for diversity
+  const belowOpp = mkSig({ domain: "tasks", signalType: "task_due_soon", urgency: "low", confidence: "low", effectiveDate: ahead(7), key: "x:below" }); // task_due_soon is not even an opportunity type
+  const belowSel = rankSignals(collect([riskCredit, topCreditOpp, belowOpp]), rctx());
+  ok("[D9] a below-threshold / ineligible different-domain candidate is never chosen for diversity", belowSel.opportunity.signalKey === "x:topopp" && belowSel.ranked.find((r) => r.signal.key === "x:below")!.opportunity.eligible === false);
+  const nearSel2 = rankSignals(collect([nearSpendOpp, topCreditOpp, riskCredit]), rctx());
+  ok("[D10] diversity selection + explanation is deterministic (order-independent)", JSON.stringify(nearSel.opportunity) === JSON.stringify(nearSel2.opportunity));
+
   /* ===================== purity / owner protection [50-54] ===================== */
   console.log("\n[purity / owner protection]");
   await collectDailySignals(U, CTX); await collectDailySignals(U, CTX);

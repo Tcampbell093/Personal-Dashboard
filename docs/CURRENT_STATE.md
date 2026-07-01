@@ -23,7 +23,7 @@
 > risk/opportunity/recommended-move selection, `null` when nothing clears its threshold; financial-family
 > diversity rule; structured selection explanations). Read-only, deterministic, no writes. Output types
 > `CollectedSignals`/`RankedSignal`/`SelectionResult`/`DailySelection`. **No persistence/migration/API/UI/
-> AI/Home/owner-response lifecycle** (Slice 3+). `scripts/verify-daily-slice2.ts` = **54/54**; Slice 1
+> AI/Home/owner-response lifecycle** (Slice 3+). `scripts/verify-daily-slice2.ts` = **64/64**; Slice 1
 > **81/81**; all regressions green. See `docs/DAILY_COMMAND_CENTER_SPEC.md` §2/§5/§17.
 
 > **Daily Command Center — Slice 1 (signal contract + read-only providers) — reviewed and merged to `main`

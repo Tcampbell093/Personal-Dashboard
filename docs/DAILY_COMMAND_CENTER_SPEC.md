@@ -201,7 +201,7 @@ to fill a slot.
 > **Slice 2 status (implemented on branch `daily-command-center-slice2-review`, not merged):** the
 > failure-isolated **orchestrator** (§2) and the deterministic **ranking + bounded selection** (§5/§6/§8/§9)
 > are implemented in `lib/daily/orchestrator.ts` and `lib/daily/ranking.ts`, verified by
-> `scripts/verify-daily-slice2.ts` (54/54). `collectDailySignals` calls every Slice 1 provider via
+> `scripts/verify-daily-slice2.ts` (64/64). `collectDailySignals` calls every Slice 1 provider via
 > `Promise.allSettled`, validates each signal, and returns valid signals + degraded providers + invalid
 > diagnostics; a **request-scoped memoized credit overview** (`SignalContext.sharedCredit`) computes
 > `computeCreditOverview` once per (userId, today) run (no global/cross-user cache, no persistence;
@@ -226,11 +226,21 @@ to fill a slot.
 >   tight −8 / unsafe → excluded; friction money (≤$25 −1, ≤$100 −3, >$100 −6) + time (≤15m 0, ≤30m −1,
 >   ≤60m −3, >60m −5) using **structured** cost/minutes only (never free-text).
 > - **Scores:** riskScore = base+urgency+deadline+confidence+freshness (min **40**); opportunityScore =
->   base+urgency+confidence+freshness+actionability+friction (min **35**); moveScore = max(risk,opp)+
->   actionability+capacityFit+friction (min **45**). Tie-break: urgency → nearer/overdue deadline →
->   confidence → lower money → lower time → key asc. **Diversity:** opportunity prefers a domain different
->   from the risk; a nonfinancial candidate within **10 points** of a selected financial-family item is
->   preferred where semantically eligible, but a high-urgency financial risk is never displaced cosmetically.
+>   base+urgency+confidence+freshness+actionability+friction (min **35**). **moveScore = max(riskScore,
+>   opportunityScore) + capacityFit**, **single-counting** actionability + friction: those two are already
+>   inside `opportunityScore`, so for an **opportunity-based** move they are NOT re-added (moveScore =
+>   opportunityScore + capacityFit); for a **risk-based** move (riskScore lacks them) they are added
+>   **exactly once** (moveScore = riskScore + actionability + friction + capacityFit). On a tie the base is
+>   taken from the opportunity (so nothing is double-counted). The move breakdown records `baseFrom`
+>   (`risk`|`opportunity`) + `actionabilityInBase`/`frictionInBase`, and components sum exactly to the
+>   total. Move min **45**. Tie-break: urgency → nearer/overdue deadline → confidence → lower money → lower
+>   time → key asc.
+> - **Diversity:** start from the highest-scoring qualifying opportunity; prefer the highest
+>   different-domain-than-risk opportunity **only when it is within `DIVERSITY_NEAR_POINTS` (10) of the top**
+>   — a >10-pt-weaker different-domain candidate never displaces the stronger top; a below-threshold
+>   candidate is never chosen for diversity. Additionally, a nonfinancial candidate within **10 points** of
+>   a selected financial-family item is preferred where semantically eligible, but a high-urgency financial
+>   risk is never displaced cosmetically. `reasonSelected` records whether diversity changed the pick.
 
 ## 4. Unified signal contract (read-only)
 
@@ -620,7 +630,7 @@ behavior must already be covered by that slice's own tests — testing must **no
      empty-domain/empty-state mapping.
 2. **Orchestration + ranking** — `collectDailySignals` (failure-isolated) + `rankSignals` (deterministic,
    extends `lib/briefing.ts`). **✅ IMPLEMENTED** (`lib/daily/orchestrator.ts`, `lib/daily/ranking.ts`;
-   `scripts/verify-daily-slice2.ts` = 54/54) — on branch `daily-command-center-slice2-review`, not merged.
+   `scripts/verify-daily-slice2.ts` = 64/64) — on branch `daily-command-center-slice2-review`, not merged.
    - **Tests in this slice:** **deterministic ranking** (identical inputs → identical order), **tie-break**
      rules, **category caps**, **diversity** (Finance can't crowd out other domains), **suppression/dedupe**,
      **stale-signal handling**, the **at-most-one / no-forced-item** behavior (including the empty/no-

@@ -30,11 +30,19 @@
   financial-family **diversity** rule (nonfinancial candidate within 10 pts preferred where eligible; a
   high-urgency financial risk is never displaced), and structured **selection explanations**
   (`ScoreBreakdown` components sum to totals). Output types: `CollectedSignals`, `RankedSignal`,
-  `SelectionResult`, `DailySelection`. Verified by `scripts/verify-daily-slice2.ts` (**54/54**) + Slice 1
+  `SelectionResult`, `DailySelection`. Verified by `scripts/verify-daily-slice2.ts` (**64/64**) + Slice 1
   (81/81) + all regressions green, typecheck, build, secret scan. **No persistence, migration, API, UI,
   AI, Home integration, or owner-response lifecycle was added** (those are Slice 3+). **Do not merge until
   reviewed. Do not begin Slice 3.** Recommended commit:
   `feat(daily): add failure-isolated orchestration + deterministic ranking (DCC slice 2)`.
+- **Review fixes applied (branch, uncommitted to `main`):** (1) **moveScore single-count** — actionability
+  and friction are no longer double-added: `moveScore = max(riskScore, opportunityScore) + capacityFit` for
+  an opportunity-based move (they are already inside `opportunityScore`), and `+ actionability + friction`
+  **once** only for a risk-based move; the breakdown records `baseFrom` and sums exactly. (2) **diversity
+  gating** — the opportunity slot starts from the top opportunity and only prefers a different-domain
+  candidate when it is within `DIVERSITY_NEAR_POINTS` (10) of the top; a >10-pt-weaker different-domain
+  candidate never displaces the stronger top, and no below-threshold item is chosen for diversity.
+  Regression coverage added ([D1]–[D10]); harness now **64/64**.
 - **Next candidate:** DCC **Slice 3 — lifecycle persistence** (`daily_recommendations` + migration), per
   §17. **Not yet approved to build.**
 

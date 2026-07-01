@@ -108,6 +108,9 @@ function capacityFit(s: DailySignal, ctx: RankingContext): number | "exclude" {
 export interface ScoreBreakdown {
   base: number | null; urgency: number; deadline: number; confidence: number;
   freshness: number; actionability: number; capacityFit: number | "excluded"; friction: number; total: number;
+  // For the MOVE breakdown only: which source score `base` came from, and whether
+  // actionability/friction are ALREADY inside that source (so they are NOT re-added).
+  baseFrom?: "risk" | "opportunity"; actionabilityInBase?: boolean; frictionInBase?: boolean;
 }
 export interface SlotEval { score: number | null; eligible: boolean; exclusions: string[]; breakdown: ScoreBreakdown; }
 export interface RankedSignal { signal: DailySignal; deadlineOrd: number; risk: SlotEval; opportunity: SlotEval; move: SlotEval; }
@@ -141,20 +144,38 @@ function evalOpportunity(s: DailySignal, today: string): SlotEval {
 
 function evalMove(s: DailySignal, risk: SlotEval, opp: SlotEval, ctx: RankingContext): SlotEval {
   const exclusions: string[] = [];
-  const bestBase = Math.max(risk.score ?? Number.NEGATIVE_INFINITY, opp.score ?? Number.NEGATIVE_INFINITY);
+  const riskScore = risk.score, oppScore = opp.score;
+  const bestBase = Math.max(riskScore ?? Number.NEGATIVE_INFINITY, oppScore ?? Number.NEGATIVE_INFINITY);
   const hasBase = Number.isFinite(bestBase);
-  const actionability = actionabilityPts(s), friction = frictionPts(s);
+  // Which source is the move base? On a tie, prefer OPPORTUNITY — its score already
+  // bundles actionability + friction, so we must NOT re-add them (avoids double-count).
+  const fromOpp = oppScore != null && oppScore >= (riskScore ?? Number.NEGATIVE_INFINITY);
+  // Single-count: actionability + friction are ADDED only for a risk-based move (riskScore
+  // does not contain them); for an opportunity-based move they are already inside `base`.
+  const addActionability = fromOpp ? 0 : actionabilityPts(s);
+  const addFriction = fromOpp ? 0 : frictionPts(s);
   const cap = capacityFit(s, ctx);
+  const capPts = cap === "exclude" ? 0 : cap;
   if (!s.candidateAction) exclusions.push("no_candidate_action");
   if (s.reversibility === "irreversible") exclusions.push("irreversible_excluded");
   if (inferredNeedsConfidence(s)) exclusions.push("low_confidence_inferred_excluded");
   if (cap === "exclude") exclusions.push("capacity_known_unsafe_or_impossible");
   if (!hasBase) exclusions.push("not_a_risk_or_opportunity_candidate");
-  const capPts = cap === "exclude" ? 0 : cap;
-  const total = hasBase ? bestBase + actionability + capPts + friction : 0;
+  // moveScore = max(riskScore, opportunityScore) + capacityFit  [+ actionability + friction ONCE if risk-based]
+  const total = hasBase ? bestBase + addActionability + addFriction + capPts : 0;
   if (hasBase && total < MOVE_MIN) exclusions.push(`below_move_threshold(${total}<${MOVE_MIN})`);
   const eligible = hasBase && !!s.candidateAction && s.reversibility !== "irreversible" && !inferredNeedsConfidence(s) && cap !== "exclude" && total >= MOVE_MIN;
-  return { score: hasBase ? total : null, eligible, exclusions, breakdown: { base: hasBase ? bestBase : null, urgency: 0, deadline: 0, confidence: 0, freshness: 0, actionability, capacityFit: cap === "exclude" ? "excluded" : cap, friction, total: hasBase ? total : 0 } };
+  return {
+    score: hasBase ? total : null, eligible, exclusions,
+    breakdown: {
+      base: hasBase ? bestBase : null, urgency: 0, deadline: 0, confidence: 0, freshness: 0,
+      actionability: addActionability, capacityFit: cap === "exclude" ? "excluded" : cap, friction: addFriction,
+      total: hasBase ? total : 0,
+      baseFrom: hasBase ? (fromOpp ? "opportunity" : "risk") : undefined,
+      actionabilityInBase: hasBase ? fromOpp : undefined,
+      frictionInBase: hasBase ? fromOpp : undefined,
+    },
+  };
 }
 
 /* ------------------------------------------------ dedupe + stale (§3) ----- */
@@ -248,11 +269,25 @@ export function rankSignals(collected: CollectedSignals, ctx: RankingContext): D
     }
   }
 
-  // 5. select opportunity (prefer a domain different from the risk) + diversity guard.
+  // 5. select opportunity: START from the highest-scoring qualifying opportunity. Prefer the highest
+  //    DIFFERENT-domain-than-risk opportunity ONLY when it is within DIVERSITY_NEAR_POINTS of the top.
+  //    - if the top is already a different domain than the risk → keep it (no weaker swap);
+  //    - if the best different-domain candidate is >10 pts weaker than the top → preserve the top;
+  //    - a below-threshold candidate is never chosen (oppCands are all eligible/above-threshold).
   const oppCands = ranked.filter((r) => r.opportunity.eligible && r.signal.key !== riskPick?.signal.key).sort(bySlot("opportunity"));
-  const oppDiff = oppCands.find((r) => r.signal.domain !== riskPick?.signal.domain);
-  let oppPick: RankedSignal | null = oppDiff ?? oppCands[0] ?? null;
-  let oppReason = !oppPick ? "no_candidate_cleared_threshold" : oppDiff ? "highest_opportunity_from_different_domain_than_risk" : "highest_opportunity_score";
+  const oppTop: RankedSignal | null = oppCands[0] ?? null;
+  let oppPick: RankedSignal | null = oppTop;
+  let oppReason = !oppTop ? "no_candidate_cleared_threshold" : "highest_opportunity_score";
+  if (oppTop) {
+    const oppDiff = oppCands.find((r) => r.signal.domain !== riskPick?.signal.domain); // highest different-domain (may be the top itself)
+    if (oppDiff && oppDiff.signal.key === oppTop.signal.key) {
+      oppReason = "highest_opportunity_from_different_domain_than_risk"; // top already differs from the risk
+    } else if (oppDiff && (oppDiff.opportunity.score ?? 0) >= (oppTop.opportunity.score ?? 0) - DIVERSITY_NEAR_POINTS) {
+      oppPick = oppDiff; oppReason = "selected_through_domain_diversity_rule"; // near different-domain preferred over a same-as-risk top
+    }
+  }
+  // Financial-family near-tie: a credible nonfinancial opportunity within 10 pts of a selected
+  // financial-family pick is preferred (never a below-threshold item — oppCands are all eligible).
   if (oppPick && isFinancial(oppPick.signal.domain)) {
     const nonFin = oppCands.find((r) => NONFINANCIAL.has(r.signal.domain));
     if (nonFin && (nonFin.opportunity.score ?? 0) >= (oppPick.opportunity.score ?? 0) - DIVERSITY_NEAR_POINTS && nonFin.signal.key !== oppPick.signal.key) {
