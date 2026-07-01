@@ -14,8 +14,8 @@
 
 **Last updated:** 2026-07-01 · **Reflects branch:** `main` @ `ca4fcdb` (Finance 1B.5B live; **Finance 1C.0A — manual credit profile + financial-health baseline — reviewed, merged to `main`, locally production-build verified, and expected to auto-deploy; live production verification unconfirmed**)
 
-> **Daily Command Center — Slice 1 (signal contract + read-only providers) — implemented on review branch
-> `daily-command-center-slice1-review` (NOT merged to `main`).** A shared, **read-only** `DailySignal`
+> **Daily Command Center — Slice 1 (signal contract + read-only providers) — reviewed and merged to `main`
+> (commit `0e64a64`; review branch deleted).** A shared, **read-only** `DailySignal`
 > contract (`lib/daily/contract.ts`) + **nine** deterministic grounded providers (`lib/daily/providers.ts`)
 > that map existing domain services (tasks, obligations, bills, finance outlook, credit, spending
 > opportunities, credit goals, data-quality, planned experiences) into a common signal shape — reusing

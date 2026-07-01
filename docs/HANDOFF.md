@@ -12,12 +12,18 @@
 
 ## Next approved task
 
+> **None in progress.** DCC **Slice 1** is **reviewed and merged to `main`** (see below). The next
+> candidate is DCC **Slice 2 — orchestration + deterministic ranking** (collect + rank, failure-isolated),
+> per `docs/DAILY_COMMAND_CENTER_SPEC.md` §17 — **not yet approved. Do not begin Slice 2 or any new
+> feature** until the owner approves a bounded task here.
+
 ### Daily Command Center — Slice 1 (signal contract + read-only providers)
 
-- **Status:** **IMPLEMENTED ON REVIEW BRANCH — awaiting owner review (uncommitted to `main`).** Slice 1 of
-  the approved DCC spec: the shared, read-only `DailySignal` contract + grounded deterministic providers
-  that convert existing domain outputs into signals **without changing any source data**. Branch
-  `daily-command-center-slice1-review`.
+- **Status:** **REVIEWED · MERGED TO `main` · LOCALLY PRODUCTION-BUILD VERIFIED · AUTO-DEPLOY EXPECTED.**
+  Merged via fast-forward as commit `0e64a645e03c637e97d2893a2132a3b94f1911df`; the
+  `daily-command-center-slice1-review` branch has been deleted locally and remotely. Slice 1 of the
+  approved DCC spec: the shared, read-only `DailySignal` contract + grounded deterministic providers that
+  convert existing domain outputs into signals **without changing any source data**.
 - **Delivered:** `lib/daily/contract.ts` (`DailySignal`, `SourceRef`, `CapacityReqs`, `SignalContext`,
   `DailySignalProvider`; bounded unions for domain/class/urgency/confidence/reversibility + per-domain
   `SIGNAL_TYPES`; `validateSignal`/`validateSignals`; deterministic date helpers + `datedUrgency`) and
@@ -26,31 +32,31 @@
   suppressed), goals (credit goals), data_quality (uncategorized / pending matches / stale score), and
   experience (planned, grounded dates only). Provenance `class` is never flattened (observed_fact /
   deterministic_calc / inferred_interpretation / recommendation). No `getDailySignals` mutates anything;
-  stable deterministic keys; explicit stale dates; unknown distinguished from zero; empty array when
-  nothing qualifies; **no relationship/health/career/calendar/general-goals/travel/knowledge providers**
-  (no grounded data). Verified by `scripts/verify-daily-slice1.ts` (**81/81**) + all regressions green,
-  typecheck, build, secret scan. **No ranking, orchestration, persistence, migration, API, UI, AI, or Home
-  integration was added** (those are later slices). **Do not merge until reviewed.** Recommended commit:
-  `feat(daily): add DailySignal contract + read-only grounded providers (DCC slice 1)`.
-- **Review fixes applied (branch, uncommitted to `main`):** (1) **overdue freshness** — tasks/obligations/
-  bills now use a **recompute-based** stale date (`ctx.today + freshnessDays`) instead of `dueDate + 3`, so
-  an unresolved overdue item never looks expired to the future ranker; it stays current because the
-  provider re-derives it from the live record each run, and stops emitting once the item is
-  completed/closed/paid (freshness is bounded, never permanent). Future planned experiences keep their
-  event-relative (`plannedDate + grace`) freshness. (2) **spending savings ≠ cost** — the spending
-  provider no longer maps `estimatedUpsideMax` (potential savings) into `estimatedCost`; `estimatedCost`
-  stays `null` (no invented cost), capacity does not require spending the savings, and savings remain in
-  `estimatedUpside`. Regression coverage added ([F1]–[F11]); harness now **81/81**.
-- **Next candidate after review:** DCC **Slice 2 — orchestration + deterministic ranking** (collect +
-  rank, failure-isolated), per `docs/DAILY_COMMAND_CENTER_SPEC.md` §17. **Not yet approved to build.**
+  stable deterministic keys; **recompute-based freshness** for live/unresolved facts (unresolved overdue
+  items never look expired); unknown distinguished from zero; empty array when nothing qualifies; **no
+  relationship/health/career/calendar/general-goals/travel/knowledge providers** (no grounded data).
+  Verified by `scripts/verify-daily-slice1.ts` (**81/81**) + all regressions green, typecheck, build,
+  secret scan. **No ranking, orchestration, persistence, migration, API, UI, AI, or Home integration was
+  added** (those are later slices).
+- **Review fixes (landed before merge):** (1) **overdue freshness** — tasks/obligations/bills use a
+  **recompute-based** stale date (`ctx.today + freshnessDays`) instead of `dueDate + 3`, so an unresolved
+  overdue item never looks expired to the future ranker; it stays current because the provider re-derives
+  it from the live record each run, and stops emitting once completed/closed/paid (bounded, never
+  permanent). Future planned experiences keep event-relative (`plannedDate + grace`) freshness.
+  (2) **spending savings ≠ cost** — the spending provider no longer maps `estimatedUpsideMax` (potential
+  savings) into `estimatedCost`; `estimatedCost` stays `null` (no invented cost), capacity does not
+  require spending the savings, and savings remain in `estimatedUpside`. Regression coverage [F1]–[F11].
+- **Next candidate:** DCC **Slice 2 — orchestration + deterministic ranking**, per §17. **Not yet approved
+  to build.**
 
 ---
 
 **Recently completed:** (1) **Product alignment** — `docs/PRODUCT_ALIGNMENT.md`. (2) **Daily Command Center
 design** — `docs/DAILY_COMMAND_CENTER_SPEC.md` (17-section spec + at-most-one/per-slice-testing corrections).
-(3) **Finance 1C.0A** is **reviewed, merged to `main`, locally production-build verified, and expected to
-auto-deploy** (see the 1C.0A entry below; live production commit/UI verification remains unconfirmed due to
-the Netlify site-level password and unavailable deploy-status API).
+(3) **DCC Slice 1** — reviewed and merged to `main` (`0e64a64`; see above). (4) **Finance 1C.0A** is
+**reviewed, merged to `main`, locally production-build verified, and expected to auto-deploy** (see the
+1C.0A entry below; live production commit/UI verification remains unconfirmed due to the Netlify site-level
+password and unavailable deploy-status API).
 
 ### Finance 1C.0A — manual credit profile + financial-health baseline
 
