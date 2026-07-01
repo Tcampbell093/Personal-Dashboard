@@ -201,7 +201,7 @@ const CREDIT_OBS_TYPES = new Set(Object.keys(CREDIT_OBS_CLASS));
 export const creditProvider: DailySignalProvider = {
   domain: "credit",
   async getDailySignals(userId, ctx) {
-    const ov = await computeCreditOverview(userId, { now: ctx.today });
+    const ov = ctx.sharedCredit ? await ctx.sharedCredit() : await computeCreditOverview(userId, { now: ctx.today });
     const out: DailySignal[] = [];
     const stale = isoAddDays(ctx.today, ctx.freshnessDays ?? DEFAULT_FRESHNESS_DAYS);
     for (const o of ov.observations) {
@@ -271,7 +271,7 @@ export const spendingProvider: DailySignalProvider = {
 export const goalsProvider: DailySignalProvider = {
   domain: "goals",
   async getDailySignals(userId, ctx) {
-    const ov = await computeCreditOverview(userId, { now: ctx.today });
+    const ov = ctx.sharedCredit ? await ctx.sharedCredit() : await computeCreditOverview(userId, { now: ctx.today });
     const stale = isoAddDays(ctx.today, ctx.freshnessDays ?? DEFAULT_FRESHNESS_DAYS);
     return ov.goalProgress.filter((g) => g.status === "active").map((g) => ({
       key: `goals:goal_progress:${g.id}`,
@@ -322,7 +322,7 @@ export const dataQualityProvider: DailySignalProvider = {
       candidateAction: "Review suggested matches.", staleDate: stale, reasonCodes: ["pending_matches"],
     });
     // Stale credit score is a data-quality concern (surfaced here rather than as a substantive credit signal).
-    const ov = await computeCreditOverview(userId, { now: ctx.today });
+    const ov = ctx.sharedCredit ? await ctx.sharedCredit() : await computeCreditOverview(userId, { now: ctx.today });
     if (ov.staleScore && ov.scores[0]) {
       const s = ov.scores[0];
       out.push({

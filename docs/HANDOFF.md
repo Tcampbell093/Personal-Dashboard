@@ -12,10 +12,31 @@
 
 ## Next approved task
 
-> **None in progress.** DCC **Slice 1** is **reviewed and merged to `main`** (see below). The next
-> candidate is DCC **Slice 2 — orchestration + deterministic ranking** (collect + rank, failure-isolated),
-> per `docs/DAILY_COMMAND_CENTER_SPEC.md` §17 — **not yet approved. Do not begin Slice 2 or any new
-> feature** until the owner approves a bounded task here.
+### Daily Command Center — Slice 2 (orchestration + deterministic ranking)
+
+- **Status:** **IMPLEMENTED ON REVIEW BRANCH — awaiting owner review (uncommitted to `main`).** Branch
+  `daily-command-center-slice2-review`. Failure-isolated orchestration + deterministic, inspectable
+  ranking and bounded selection over the Slice 1 signals.
+- **Delivered:** `lib/daily/orchestrator.ts` — `collectDailySignals(userId, ctx)` calls every Slice 1
+  provider via `Promise.allSettled` (one failure degrades only its domain), validates each signal against
+  the contract (invalid excluded + diagnosed), and returns `{ signals, degraded, invalid, context,
+  collectedAt }`; a **request-scoped memoized** `computeCreditOverview` (`SignalContext.sharedCredit`,
+  additive) runs once per (userId, today) run — no global/cross-user cache, no persistence, providers stay
+  independently callable. `lib/daily/ranking.ts` — documented **RISK/OPPORTUNITY base-weight registries**,
+  bounded integer score components, stale/invalid/suppressed exclusion, key dedupe (deterministic winner:
+  confidence → newer observedDate → provider order; no evidence merging), scoring for `riskScore`
+  (min 40) / `opportunityScore` (min 35) / `moveScore` (min 45), deterministic tie-breaks, **at-most-one**
+  risk/opportunity/move selection (`null` when nothing qualifies — never fills a slot with a weak item),
+  financial-family **diversity** rule (nonfinancial candidate within 10 pts preferred where eligible; a
+  high-urgency financial risk is never displaced), and structured **selection explanations**
+  (`ScoreBreakdown` components sum to totals). Output types: `CollectedSignals`, `RankedSignal`,
+  `SelectionResult`, `DailySelection`. Verified by `scripts/verify-daily-slice2.ts` (**54/54**) + Slice 1
+  (81/81) + all regressions green, typecheck, build, secret scan. **No persistence, migration, API, UI,
+  AI, Home integration, or owner-response lifecycle was added** (those are Slice 3+). **Do not merge until
+  reviewed. Do not begin Slice 3.** Recommended commit:
+  `feat(daily): add failure-isolated orchestration + deterministic ranking (DCC slice 2)`.
+- **Next candidate:** DCC **Slice 3 — lifecycle persistence** (`daily_recommendations` + migration), per
+  §17. **Not yet approved to build.**
 
 ### Daily Command Center — Slice 1 (signal contract + read-only providers)
 

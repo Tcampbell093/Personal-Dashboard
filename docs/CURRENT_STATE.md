@@ -14,6 +14,18 @@
 
 **Last updated:** 2026-07-01 · **Reflects branch:** `main` @ `ca4fcdb` (Finance 1B.5B live; **Finance 1C.0A — manual credit profile + financial-health baseline — reviewed, merged to `main`, locally production-build verified, and expected to auto-deploy; live production verification unconfirmed**)
 
+> **Daily Command Center — Slice 2 (orchestration + deterministic ranking) — implemented on review branch
+> `daily-command-center-slice2-review` (NOT merged to `main`).** `lib/daily/orchestrator.ts`
+> (`collectDailySignals` — failure-isolated `Promise.allSettled` over the Slice 1 providers, per-signal
+> contract validation, degraded/invalid diagnostics, request-scoped memoized credit overview) +
+> `lib/daily/ranking.ts` (documented risk/opportunity base-weight registries; bounded integer scoring;
+> stale/invalid/suppressed exclusion; deterministic key dedupe with no evidence merging; **at-most-one**
+> risk/opportunity/recommended-move selection, `null` when nothing clears its threshold; financial-family
+> diversity rule; structured selection explanations). Read-only, deterministic, no writes. Output types
+> `CollectedSignals`/`RankedSignal`/`SelectionResult`/`DailySelection`. **No persistence/migration/API/UI/
+> AI/Home/owner-response lifecycle** (Slice 3+). `scripts/verify-daily-slice2.ts` = **54/54**; Slice 1
+> **81/81**; all regressions green. See `docs/DAILY_COMMAND_CENTER_SPEC.md` §2/§5/§17.
+
 > **Daily Command Center — Slice 1 (signal contract + read-only providers) — reviewed and merged to `main`
 > (commit `0e64a64`; review branch deleted).** A shared, **read-only** `DailySignal`
 > contract (`lib/daily/contract.ts`) + **nine** deterministic grounded providers (`lib/daily/providers.ts`)

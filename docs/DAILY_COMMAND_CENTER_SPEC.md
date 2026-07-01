@@ -196,9 +196,41 @@ to fill a slot.
 
 > **Slice 1 status (reviewed and merged to `main`, commit `0e64a64`):** the contract (§4) and the
 > read-only grounded providers (slice 1 of §17) are implemented in `lib/daily/contract.ts` and
-> `lib/daily/providers.ts`, verified by `scripts/verify-daily-slice1.ts` (81/81). Ranking (§5), the
-> recommended-move selection (§6), owner-response lifecycle (§7), persistence (§8), APIs (§13), and
-> UI/Home (§3/§12) remain **unimplemented** — they are later, separately-approved slices.
+> `lib/daily/providers.ts`, verified by `scripts/verify-daily-slice1.ts` (81/81).
+>
+> **Slice 2 status (implemented on branch `daily-command-center-slice2-review`, not merged):** the
+> failure-isolated **orchestrator** (§2) and the deterministic **ranking + bounded selection** (§5/§6/§8/§9)
+> are implemented in `lib/daily/orchestrator.ts` and `lib/daily/ranking.ts`, verified by
+> `scripts/verify-daily-slice2.ts` (54/54). `collectDailySignals` calls every Slice 1 provider via
+> `Promise.allSettled`, validates each signal, and returns valid signals + degraded providers + invalid
+> diagnostics; a **request-scoped memoized credit overview** (`SignalContext.sharedCredit`) computes
+> `computeCreditOverview` once per (userId, today) run (no global/cross-user cache, no persistence;
+> providers stay independently callable). `rankSignals` excludes stale/invalid/suppressed signals, dedupes
+> by key, scores from the documented registries below, and selects **at most one** risk / opportunity /
+> recommended move — `null` when nothing clears its threshold (weak items are never promoted to fill a
+> slot). Owner-response **lifecycle (§7)**, persistence (§8), APIs (§13), and UI/Home (§3/§12) remain
+> **unimplemented** — later, separately-approved slices. Optional in-memory `suppressedKeys` is accepted
+> for tests/future Slice 3, but no durable suppression exists yet.
+>
+> **Slice 2 constants (approved registries + thresholds):**
+> - **Risk base weights:** projected_shortfall 40, payment_overdue 38, bill_overdue 36, cash_flow_conflict
+>   34, obligation_overdue 30, task_overdue 28, collection_unverified 26, bill_due_soon 24, payment_due_soon
+>   24, utilization_high 22, obligation_due_soon 20, task_due_soon 18, recent_hard_inquiries 16,
+>   tight_cash_before_payday 16, stale_credit_score 10, uncategorized_transactions 8, pending_matches 8.
+> - **Opportunity base weights:** spending_opportunity 28, credit_action 26, utilization_progress 18,
+>   collection_resolution_progress 18, goal_progress 14, planned_experience 10, uncategorized_transactions
+>   8, pending_matches 8. Opportunities require **medium/high** confidence.
+> - **Components:** urgency high +20 / med +10 / low +0; deadline overdue>7d +20, overdue 1–7d +18, today
+>   +16, tomorrow +12, 2–3d +8, 4–7d +4, later/null +0; confidence high +10 / med +5 / low +0;
+>   actionability +8; freshness today +4 / ≤7d +2 / older +0; capacity fit affordable +5 / unknown +0 /
+>   tight −8 / unsafe → excluded; friction money (≤$25 −1, ≤$100 −3, >$100 −6) + time (≤15m 0, ≤30m −1,
+>   ≤60m −3, >60m −5) using **structured** cost/minutes only (never free-text).
+> - **Scores:** riskScore = base+urgency+deadline+confidence+freshness (min **40**); opportunityScore =
+>   base+urgency+confidence+freshness+actionability+friction (min **35**); moveScore = max(risk,opp)+
+>   actionability+capacityFit+friction (min **45**). Tie-break: urgency → nearer/overdue deadline →
+>   confidence → lower money → lower time → key asc. **Diversity:** opportunity prefers a domain different
+>   from the risk; a nonfinancial candidate within **10 points** of a selected financial-family item is
+>   preferred where semantically eligible, but a high-urgency financial risk is never displaced cosmetically.
 
 ## 4. Unified signal contract (read-only)
 
@@ -587,7 +619,8 @@ behavior must already be covered by that slice's own tests — testing must **no
      output → `DailySignal` fields, including `class`/provenance and `sourceRefs`), plus
      empty-domain/empty-state mapping.
 2. **Orchestration + ranking** — `collectDailySignals` (failure-isolated) + `rankSignals` (deterministic,
-   extends `lib/briefing.ts`).
+   extends `lib/briefing.ts`). **✅ IMPLEMENTED** (`lib/daily/orchestrator.ts`, `lib/daily/ranking.ts`;
+   `scripts/verify-daily-slice2.ts` = 54/54) — on branch `daily-command-center-slice2-review`, not merged.
    - **Tests in this slice:** **deterministic ranking** (identical inputs → identical order), **tie-break**
      rules, **category caps**, **diversity** (Finance can't crowd out other domains), **suppression/dedupe**,
      **stale-signal handling**, the **at-most-one / no-forced-item** behavior (including the empty/no-

@@ -87,6 +87,13 @@ export interface SignalContext {
   timezone: string;          // e.g. "America/New_York"
   now: string;               // ISO timestamp (informational; providers stay date-deterministic)
   freshnessDays?: number;    // bounded look-back / default stale window
+  // Slice 2 (optional): a REQUEST-SCOPED memoized credit overview, so the credit /
+  // goals / stale-score providers can share one `computeCreditOverview` call per
+  // orchestration run instead of computing it three times. Keyed implicitly by the
+  // (userId, today) of the run that created the closure — NO global/cross-user cache,
+  // NO persistence. When absent, providers call `computeCreditOverview` directly, so
+  // they remain independently callable (Slice 1 tests pass a context without it).
+  sharedCredit?: () => Promise<import("@/lib/services/credit").CreditOverview>;
 }
 
 /** The consistent read-only provider interface (spec §3). No ranking/orchestration. */
