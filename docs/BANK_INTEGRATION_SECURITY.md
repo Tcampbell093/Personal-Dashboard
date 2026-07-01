@@ -266,9 +266,27 @@ partial-unique indexes guarantee at most one current confirmed + one current sug
 transaction (concurrency-safe), and no duplicate active rule. Default categories bootstrap idempotently
 at the application level (the migration adds schema only — no auto categorization, no default rules).
 
+## Spending insights + opportunity detection (Finance 1B.5B)
+
+Insights and opportunity cards are a **read-only calculated view**: recomputed deterministically per
+request from existing transactions/categories/evidence and **never persisted** (the only durable state is
+a per-owner **dismissal** row, keyed by a deterministic period-scoped insight key, idempotent). Insight
+generation **never** changes a transaction amount/date/category, a merchant rule, a provider
+balance/snapshot or account balance, the Plaid cursor, a movement, a bill/income/transfer, or matching
+evidence — and it **moves no money, makes no tax/legal/investment/credit claim as fact, and creates no
+task**. The service contains no `update(financialConnections|financialAccounts|providerAccounts)`, no
+`insert/update(financialEventEvidence)`, and no money-movement or task-creation call (asserted by
+`scripts/verify-finance1b5b.ts` domain-boundary checks [79–97]). Detection is **deterministic and
+conservative** (documented thresholds; fee matching uses a `\bfee\b` word boundary so "coffee" never
+matches) — **no AI, no embeddings, no enrichment**. Spending eligibility excludes inflows, confirmed
+transfers, and removed/pending rows; periods are bounded (America/New_York). Estimated upside is bounded
+(≤ 50% of observed spend) and framed as illustrative, never advice; confidence is surfaced and
+low-confidence opportunities are hidden by default; data-quality (uncategorized coverage, short history)
+is disclosed honestly. Ownership is server-derived; foreign-owner/oversized dismissals are rejected.
+
 ## What is NOT functional yet (deferred to later 1B phases)
 
-No spending analysis (category totals/charts/budgets/forecasts — Finance 1B.5B+), no reversal of
+No budgets/goals/forecasts (deferred beyond Finance 1B.5B), no reversal of
 evidence-only confirmations, no mixed linked/manual transfer confirmation (fails closed), no update/repair
 mode, no real Chase/BofA (needs eligible Production + OAuth), and no money movement. **Before Production:**
 Plaid Production onboarding + OAuth redirect registration, real-data 90-day history policy, and

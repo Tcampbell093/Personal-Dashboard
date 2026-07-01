@@ -592,6 +592,62 @@
   + typecheck + build + all regressions green + secret scan clean. Owner's real Sandbox connection
   untouched. Older suites' superseded `!/plaid/i`/migration/scope guards updated (disclosed NOTEs).
 
+### ADR-036 — Finance 1B.5B: spending insights + financial opportunity detection
+- **Classification:** Owner-approved decision (owner approved the 1B.5B scope).
+- **Detail:** Turns categorized transaction data into explainable, **read-only** deterministic
+  **spending insights** and **opportunity cards**. Every insight separates observed fact,
+  deterministic calculation, inferred opportunity, estimated upside, confidence, and limitation.
+  Service `lib/services/insights.ts` (server-only); routes `app/api/finances/insights` (GET) +
+  `.../insights/[id]/dismiss` + `.../insights/[id]/restore`; UI `components/finances/insights.tsx`;
+  Home surfaces at most one insight + one opportunity via `homeInsightSummary`.
+  - **Read-only boundary (verified):** insight generation changes **no** transaction amount/date/
+    category, **no** merchant rule, **no** provider balance/snapshot/account balance, **no** Plaid
+    cursor, **no** movement, **no** bill/income/transfer/matching-evidence, and **moves no money**.
+    The service contains no `update(financialConnections|financialAccounts|providerAccounts)`, no
+    `insert/update(financialEventEvidence)`, no money-movement or task-creation calls (asserted).
+  - **Persistence decision — calculated view + minimal dismissal only:** insights are recomputed
+    deterministically per request (never persisted), because they are fully derivable from existing
+    data. The **only** durable state is dismissal: new additive table `financial_insight_dismissals`
+    (migration `0019`), keyed by a deterministic period-scoped `insightKey`
+    (e.g. `category_change:current_month:5`), unique per `(userId, insightKey)`, idempotent via
+    `onConflictDoNothing`; restore deletes the row. The suggested `financial_insights` table was
+    **not** built — recomputation is sufficient and avoids a staleness/consistency surface.
+  - **Eligibility (deterministic):** spending = active + posted (`!pending`), `amount < 0`, not a
+    confirmed-transfer transaction, within the period window; inflows and confirmed transfers are
+    excluded and reported separately (`incomeExcluded`, `transferExcluded`); removed/pending
+    excluded; duplicates impossible (unique `providerTransactionId`).
+  - **Bounded periods (America/New_York):** current month (MTD vs the same elapsed days of last
+    month, flagged incomplete), previous month, last 30, last 90, and a custom month — all bounded.
+  - **Detection thresholds (conservative, documented in `THRESHOLDS`):** change requires
+    abs ≥ $25 **and** ≥ 20% **and** current ≥ $40; recurring requires ≥ 3 similar-amount posted
+    outflows at a consistent cadence; fee uses a `\bfee\b` word boundary + specific keyword phrases so
+    "coffee"/"toffee" never match; unusual requires ≥ 2.5× the merchant median **and** > median + $50
+    with ≥ 4 history; concentration > 35% of categorized outflow; coverage warns > 25% uncategorized.
+  - **Opportunities (conservative):** reduction estimates use the observed average bounded to ≤ 50%
+    of observed spend; fee/recurring reviews never assume avoidability or cancellation; no annualized
+    claims. Confidence is High/Medium/Low; **low-confidence opportunities are hidden by default**.
+  - **Bounded, prioritized surfacing:** insights and opportunities are sorted by a deterministic
+    type-priority (fee → unusual → uncategorized → recurring → concentration → change; opportunities:
+    fee → categorize → recurring → merchant → rising → concentration), tie-broken by magnitude then
+    key, **before** the ≤8 insight / ≤5 opportunity slice — so a money leak is never crowded out by
+    routine category/merchant changes. Home uses the rolling **last-30-day** window so it stays
+    informative regardless of day-of-month.
+  - **Surfaces:** `/finances` gains a **Spending insights** section (period chips, spending/
+    categorized/uncategorized totals, coverage + short-history warnings, category breakdown with
+    bars, top merchants, insight cards with confidence + evidence period + "Why am I seeing this?" +
+    Dismiss, opportunity cards with observation/why/upside/next action/limitation). Home shows at most
+    one insight + one opportunity beside the categorization count. `/manage` unchanged; no automatic
+    task creation.
+- **Evidence:** `scripts/verify-finance1b5b.ts` (**108/108** covering eligibility/totals [1–14],
+  summaries [15–25], change insights [26–33], recurring [34–41], fee [42–47], unusual [48–52],
+  opportunities [53–61], UI [62–78], domain boundaries [79–97], dismissal lifecycle, owner protection
+  [98–108]) + all regressions green + typecheck + build + secret scan + browser run (desktop + 375px,
+  no console errors). Owner's BofA connection + Plaid Checking + 19 imported transactions + request 222
+  preserved; no balance/movement/snapshot/cursor/evidence change.
+- **Known limitations:** Sandbox-only; deterministic only (no AI/enrichment); estimates are
+  illustrative, not advice; insights are only as good as categorization coverage (surfaced honestly);
+  no budgets/forecasts/goals yet (deferred); dismissal is period-scoped (a new period recomputes).
+
 ### ADR-035 — Finance 1B.5A: transaction categories + owner-approved merchant rules
 - **Classification:** Owner-approved decision (owner approved the 1B.5A scope).
 - **Detail:** Adds owner-editable spending **categories**, **descriptive-only** category assignments on

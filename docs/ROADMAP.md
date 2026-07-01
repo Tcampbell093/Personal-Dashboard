@@ -45,10 +45,16 @@
   owner-approved merchant rules** — owner-editable categories, descriptive-only assignments, deterministic
   suggestions, explicit suggest/auto merchant rules with optional bounded apply-to-existing; categorization
   mutates no bank evidence/balance/movement/cursor and moves no money; no automatic learning) is **done**
-  (implemented, uncommitted; `scripts/verify-finance1b5a.ts` 108/108). **No AI, no money movement,
-  Sandbox-only, owner-confirmed.** Next: **1B.5B** spending analysis (category totals/charts/budgets —
-  deferred), the **manual→linked authority-handoff** transition (deferred from 1B.2), reversal of evidence
-  confirmations, mixed linked/manual transfer support, and repair/disconnect hardening. Real Chase/BofA
+  (implemented, uncommitted; `scripts/verify-finance1b5a.ts` 108/108). **1B.5B** (**spending insights +
+  financial opportunity detection** — explainable, **read-only** deterministic insights (category/merchant
+  totals + change, recurring, fee, unusual, concentration, uncategorized gap) and conservative opportunity
+  cards, each separating observed fact / calculation / inferred opportunity / estimated upside /
+  confidence / limitation; calculated view + minimal dismissal persistence only; changes no
+  transaction/balance/movement/cursor/evidence and moves no money) is **done** (implemented, uncommitted;
+  `scripts/verify-finance1b5b.ts` 108/108). **No AI, no money movement, Sandbox-only, owner-confirmed.**
+  Next: **budgets/goals/forecasts**, the **manual→linked authority-handoff** transition (deferred from
+  1B.2), reversal of evidence confirmations, mixed linked/manual transfer support, and repair/disconnect
+  hardening. Real Chase/BofA
   need eligible Production/OAuth (a later owner step). See
   `docs/BANK_INTEGRATION_SECURITY.md` and `docs/DECISIONS.md` ADR-027/028/029/030. (The active approved
   task is always in `docs/HANDOFF.md`.)

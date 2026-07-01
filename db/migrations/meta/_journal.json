@@ -134,6 +134,13 @@
       "when": 1782848061765,
       "tag": "0018_married_scarlet_spider",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1782914576375,
+      "tag": "0019_majestic_chimera",
+      "breakpoints": true
     }
   ]
 }

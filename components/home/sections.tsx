@@ -148,6 +148,16 @@ export function MoneyAwareness({ section }: { section: HomeSection<HomeMoney> })
               <span>see /finances</span>
             </div>
           )}
+          {section.data!.topInsight && (
+            <div className="home-statline">
+              <span className="sub">💡 {section.data!.topInsight}</span>
+            </div>
+          )}
+          {section.data!.topOpportunity && (
+            <div className="home-statline">
+              <span className="sub">↗ {section.data!.topOpportunity}</span>
+            </div>
+          )}
           <div className="home-statline num">
             <span>Bills before payday</span>
             <span>{money(section.data!.billsDueBeforePayday)}</span>

@@ -9,7 +9,29 @@
 > only; technical identifiers (routes, DB, env vars, the `Personal-Dashboard` repo) keep their
 > original names. See `docs/DECISIONS.md` ADR-026.
 
-**Last updated:** 2026-06-30 · **Reflects branch:** `main` (Finance 1B.4B live + production-verified; **Finance 1B.5A — transaction categories + owner-approved merchant rules — implemented, uncommitted**)
+**Last updated:** 2026-07-01 · **Reflects branch:** `main` (Finance 1B.4B live + production-verified; **Finance 1B.5A — categories + merchant rules — and 1B.5B — spending insights + opportunity detection — implemented, uncommitted**)
+
+> **Finance 1B.5B — spending insights + financial opportunity detection — implemented (uncommitted).**
+> Turns categorized transactions into explainable, **read-only** deterministic **spending insights** and
+> **opportunity cards** — each separating observed fact, calculation, inferred opportunity, estimated
+> upside, confidence, and limitation. Insights are a **calculated view** (recomputed per request, never
+> persisted); the only durable state is **dismissal** (new additive table `financial_insight_dismissals`,
+> migration `0019`, keyed by a deterministic period-scoped insight key, idempotent). Generation is strictly
+> read-only: it changes **no** transaction/category/rule/balance/snapshot/movement/cursor/bill/income/
+> transfer/matching-evidence and **moves no money**. Spending excludes inflows, confirmed transfers, and
+> removed/pending rows; periods (this month MTD-vs-equal-days, last month, last 30, last 90, custom month)
+> are bounded in America/New_York. Detection is conservative + documented (`THRESHOLDS`): change (abs ≥ $25
+> **and** ≥ 20% **and** current ≥ $40), recurring (≥ 3 similar-amount charges at a consistent cadence),
+> fee (`\bfee\b` word boundary — never "coffee"), unusual (≥ 2.5× merchant median **and** > median + $50,
+> ≥ 4 history), concentration (> 35%), coverage warn (> 25% uncategorized). Opportunities bound reduction
+> estimates to ≤ 50% of observed spend and never assume avoidability/cancellation; **low-confidence
+> opportunities are hidden by default**. Insights/opportunities are **priority-sorted before** the ≤8/≤5
+> slice so a fee leak or unusual charge is never crowded out. `/finances` gains a **Spending insights**
+> section (period chips, totals, coverage warnings, category breakdown with bars, top merchants, insight
+> cards with confidence + evidence + "Why am I seeing this?" + Dismiss, opportunity cards); Home shows at
+> most one insight + one opportunity (rolling last-30-day window) beside the categorization count;
+> `/manage` unchanged (no auto task creation). `scripts/verify-finance1b5b.ts` = **108/108** + browser-
+> verified (desktop + 375px). See `docs/DECISIONS.md` ADR-036.
 
 > **Finance 1B.5A — transaction categories + merchant rules — implemented (uncommitted).** Owner-editable
 > spending **categories** (20 defaults bootstrapped idempotently at app level), **descriptive-only**

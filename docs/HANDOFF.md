@@ -12,6 +12,37 @@
 
 ## Next approved task
 
+### Finance 1B.5B — spending insights + financial opportunity detection
+
+- **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** Turns categorized transactions into
+  explainable, **read-only** deterministic **spending insights** and **opportunity cards** — each
+  separating observed fact / calculation / inferred opportunity / estimated upside / confidence /
+  limitation. Insights are a **calculated view** (recomputed per request, **never persisted**); the only
+  durable state is **dismissal** — new additive table `financial_insight_dismissals` (migration
+  `0019_majestic_chimera.sql`), keyed by a deterministic period-scoped insight key, unique per
+  `(userId, insightKey)`, idempotent; restore deletes the row. The suggested `financial_insights` table
+  was intentionally **not** built (recomputation suffices; avoids a staleness surface). Generation is
+  strictly read-only: changes **no** transaction/category/rule/balance/snapshot/movement/cursor/
+  bill/income/transfer/matching-evidence and **moves no money** (no `update(financialConnections|
+  financialAccounts|providerAccounts)`, no evidence write, no task creation — asserted). Spending excludes
+  inflows, confirmed transfers, and removed/pending; periods (this month MTD-vs-equal-days, last month,
+  last 30, last 90, custom month) are bounded in America/New_York. Detection is conservative + documented
+  (`THRESHOLDS`): change (abs ≥ $25 **and** ≥ 20% **and** current ≥ $40), recurring (≥ 3 similar charges,
+  consistent cadence), fee (`\bfee\b` — never "coffee"), unusual (≥ 2.5× merchant median **and**
+  > median + $50, ≥ 4 history), concentration (> 35%), coverage warn (> 25%). Opportunities bound
+  reduction to ≤ 50% of observed spend, never assume avoidability/cancellation, make no annualized claim;
+  low-confidence hidden by default. Insights/opportunities are **priority-sorted before** the ≤8/≤5 slice
+  so a fee leak or unusual charge is never crowded out. Files: `db/schema.ts`,
+  `db/migrations/0019_majestic_chimera.sql` (+ snapshot/journal), `lib/services/insights.ts`,
+  `app/api/finances/insights/route.ts` + `.../insights/[id]/{dismiss,restore}/route.ts`,
+  `components/finances/insights.tsx`, `app/finances/page.tsx`, `lib/services/home.ts`, `lib/types.ts`,
+  `components/home/sections.tsx`, `app/globals.css`, `scripts/verify-finance1b5b.ts` + 6 docs (+ stale-guard
+  NOTE/migration-count update in `verify-finance1b0.ts`). `scripts/verify-finance1b5b.ts` = **108/108**;
+  all regressions green; typecheck + build + secret scan clean; browser-verified (desktop + 375px, no
+  console errors). **No AI, no money movement, Sandbox-only, owner-confirmed.** Recommended commit:
+  `feat(finance): add spending insights and opportunity detection`. **Do not commit until reviewed.**
+  Next approved bank gate after review: **budgets/goals/forecasts** — separate authorization required.
+
 ### Finance 1B.5A — transaction categories + owner-approved merchant rules
 
 - **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** Owner-editable spending categories
@@ -266,6 +297,64 @@ specific build. Builds are ordered so the manual loop works end-to-end before an
 ---
 
 ## Latest handoff
+
+### Finance 1B.5B — spending insights + financial opportunity detection — implemented — 2026-07-01
+
+**Task completed** — read-only deterministic **spending insights** + **opportunity cards** over
+categorized transactions. Not committed — awaiting owner review.
+
+**Repository state** — base production milestone `af4bacc06de843ad00b3294c9c9e7be28c256338`; branch `main`;
+1B.5A present (migration `0018`); `.env`/`.env.local` ignored + unstaged. Owner data intact: BofA Sandbox
+connection active, Plaid Checking linked (1 linked account, 0 orphans), 19 imported transactions, Chase +
+BofA manual accounts, request 222 — all preserved and re-verified after the run.
+
+**Schema & migration** — additive `0019_majestic_chimera.sql`: one table `financial_insight_dismissals`
+(`user_id` FK cascade, `insight_key`, `insight_type`, `period_key`, `period_start`/`_end`, `dismissed_at`,
+timestamps; index on `user_id`; **unique** on `(user_id, insight_key)`). No DROP/owner-ALTER/backfill/
+balance mutation. Applied to Neon; table verified.
+
+**Design decision — calculated view, not a stored table** — insights + opportunities are recomputed
+deterministically per request from existing transactions/categories/evidence and **never persisted**; the
+suggested `financial_insights` table was intentionally not built. The only durable state is dismissal
+(idempotent via `onConflictDoNothing`; restore deletes the row).
+
+**Read-only boundary (asserted)** — generation changes no transaction/category/rule/balance/snapshot/
+movement/cursor/bill/income/transfer/matching-evidence and moves no money; the service has no
+`update(financialConnections|financialAccounts|providerAccounts)`, no `insert/update(financialEventEvidence)`,
+and no money-movement or task-creation call. Snapshots of a seeded transaction, account, provider
+balances, assignments, and evidence are byte-identical before/after repeated generation.
+
+**Detection (deterministic, conservative — `THRESHOLDS`)** — 10 insight types (category/merchant total +
+change, recurring, fee, unusual, concentration, uncategorized gap, opportunity). Change: abs ≥ $25 **and**
+≥ 20% **and** current ≥ $40. Recurring: ≥ 3 similar-amount posted outflows at a consistent cadence
+(`\bfee\b` word boundary means "coffee"/"toffee" never match as fees). Unusual: ≥ 2.5× merchant median
+**and** > median + $50 with ≥ 4 history; wording never claims fraud. Concentration > 35%; coverage warns
+> 25% uncategorized. Opportunities bound reduction to ≤ 50% of observed spend, never assume
+avoidability/cancellation, make no annualized claim; low-confidence hidden by default. Spending excludes
+inflows, confirmed transfers, removed/pending; periods bounded in America/New_York.
+
+**Bounded prioritized surfacing (bug fixed during implementation)** — insights/opportunities are now
+**priority-sorted** (fee → unusual → uncategorized → recurring → concentration → change; opportunities:
+fee → categorize → recurring → merchant → rising → concentration), tie-broken by magnitude then key,
+**before** the ≤8 insight / ≤5 opportunity slice — previously insertion-order truncation could crowd out a
+fee leak or unusual charge behind routine changes. Home uses the rolling **last-30-day** window so it
+stays informative on the 1st of the month.
+
+**Surfaces** — `/finances` **Spending insights** section (period chips, spending/categorized/uncategorized
+totals, coverage + short-history warnings, category breakdown with bars, top merchants, insight cards with
+confidence + evidence period + "Why am I seeing this?" + Dismiss, opportunity cards). Home Money awareness
+shows at most one insight + one opportunity beside the categorization count. `/manage` unchanged.
+
+**Files** — `db/schema.ts`, `db/migrations/0019_majestic_chimera.sql` (+ `meta/0019_snapshot.json`,
+`_journal.json`), `lib/services/insights.ts`, `app/api/finances/insights/route.ts` +
+`.../insights/[id]/{dismiss,restore}/route.ts`, `components/finances/insights.tsx`, `app/finances/page.tsx`,
+`lib/services/home.ts`, `lib/types.ts`, `components/home/sections.tsx`, `app/globals.css`,
+`scripts/verify-finance1b5b.ts`, migration-count guard in `scripts/verify-finance1b0.ts`, and 6 docs.
+
+**Verification** — `scripts/verify-finance1b5b.ts` **108/108** (owner-scoped: baseline-delta assertions for
+global sums, isolated prefixed merchants + txn-ids for entities). All 18 prior verify suites green;
+`npm run typecheck` + `npm run build` clean; secret scan clean; browser-verified at desktop + 375px with
+no console errors, then temp display data cleaned (0 residue). **Do not commit until reviewed.**
 
 ### Finance 1B.3A — Plaid Sandbox transaction import + manual incremental sync — implemented — 2026-06-26
 

@@ -1278,6 +1278,20 @@ textarea.taskadd-field:focus {
 .fin-cat-ruleopts { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
 .fin-cat-ruleopts label { display: flex; align-items: baseline; gap: 6px; }
 
+/* Finance 1B.5B — spending insights */
+.fin-insight-totals { display: flex; flex-wrap: wrap; gap: 10px 20px; margin: 10px 0; }
+.fin-insight-warn { margin: 8px 0; }
+.fin-insight-block { margin-top: 12px; }
+.fin-insight-summary { margin: 2px 0 0; }
+.fin-insight-why { margin: 4px 0 0; font-style: italic; opacity: 0.9; }
+.fin-cat-breakdown { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.fin-cat-bdrow { display: grid; grid-template-columns: minmax(80px, 1fr) minmax(60px, 2fr) auto; align-items: center; gap: 8px; }
+.fin-cat-bdname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fin-cat-bdbar { height: 8px; background: color-mix(in srgb, var(--line) 60%, transparent); border-radius: 4px; overflow: hidden; }
+.fin-cat-bdbar > span { display: block; height: 100%; background: color-mix(in srgb, var(--explore) 60%, var(--line)); }
+.fin-cat-bdamt { text-align: right; white-space: nowrap; }
+@media (max-width: 460px) { .fin-cat-bdrow { grid-template-columns: 1fr auto; } .fin-cat-bdbar { display: none; } }
+
 /* Finance 1B.2 — discovered provider accounts + linked accounts */
 .fin-pa-list { list-style: none; margin: 8px 0 0; padding: 0 0 0 10px; border-left: 2px solid var(--line); }
 .fin-pa-row { padding: 8px 0; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; }

@@ -477,6 +477,9 @@ export interface HomeMoney {
   transactionMatches: number;
   // Finance 1B.5A: compact count of active transactions needing categorization.
   transactionsToCategorize: number;
+  // Finance 1B.5B: at most one spending insight + one opportunity for Home (nonsecret text).
+  topInsight: string | null;
+  topOpportunity: string | null;
 }
 
 export interface HomeMomentum {

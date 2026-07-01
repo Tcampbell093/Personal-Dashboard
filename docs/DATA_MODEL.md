@@ -264,6 +264,17 @@ duplicate manual income movements; uncertain matches need owner approval; recurr
   provider-snapshot / cursor change; a linked income occurrence becomes **`received_evidence`** (the
   durable proof is the evidence row). `computeFinancialOutlook` now excludes non-scheduled occurrences
   from expected income (no double-count). See `docs/DECISIONS.md` ADR-034.
+- **1B.5B — DONE (spending insights + opportunity detection)** — additive migration
+  `0019_majestic_chimera.sql` adds **one** table, `financial_insight_dismissals`: `userId` (FK, cascade),
+  `insightKey` (deterministic period-scoped key, e.g. `category_change:current_month:5`), `insightType`,
+  `periodKey`, `periodStart`/`periodEnd`, `dismissedAt`, timestamps; **unique per `(userId, insightKey)`**
+  → idempotent dismissal (`onConflictDoNothing`); restore deletes the row. This is the **only** durable
+  1B.5B state — insights and opportunities themselves are a **calculated view**, recomputed
+  deterministically per request from existing transactions/categories/evidence and **never persisted**
+  (the suggested `financial_insights` table was intentionally not built). Insight generation is strictly
+  read-only: **no** transaction/category/rule/balance/snapshot/movement/cursor/bill/income/transfer/
+  evidence write, and no money movement. Spending excludes inflows, confirmed-transfer transactions, and
+  removed/pending rows; periods are bounded in America/New_York. See `docs/DECISIONS.md` ADR-036.
 - **1B.5A — DONE (transaction categories + merchant rules)** — additive migration
   `0018_married_scarlet_spider.sql` adds enums (`transaction_category_kind`, `category_assignment_source`,
   `category_assignment_status`, `merchant_rule_match_type`, `merchant_rule_behavior`) + 3 tables.

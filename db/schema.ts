@@ -1147,6 +1147,36 @@ export const merchantCategoryRules = pgTable(
   ],
 );
 
+/* ------------------------------------- spending insights (1B.5B) ---------- */
+
+// Finance 1B.5B: spending insights + opportunity cards are DETERMINISTIC CALCULATED
+// VIEWS recomputed from current transaction data on every request — read-only
+// financial intelligence that never mutates a transaction, category, rule, balance,
+// movement, bill/income/transfer, provider snapshot, or cursor, and moves no money.
+// The ONLY durable lifecycle state is the owner's DISMISSAL of an insight, recorded
+// here (keyed by a deterministic insight key that INCLUDES the evidence period, so a
+// dismissed insight stays dismissed for that period and can legitimately reappear
+// in a new period). Restore = delete the row. No AI. No raw provider payload/secret.
+export const financialInsightDismissals = pgTable(
+  "financial_insight_dismissals",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    insightKey: varchar("insight_key", { length: 240 }).notNull(), // deterministic: type:period:entity
+    insightType: varchar("insight_type", { length: 60 }).notNull(),
+    periodKey: varchar("period_key", { length: 40 }).notNull(),
+    periodStart: date("period_start").notNull(),
+    periodEnd: date("period_end").notNull(),
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }).defaultNow().notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    index("financial_insight_dismissals_user_idx").on(t.userId),
+    // One dismissal per owner per insight-key → idempotent dismiss, no duplicates.
+    uniqueIndex("financial_insight_dismissals_key_uq").on(t.userId, t.insightKey),
+  ],
+);
+
 /* -------------------------------------------------------------- signals --- */
 
 export const signalSources = pgTable("signal_sources", {
