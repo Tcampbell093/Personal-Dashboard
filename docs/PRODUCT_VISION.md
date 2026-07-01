@@ -5,6 +5,12 @@
 > and it is **not** a description of current implementation status (for that, see
 > `docs/CURRENT_STATE.md`). Principles here are settled unless explicitly changed by the
 > owner and recorded in `docs/DECISIONS.md`.
+>
+> **See also `docs/PRODUCT_ALIGNMENT.md`** — the approved product alignment that operationalizes this
+> vision (Xanther's mission as a life strategist; the five permanent functions — Reality, Risk, Advantage,
+> Decision, Execution; the recommendation lifecycle; the Daily Command Center vision; and the
+> feature-approval test). The two documents are intended to agree; this vision remains authoritative for
+> durable principles.
 
 ## What this is
 

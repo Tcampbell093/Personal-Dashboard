@@ -12,10 +12,30 @@
 
 ## Next approved task
 
-> **None in progress.** Finance 1C.0A is **reviewed, merged to `main`, locally production-build verified,
-> and expected to auto-deploy** (see below). The next candidate is the **Personal Advantage Engine**,
-> which is **not yet approved — do not begin it or any new feature** until the owner approves a bounded
-> task here.
+### Product alignment — documentation-only closeout
+
+- **Status:** **APPROVED — DOCUMENTATION ONLY (no implementation).** Formalize Xanther's approved product
+  direction as a source-of-truth document and wire the cross-references. **Scope is strictly
+  documentation:** create `docs/PRODUCT_ALIGNMENT.md` (mission; the five permanent functions — Reality,
+  Risk, Advantage, Decision, Execution; product principles; the eight-step recommendation lifecycle;
+  Daily Command Center vision; cross-domain reasoning; role of AI; hard boundaries; the feature-approval
+  test; the strategic sequence; and the current-state interpretation), and add a brief reference to it
+  from `docs/PRODUCT_VISION.md`, `docs/ROADMAP.md`, and `docs/CURRENT_STATE.md`.
+- **Explicitly out of scope / do NOT do:** no new feature, database/schema change, migration, API route,
+  dependency, AI integration, or UI change; **do not begin or approve the Daily Command Center / Personal
+  Advantage Loop implementation** — that is the *next design step* (sequence item 3) and requires its own
+  explicit owner approval before any code is written. Do not rewrite historical implementation records.
+- **Definition of done:** `docs/PRODUCT_ALIGNMENT.md` exists and matches the approved alignment; the three
+  referencing docs link to it; a docs consistency check passes; changes are documentation-only; committed
+  and pushed. After this, the next candidate remains the **Daily Command Center / Personal Advantage Loop
+  design** — **not yet approved to build**; do not begin it or any new feature until the owner approves a
+  bounded task here.
+
+---
+
+**Recently completed:** Finance 1C.0A is **reviewed, merged to `main`, locally production-build verified,
+and expected to auto-deploy** (see the 1C.0A entry below; live production commit/UI verification remains
+unconfirmed due to the Netlify site-level password and unavailable deploy-status API).
 
 ### Finance 1C.0A — manual credit profile + financial-health baseline
 

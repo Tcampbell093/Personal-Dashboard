@@ -2,7 +2,8 @@
 
 > What is actually in the repository, classified by maturity. Keep it factual and update it
 > after every substantive change (see `CLAUDE.md`). For the durable product vision, see
-> `docs/PRODUCT_VISION.md`.
+> `docs/PRODUCT_VISION.md`; for the approved product direction (mission, the five permanent functions,
+> the recommendation lifecycle, and the strategic sequence), see `docs/PRODUCT_ALIGNMENT.md`.
 >
 > **Product name:** the application is **Xanther** (a private AI-powered personal operating
 > system / Life OS). *Personal Command Center* and other prior names are historical aliases

@@ -7,6 +7,10 @@
 >   only when explicitly approved by the owner and strategist.
 > - **The single approved task always lives in `docs/HANDOFF.md`** — not here.
 > - Durable principles live in `docs/PRODUCT_VISION.md`.
+> - **Approved product direction lives in `docs/PRODUCT_ALIGNMENT.md`** — Xanther's mission as a life
+>   strategist, the five permanent functions (Reality, Risk, Advantage, Decision, Execution), the
+>   recommendation lifecycle, the Daily Command Center vision, and the strategic sequence. Candidate items
+>   below should serve those functions and pass the feature-approval test in that document.
 
 ## Candidate areas (unordered)
 
