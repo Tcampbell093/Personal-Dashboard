@@ -30,7 +30,19 @@ import { listPlanned, toExperienceViews } from "@/lib/services/experiences";
 const OBLIGATION_CLOSED = new Set(["done", "cancelled", "missed"]);
 const ATTENTION_HORIZON_DAYS = 3;
 const money = (n: number) => `$${Math.abs(Math.round(n)).toLocaleString("en-US")}`;
-/** stale window for a dated fact: a grace period past the deadline, else a bounded look-forward. */
+
+/** Recompute-based freshness: a short future date from `ctx.today` (default
+ * `today + freshnessDays`). Used for signals over LIVE, still-unresolved source
+ * state (open tasks, active obligations, unpaid bills, credit/finance/goal/data-
+ * quality figures). Because the provider re-derives these from the live record on
+ * each run, an unresolved overdue fact stays current (it re-emits) while a resolved
+ * one simply stops being emitted — the stale date must NOT be tied to a past
+ * deadline, or an unresolved overdue item would look expired to the ranker. Still
+ * bounded (near-future) so signals are recomputed regularly, never permanent. */
+const recomputeStale = (ctx: SignalContext) => isoAddDays(ctx.today, ctx.freshnessDays ?? DEFAULT_FRESHNESS_DAYS);
+
+/** Event-relative freshness for FUTURE dated items whose relevance ends after the
+ * event (e.g. a planned experience): valid until a short grace past the date. */
 const staleFor = (effectiveDate: string | null, ctx: SignalContext) =>
   effectiveDate ? isoAddDays(effectiveDate, 3) : isoAddDays(ctx.today, ctx.freshnessDays ?? DEFAULT_FRESHNESS_DAYS);
 
@@ -58,7 +70,7 @@ export const tasksProvider: DailySignalProvider = {
         estimatedUpside: null, estimatedDownside: overdue ? "Overdue commitments can compound." : null,
         estimatedCost: null, timeRequired: null, reversibility: "reversible",
         capacityReqs: { timeMinutes: null, scheduleConflict: null }, requiredVerification: null,
-        candidateAction: `Complete or reschedule "${t.title}".`, staleDate: staleFor(t.dueDate, ctx),
+        candidateAction: `Complete or reschedule "${t.title}".`, staleDate: recomputeStale(ctx),
         reasonCodes: [overdue ? "task_overdue" : "task_due_soon", `priority_${t.priority}`],
       });
     }
@@ -89,7 +101,7 @@ export const obligationsProvider: DailySignalProvider = {
         urgency: datedUrgency(o.startDate, ctx.today), confidence: "high",
         estimatedUpside: null, estimatedDownside: null, estimatedCost: null, timeRequired: null,
         reversibility: "reversible", capacityReqs: { scheduleConflict: null }, requiredVerification: null,
-        candidateAction: `Review the "${o.title}" obligation.`, staleDate: staleFor(o.startDate, ctx),
+        candidateAction: `Review the "${o.title}" obligation.`, staleDate: recomputeStale(ctx),
         reasonCodes: [type, `importance_${o.importance}`],
       });
     }
@@ -122,7 +134,7 @@ export const billsProvider: DailySignalProvider = {
         estimatedCost: b.expectedAmount, timeRequired: null, reversibility: "reversible",
         capacityReqs: { money: b.expectedAmount, scheduleConflict: null },
         requiredVerification: "Confirm the amount and that it is not already paid.",
-        candidateAction: `Review the ${b.name} bill due ${b.dueDate}.`, staleDate: staleFor(b.dueDate, ctx),
+        candidateAction: `Review the ${b.name} bill due ${b.dueDate}.`, staleDate: recomputeStale(ctx),
         reasonCodes: [overdue ? "bill_overdue" : "bill_due_soon"],
       });
     }
@@ -244,7 +256,10 @@ export const spendingProvider: DailySignalProvider = {
       observedDate: ctx.today, effectiveDate: null,
       urgency: "low" as const, confidence: opp.confidence,
       estimatedUpside: opp.upsideLabel, estimatedDownside: null,
-      estimatedCost: opp.estimatedUpsideMax, timeRequired: null, reversibility: "reversible" as const,
+      // `estimatedUpsideMax` is POTENTIAL SAVINGS/upside, NOT an action cost — a spending
+      // opportunity carries no grounded cost, so estimatedCost stays null (no invented cost)
+      // and capacityReqs stays null (the owner is not required to spend the savings amount).
+      estimatedCost: null, timeRequired: null, reversibility: "reversible" as const,
       capacityReqs: null, requiredVerification: opp.limitation, candidateAction: opp.nextAction,
       staleDate: stale, reasonCodes: opp.reasonCodes,
     }));

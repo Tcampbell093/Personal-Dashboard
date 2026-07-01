@@ -28,10 +28,19 @@
   deterministic_calc / inferred_interpretation / recommendation). No `getDailySignals` mutates anything;
   stable deterministic keys; explicit stale dates; unknown distinguished from zero; empty array when
   nothing qualifies; **no relationship/health/career/calendar/general-goals/travel/knowledge providers**
-  (no grounded data). Verified by `scripts/verify-daily-slice1.ts` (**70/70**) + all regressions green,
+  (no grounded data). Verified by `scripts/verify-daily-slice1.ts` (**81/81**) + all regressions green,
   typecheck, build, secret scan. **No ranking, orchestration, persistence, migration, API, UI, AI, or Home
   integration was added** (those are later slices). **Do not merge until reviewed.** Recommended commit:
   `feat(daily): add DailySignal contract + read-only grounded providers (DCC slice 1)`.
+- **Review fixes applied (branch, uncommitted to `main`):** (1) **overdue freshness** — tasks/obligations/
+  bills now use a **recompute-based** stale date (`ctx.today + freshnessDays`) instead of `dueDate + 3`, so
+  an unresolved overdue item never looks expired to the future ranker; it stays current because the
+  provider re-derives it from the live record each run, and stops emitting once the item is
+  completed/closed/paid (freshness is bounded, never permanent). Future planned experiences keep their
+  event-relative (`plannedDate + grace`) freshness. (2) **spending savings ≠ cost** — the spending
+  provider no longer maps `estimatedUpsideMax` (potential savings) into `estimatedCost`; `estimatedCost`
+  stays `null` (no invented cost), capacity does not require spending the savings, and savings remain in
+  `estimatedUpside`. Regression coverage added ([F1]–[F11]); harness now **81/81**.
 - **Next candidate after review:** DCC **Slice 2 — orchestration + deterministic ranking** (collect +
   rank, failure-isolated), per `docs/DAILY_COMMAND_CENTER_SPEC.md` §17. **Not yet approved to build.**
 

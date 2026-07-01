@@ -197,7 +197,7 @@ to fill a slot.
 > **Slice 1 status (implemented on branch `daily-command-center-slice1-review`, not merged):** the
 > contract (§4) and the read-only grounded providers (slice 1 of §17) are implemented in
 > `lib/daily/contract.ts` and `lib/daily/providers.ts`, verified by `scripts/verify-daily-slice1.ts`
-> (70/70). Ranking (§5), the recommended-move selection (§6), owner-response lifecycle (§7), persistence
+> (81/81). Ranking (§5), the recommended-move selection (§6), owner-response lifecycle (§7), persistence
 > (§8), APIs (§13), and UI/Home (§3/§12) remain **unimplemented** — they are later, separately-approved
 > slices.
 
@@ -580,7 +580,7 @@ behavior must already be covered by that slice's own tests — testing must **no
 
 1. **Signal contracts + deterministic providers** — define `DailySignal`, implement read-only providers
    over existing services; verify each provider is pure/owner-scoped and mutates nothing. **✅ IMPLEMENTED**
-   (`lib/daily/contract.ts`, `lib/daily/providers.ts`; `scripts/verify-daily-slice1.ts` = 70/70) — on
+   (`lib/daily/contract.ts`, `lib/daily/providers.ts`; `scripts/verify-daily-slice1.ts` = 81/81) — on
    branch `daily-command-center-slice1-review`, not merged.
    - **Tests in this slice:** provider **purity** (no writes to any source table — snapshot before/after),
      **ownership** (owner-scoped; no cross-user leakage — an owner's row never surfaces for another user;

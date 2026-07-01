@@ -20,9 +20,12 @@
 > that map existing domain services (tasks, obligations, bills, finance outlook, credit, spending
 > opportunities, credit goals, data-quality, planned experiences) into a common signal shape — reusing
 > existing services, mutating nothing, with honest provenance (`observed_fact` / `deterministic_calc` /
-> `inferred_interpretation` / `recommendation`), stable keys, explicit stale dates, and empty arrays when
-> nothing qualifies. **No schema/migration, ranking, orchestration, persistence, API, UI, AI, or Home
-> integration** (those are later DCC slices). `scripts/verify-daily-slice1.ts` = **70/70**; all regressions
+> `inferred_interpretation` / `recommendation`), stable keys, and empty arrays when nothing qualifies.
+> Freshness is **recompute-based** for live/unresolved facts (tasks/obligations/bills/finance/credit/
+> goals/data-quality use `today + freshnessDays`, so an unresolved overdue item never looks expired;
+> future planned experiences keep event-relative freshness); spending opportunities never emit potential
+> savings as a cost. **No schema/migration, ranking, orchestration, persistence, API, UI, AI, or Home
+> integration** (those are later DCC slices). `scripts/verify-daily-slice1.ts` = **81/81**; all regressions
 > green. See `docs/DAILY_COMMAND_CENTER_SPEC.md` §4/§17.
 
 > **Finance 1C.0A — manual credit profile + financial-health baseline — reviewed, merged to `main`

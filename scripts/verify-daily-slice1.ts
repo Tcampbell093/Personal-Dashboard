@@ -15,11 +15,13 @@ import {
   tasks, obligations, financialEntries, experiences, accountMovements,
   creditScoreSnapshots, creditAccounts, creditCollections, creditGoals, creditInquiries, creditLatePayments,
   financialConnections, financialAccounts, providerAccounts, importedTransactions, experienceRequests,
+  transactionCategories, transactionCategoryAssignments,
 } from "@/db/schema";
 import { CURRENT_USER_ID as U } from "@/lib/auth";
 import * as Contract from "@/lib/daily/contract";
 import * as P from "@/lib/daily/providers";
 import * as Credit from "@/lib/services/credit";
+import { ensureDefaultCategories, listCategories } from "@/lib/services/categories";
 
 let passed = 0, failed = 0;
 const ok = (n: string, c: boolean) => { c ? passed++ : failed++; console.log(`${c ? "✓" : "✗"} ${n}`); };
@@ -28,7 +30,7 @@ const FOREIGN = U + 99999;
 const ago = (d: number) => new Date(Date.parse(NOW) - d * 86400000).toISOString().slice(0, 10);
 const ahead = (d: number) => new Date(Date.parse(NOW) + d * 86400000).toISOString().slice(0, 10);
 const CTX: Contract.SignalContext = { today: NOW, timezone: "America/New_York", now: `${NOW}T12:00:00.000Z`, freshnessDays: 1 };
-const created = { tasks: [] as number[], obl: [] as number[], bills: [] as number[], exp: [] as number[], reqs: [] as number[] };
+const created = { tasks: [] as number[], obl: [] as number[], bills: [] as number[], exp: [] as number[], reqs: [] as number[], conn: 0, acct: 0, txns: [] as number[] };
 
 const wellFormed = (over: Partial<Contract.DailySignal> = {}): Contract.DailySignal => ({
   key: "tasks:task_overdue:1", domain: "tasks", signalType: "task_overdue", class: "observed_fact",
@@ -49,6 +51,11 @@ async function cleanup() {
   if (created.bills.length) await db.delete(financialEntries).where(inArray(financialEntries.id, created.bills)).catch(() => {});
   if (created.exp.length) await db.delete(experiences).where(inArray(experiences.id, created.exp)).catch(() => {});
   if (created.reqs.length) await db.delete(experienceRequests).where(inArray(experienceRequests.id, created.reqs)).catch(() => {});
+  await db.delete(transactionCategoryAssignments).where(eq(transactionCategoryAssignments.userId, U)).catch(() => {});
+  await db.delete(transactionCategories).where(eq(transactionCategories.userId, U)).catch(() => {});
+  if (created.txns.length) await db.delete(importedTransactions).where(inArray(importedTransactions.id, created.txns)).catch(() => {});
+  if (created.acct) await db.delete(financialAccounts).where(eq(financialAccounts.id, created.acct)).catch(() => {});
+  if (created.conn) await db.delete(financialConnections).where(eq(financialConnections.id, created.conn)).catch(() => {});
 }
 
 async function main() {
@@ -189,6 +196,64 @@ async function main() {
   const expSignals = await P.experienceProvider.getDailySignals(U, CTX);
   ok("[53] planned experience with a grounded date maps to a signal; undated one does not", expSignals.some((s) => s.sourceRefs[0].id === exp.id && s.signalType === "planned_experience") && !expSignals.some((s) => s.sourceRefs[0].id === expNoDate.id));
   ok("[54] experience signals validate (observed_fact, dated)", Contract.validateSignals(expSignals).ok && expSignals.every((s) => s.class === "observed_fact"));
+
+  /* =========== REVIEW FIX 1 — overdue freshness (recompute-based, not deadline-based) [F1-F8] =========== */
+  console.log("\n[freshness — unresolved overdue must not expire]");
+  const nonStale = (s: Contract.DailySignal) => s.staleDate >= NOW; // ranker excludes staleDate < today
+  const expectedRecompute = ahead(1); // ctx.today + freshnessDays(1)
+  // a task > 3 days overdue, still active
+  const [tOld] = await db.insert(tasks).values({ userId: U, title: "ZZ 10d Overdue Task", priority: "high", status: "not_started", dueDate: ago(10) }).returning({ id: tasks.id }); created.tasks.push(tOld.id);
+  const tOldSig = (await P.tasksProvider.getDailySignals(U, CTX)).find((s) => s.sourceRefs[0].id === tOld.id);
+  ok("[F1] a task >3 days overdue (active) remains non-stale (staleDate is future, not dueDate+3)", !!tOldSig && nonStale(tOldSig) && tOldSig.staleDate === expectedRecompute && tOldSig.staleDate > ago(10));
+  // an obligation > 3 days past start, still active
+  const [oOld] = await db.insert(obligations).values({ userId: U, title: "ZZ 10d Past Obligation", type: "appointment", startDate: ago(10), importance: "high", status: "upcoming" }).returning({ id: obligations.id }); created.obl.push(oOld.id);
+  const oOldSig = (await P.obligationsProvider.getDailySignals(U, CTX)).find((s) => s.sourceRefs[0].id === oOld.id);
+  ok("[F2] an obligation >3 days past start (active) remains non-stale", !!oOldSig && nonStale(oOldSig) && oOldSig.staleDate === expectedRecompute);
+  // an unpaid bill > 3 days overdue
+  const [bOld] = await db.insert(financialEntries).values({ userId: U, name: "ZZ 10d Overdue Bill", kind: "bill", expectedAmount: "80.00", status: "scheduled", dueDate: ago(10) }).returning({ id: financialEntries.id }); created.bills.push(bOld.id);
+  const bOldSig = (await P.billsProvider.getDailySignals(U, CTX)).find((s) => s.sourceRefs[0].id === bOld.id);
+  ok("[F3] an unpaid bill >3 days overdue remains non-stale", !!bOldSig && nonStale(bOldSig) && bOldSig.staleDate === expectedRecompute);
+  // resolution stops the signal (no active signal once completed/closed/paid)
+  await db.update(tasks).set({ status: "completed", completedAt: new Date() }).where(eq(tasks.id, tOld.id));
+  await db.update(obligations).set({ status: "done" }).where(eq(obligations.id, oOld.id));
+  await db.update(financialEntries).set({ status: "paid" }).where(eq(financialEntries.id, bOld.id));
+  const afterResolve = [...await P.tasksProvider.getDailySignals(U, CTX), ...await P.obligationsProvider.getDailySignals(U, CTX), ...await P.billsProvider.getDailySignals(U, CTX)];
+  ok("[F4] resolving (complete/done/paid) stops the signal — freshness is not made permanent", !afterResolve.some((s) => [tOld.id, oOld.id, bOld.id].includes(s.sourceRefs[0].id as number)));
+  ok("[F5] recompute stale date is bounded (near-future, not permanent)", Contract.dayDiff(expectedRecompute, NOW) <= 7 && Contract.dayDiff(expectedRecompute, NOW) >= 1);
+  // future dated items retain sensible (future) freshness
+  const [tSoon] = await db.insert(tasks).values({ userId: U, title: "ZZ Due-Soon Task", priority: "medium", status: "not_started", dueDate: ahead(2) }).returning({ id: tasks.id }); created.tasks.push(tSoon.id);
+  const tSoonSig = (await P.tasksProvider.getDailySignals(U, CTX)).find((s) => s.sourceRefs[0].id === tSoon.id);
+  ok("[F6] a future due-soon task has sensible future freshness", !!tSoonSig && nonStale(tSoonSig));
+  const expFreshSig = (await P.experienceProvider.getDailySignals(U, CTX)).find((s) => s.sourceRefs[0].id === exp.id);
+  ok("[F7] future planned experience retains event-relative freshness (plannedDate + grace, in the future)", !!expFreshSig && expFreshSig.staleDate === ahead(13) && nonStale(expFreshSig));
+  ok("[F8] finance/credit/goal/data-quality signals also use recompute-based freshness (>= today)", [...await P.financeProvider.getDailySignals(U, CTX), ...await P.creditProvider.getDailySignals(U, CTX), ...await P.goalsProvider.getDailySignals(U, CTX), ...await P.dataQualityProvider.getDailySignals(U, CTX)].every((s) => nonStale(s)));
+
+  /* =========== REVIEW FIX 2 — potential savings is not a cost [F9-F11] =========== */
+  console.log("\n[spending — savings is not a cost]");
+  // Seed a real reduce-merchant opportunity (carries estimatedUpsideMax > 0) so the mapping is proven.
+  await db.delete(transactionCategoryAssignments).where(eq(transactionCategoryAssignments.userId, U));
+  await db.delete(transactionCategories).where(eq(transactionCategories.userId, U));
+  const [sconn] = await db.insert(financialConnections).values({ userId: U, provider: "plaid", providerItemId: `ZZS-${Date.now()}`, institutionName: "ZZS", accessTokenCipher: "x", accessTokenNonce: "x", accessTokenTag: "x", accessTokenKeyVersion: 1, accessTokenEnvelopeVersion: 1, status: "active", environment: "sandbox" }).returning({ id: financialConnections.id }); created.conn = sconn.id;
+  const [sa] = await db.insert(financialAccounts).values({ userId: U, name: "ZZS Acct", type: "checking", purpose: "spending", balanceSource: "manual", currentBalance: "1000.00", active: true }).returning({ id: financialAccounts.id }); created.acct = sa.id;
+  await ensureDefaultCategories(U); const cats = await listCategories(U, { includeInactive: true });
+  const dining = cats.find((c) => c.slug === "dining-and-coffee")!.id;
+  let n = 0;
+  for (const [d, amt] of [[3, 28], [7, 30], [11, 25], [15, 33], [20, 30]] as [number, number][]) {
+    const [t] = await db.insert(importedTransactions).values({ userId: U, connectionId: sconn.id, providerAccountId: "pa", provider: "plaid", providerTransactionId: `ZZS-${n++}-${Date.now()}`, status: "active", isPending: false, amount: String(-amt), descriptionCurrent: "ZZS DoorDash", merchantName: "ZZS DoorDash", financialAccountId: sa.id, postedDate: ago(d) }).returning({ id: importedTransactions.id });
+    created.txns.push(t.id);
+    await db.insert(transactionCategoryAssignments).values({ userId: U, transactionId: t.id, categoryId: dining, source: "owner", status: "confirmed", reasonCodes: "[]", reviewedAt: new Date() });
+  }
+  const spend2 = await P.spendingProvider.getDailySignals(U, CTX);
+  const reduceSig = spend2.find((s) => /DoorDash/.test(s.summary));
+  ok("[F9] a seeded reduce-merchant opportunity WITH estimated savings surfaces as a spending signal", !!reduceSig && !!reduceSig.estimatedUpside && /\$/.test(reduceSig.estimatedUpside!));
+  ok("[F10] that opportunity does NOT emit its potential savings as estimatedCost (cost null; no invented cost; capacity does not require spending the savings)", !!reduceSig && reduceSig.estimatedCost === null && (reduceSig.capacityReqs == null || reduceSig.capacityReqs.money == null));
+  ok("[F11] every spending signal keeps estimatedCost null while savings live in estimatedUpside", spend2.every((s) => s.estimatedCost === null) && spend2.every((s) => !(s.capacityReqs && s.capacityReqs.money != null)));
+  // clean the spending fixture immediately (owner has no real categories)
+  await db.delete(transactionCategoryAssignments).where(eq(transactionCategoryAssignments.userId, U));
+  await db.delete(transactionCategories).where(eq(transactionCategories.userId, U));
+  await db.delete(importedTransactions).where(inArray(importedTransactions.id, created.txns)); created.txns = [];
+  await db.delete(financialAccounts).where(eq(financialAccounts.id, created.acct)); created.acct = 0;
+  await db.delete(financialConnections).where(eq(financialConnections.id, created.conn)); created.conn = 0;
 
   /* ===================== determinism + no-fabrication (whole set) [55-58] ===================== */
   console.log("\n[determinism + fabrication]");
