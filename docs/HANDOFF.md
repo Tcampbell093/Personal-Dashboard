@@ -12,10 +12,18 @@
 
 ## Next approved task
 
+> **None in progress.** Finance 1C.0A is **reviewed, merged to `main`, and deployed** (see below). The
+> next candidate is the **Personal Advantage Engine**, which is **not yet approved — do not begin it or
+> any new feature** until the owner approves a bounded task here.
+
 ### Finance 1C.0A — manual credit profile + financial-health baseline
 
-- **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** A **manual, owner-entered,
-  read-only** credit profile + **deterministic** financial-health engine. Six new additive tables
+- **Status:** **REVIEWED · MERGED TO `main` · DEPLOYED.** Merged via fast-forward as commit
+  `ca4fcdb93e415386781b645fa538e821b3e74408` (three review fixes — soft-deleted score/inquiry dedupe
+  lifecycle, full inline edit/delete/archive UI with error surfacing, and goal-retype validation — landed
+  on the `finance-1c0a-review` branch, then merged; that branch is now deleted locally and remotely).
+  Auto-deployed to Netlify on push to `main`; the merged commit builds cleanly (`npm run build`). A
+  **manual, owner-entered, read-only** credit profile + **deterministic** financial-health engine. Six new additive tables
   (migration `0020_new_sentinel.sql`): `credit_score_snapshots`, `credit_accounts`,
   `credit_collections`, `credit_late_payments`, `credit_inquiries`, `credit_goals` (server-validated
   varchars, no enums; idempotency via unique indexes on score + inquiry; account delete archives when a
@@ -41,10 +49,11 @@
   `app/finances/page.tsx`, `lib/services/home.ts`, `lib/types.ts`, `components/home/sections.tsx`,
   `app/globals.css`, `scripts/verify-finance1c0a.ts` (+ migration-count guard in `verify-finance1b0.ts`) +
   6 docs. `scripts/verify-finance1c0a.ts` = **125/125**; all regressions green; typecheck + build + secret
-  scan clean; browser-verified (desktop + 375px, no console errors). **No AI, no money movement,
-  Sandbox-only, owner-entered.** Recommended commit:
-  `feat(finance): add manual credit and financial health tracking`. **Do not commit until reviewed.**
-  Next approved gate after review: the **Personal Advantage Engine** — separate authorization required.
+  scan clean; browser-verified (desktop + 375px, no console errors). Post-review the harness is
+  **127/127** (added regression cases [R1]–[R6] for the three fixes). **No AI, no money movement,
+  Sandbox-only, owner-entered.** Landed on `main` as `feat(finance): add manual credit and financial
+  health tracking` + the review-fix commit `ca4fcdb`. Next approved gate: the **Personal Advantage
+  Engine** — separate authorization required (not started).
 
 ### Finance 1B.5B — spending insights + financial opportunity detection
 
@@ -332,10 +341,14 @@ specific build. Builds are ordered so the manual loop works end-to-end before an
 
 ## Latest handoff
 
-### Finance 1C.0A — manual credit profile + financial-health baseline — implemented — 2026-07-01
+### Finance 1C.0A — manual credit profile + financial-health baseline — reviewed & merged — 2026-07-01
 
-**Task completed** — a manual, owner-entered, read-only credit profile + deterministic financial-health
-engine. Not committed — awaiting owner review.
+**Task completed, reviewed, and merged to `main`** — a manual, owner-entered, read-only credit profile +
+deterministic financial-health engine. Merged (fast-forward) as `ca4fcdb93e415386781b645fa538e821b3e74408`
+after three code-review fixes (soft-deleted score/inquiry dedupe lifecycle → live-only partial indexes +
+migration `0021`; full inline edit/delete/archive UI with `role="alert"` error surfacing; goal-retype
+target re-validation). Post-review harness **127/127**. Auto-deployed to Netlify on push to `main`; the
+review branch `finance-1c0a-review` has been deleted locally and remotely.
 
 **Repository state** — base production milestone `e0269a7682b303cbd99b24c3b290f61d224400ed` (1B.5B); branch
 `main`; `.env`/`.env.local` ignored + unstaged. Owner data intact and re-verified after the run: BofA
@@ -373,11 +386,19 @@ stale reminder; `/manage` unchanged.
 `components/home/sections.tsx`, `app/globals.css`, `scripts/verify-finance1c0a.ts`, migration-count guard
 in `scripts/verify-finance1b0.ts`, and 6 docs.
 
-**Verification** — `scripts/verify-finance1c0a.ts` **125/125** (owner-scoped exact-ID temp records, reset
-between scenarios; foreign-owner rejection; full domain-boundary snapshots). All 19 prior verify suites
-green (run serially against shared Neon); `npm run typecheck` + `npm run build` clean; secret scan clean;
-browser-verified at desktop + 375px with no console errors, then temp credit data cleaned (0 residue).
-**Do not commit until reviewed.**
+**Verification** — `scripts/verify-finance1c0a.ts` **127/127** (125 original + 6 review-fix cases [R1]–[R6];
+owner-scoped exact-ID temp records, reset between scenarios; foreign-owner rejection; full domain-boundary
+snapshots). All 19 prior verify suites green (run serially against shared Neon); `npm run typecheck` +
+`npm run build` clean; secret scan clean; browser-verified at desktop + 375px with no console errors
+(including add/edit/delete/archive, error display, and the delete-then-re-add score sequence), then temp
+credit data cleaned (0 residue).
+
+**Merge & deploy** — reviewed and merged to `main` (fast-forward) as `ca4fcdb`; pushed
+(`e0269a7..ca4fcdb`). Netlify auto-deploys `main`; the merged commit builds cleanly locally. The deployed
+site is served by Netlify behind a **site-level password**, so the deployed Credit UI was not re-inspected
+from local — the same access constraint noted for prior phases; a deployed production smoke remains an
+owner-triggered follow-up. The `finance-1c0a-review` branch is deleted locally and remotely; working tree
+clean; local `main` == `origin/main` == `ca4fcdb`.
 
 ### Finance 1B.5B — spending insights + financial opportunity detection — implemented — 2026-07-01
 

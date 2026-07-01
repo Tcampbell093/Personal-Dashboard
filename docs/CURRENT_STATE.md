@@ -9,9 +9,15 @@
 > only; technical identifiers (routes, DB, env vars, the `Personal-Dashboard` repo) keep their
 > original names. See `docs/DECISIONS.md` ADR-026.
 
-**Last updated:** 2026-07-01 · **Reflects branch:** `main` (Finance 1B.5B live + production-verified; **Finance 1C.0A — manual credit profile + financial-health baseline — implemented, uncommitted**)
+**Last updated:** 2026-07-01 · **Reflects branch:** `main` @ `ca4fcdb` (Finance 1B.5B live; **Finance 1C.0A — manual credit profile + financial-health baseline — reviewed, merged to `main`, deployed**)
 
-> **Finance 1C.0A — manual credit profile + financial-health baseline — implemented (uncommitted).**
+> **Finance 1C.0A — manual credit profile + financial-health baseline — reviewed, merged to `main`
+> (commit `ca4fcdb`), deployed to Netlify.** Passed code review (three fixes landed: soft-deleted
+> score/inquiry dedupe lifecycle via live-only partial indexes + migration `0021`; full inline
+> edit/delete/archive UI with error surfacing; goal-retype target re-validation). Harness **127/127**;
+> the review branch is deleted. Netlify auto-deploys `main` (merged commit builds cleanly); the deployed
+> site is behind a Netlify site-level password so the deployed UI was verified pre-merge locally, not
+> re-inspected in the deployed environment.
 > A **manual, owner-entered, read-only** credit profile + **deterministic** financial-health engine:
 > score snapshots (with source/bureau/model — different sources are **never averaged**, trends are
 > same-source only), revolving/installment accounts, collections, late payments, hard/soft inquiries,
