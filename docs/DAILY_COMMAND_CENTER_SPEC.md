@@ -198,7 +198,7 @@ to fill a slot.
 > read-only grounded providers (slice 1 of §17) are implemented in `lib/daily/contract.ts` and
 > `lib/daily/providers.ts`, verified by `scripts/verify-daily-slice1.ts` (81/81).
 >
-> **Slice 2 status (implemented on branch `daily-command-center-slice2-review`, not merged):** the
+> **Slice 2 status (reviewed and merged to `main`, commit `71ff495`):** the
 > failure-isolated **orchestrator** (§2) and the deterministic **ranking + bounded selection** (§5/§6/§8/§9)
 > are implemented in `lib/daily/orchestrator.ts` and `lib/daily/ranking.ts`, verified by
 > `scripts/verify-daily-slice2.ts` (73/73). `collectDailySignals` calls every Slice 1 provider via
@@ -636,8 +636,8 @@ behavior must already be covered by that slice's own tests — testing must **no
      output → `DailySignal` fields, including `class`/provenance and `sourceRefs`), plus
      empty-domain/empty-state mapping.
 2. **Orchestration + ranking** — `collectDailySignals` (failure-isolated) + `rankSignals` (deterministic,
-   extends `lib/briefing.ts`). **✅ IMPLEMENTED** (`lib/daily/orchestrator.ts`, `lib/daily/ranking.ts`;
-   `scripts/verify-daily-slice2.ts` = 73/73) — on branch `daily-command-center-slice2-review`, not merged.
+   extends `lib/briefing.ts`). **✅ IMPLEMENTED · REVIEWED · MERGED TO `main`** (`lib/daily/orchestrator.ts`,
+   `lib/daily/ranking.ts`; `scripts/verify-daily-slice2.ts` = 73/73; commit `71ff495`; review branch deleted).
    - **Tests in this slice:** **deterministic ranking** (identical inputs → identical order), **tie-break**
      rules, **category caps**, **diversity** (Finance can't crowd out other domains), **suppression/dedupe**,
      **stale-signal handling**, the **at-most-one / no-forced-item** behavior (including the empty/no-

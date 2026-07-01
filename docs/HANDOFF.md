@@ -12,11 +12,17 @@
 
 ## Next approved task
 
+> **None in progress.** DCC **Slice 1** and **Slice 2** are **reviewed and merged to `main`** (see below).
+> The next candidate is DCC **Slice 3 — lifecycle persistence** (`daily_recommendations` + migration), per
+> `docs/DAILY_COMMAND_CENTER_SPEC.md` §17 — **not yet approved. Do not begin Slice 3 or any new feature**
+> until the owner approves a bounded task here.
+
 ### Daily Command Center — Slice 2 (orchestration + deterministic ranking)
 
-- **Status:** **IMPLEMENTED ON REVIEW BRANCH — awaiting owner review (uncommitted to `main`).** Branch
-  `daily-command-center-slice2-review`. Failure-isolated orchestration + deterministic, inspectable
-  ranking and bounded selection over the Slice 1 signals.
+- **Status:** **REVIEWED · MERGED TO `main` · LOCALLY PRODUCTION-BUILD VERIFIED · AUTO-DEPLOY EXPECTED.**
+  Merged via fast-forward as commit `71ff495203ea0a5b9511325464d7fdccb7fe2abe`; the
+  `daily-command-center-slice2-review` branch has been deleted locally and remotely. Failure-isolated
+  orchestration + deterministic, inspectable ranking and bounded selection over the Slice 1 signals.
 - **Delivered:** `lib/daily/orchestrator.ts` — `collectDailySignals(userId, ctx)` calls every Slice 1
   provider via `Promise.allSettled` (one failure degrades only its domain), validates each signal against
   the contract (invalid excluded + diagnosed), and returns `{ signals, degraded, invalid, context,
@@ -32,10 +38,10 @@
   (`ScoreBreakdown` components sum to totals). Output types: `CollectedSignals`, `RankedSignal`,
   `SelectionResult`, `DailySelection`. Verified by `scripts/verify-daily-slice2.ts` (**73/73**) + Slice 1
   (81/81) + all regressions green, typecheck, build, secret scan. **No persistence, migration, API, UI,
-  AI, Home integration, or owner-response lifecycle was added** (those are Slice 3+). **Do not merge until
-  reviewed. Do not begin Slice 3.** Recommended commit:
-  `feat(daily): add failure-isolated orchestration + deterministic ranking (DCC slice 2)`.
-- **Review fixes applied (branch, uncommitted to `main`):** (1) **moveScore single-count** — actionability
+  AI, Home integration, or owner-response lifecycle was added** (those are Slice 3+). Landed on `main` as
+  `feat(daily): add failure-isolated orchestration + deterministic ranking (DCC slice 2)` + the three
+  review-fix commits.
+- **Review fixes (landed before merge):** (1) **moveScore single-count** — actionability
   and friction are no longer double-added: `moveScore = max(riskScore, opportunityScore) + capacityFit` for
   an opportunity-based move (they are already inside `opportunityScore`), and `+ actionability + friction`
   **once** only for a risk-based move; the breakdown records `baseFrom` and sums exactly. (2) **diversity

@@ -14,8 +14,8 @@
 
 **Last updated:** 2026-07-01 · **Reflects branch:** `main` @ `ca4fcdb` (Finance 1B.5B live; **Finance 1C.0A — manual credit profile + financial-health baseline — reviewed, merged to `main`, locally production-build verified, and expected to auto-deploy; live production verification unconfirmed**)
 
-> **Daily Command Center — Slice 2 (orchestration + deterministic ranking) — implemented on review branch
-> `daily-command-center-slice2-review` (NOT merged to `main`).** `lib/daily/orchestrator.ts`
+> **Daily Command Center — Slice 2 (orchestration + deterministic ranking) — reviewed and merged to `main`
+> (commit `71ff495`; review branch deleted).** `lib/daily/orchestrator.ts`
 > (`collectDailySignals` — failure-isolated `Promise.allSettled` over the Slice 1 providers, per-signal
 > contract validation, degraded/invalid diagnostics, request-scoped memoized credit overview) +
 > `lib/daily/ranking.ts` (documented risk/opportunity base-weight registries; bounded integer scoring;
