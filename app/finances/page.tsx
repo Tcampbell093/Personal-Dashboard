@@ -49,6 +49,7 @@ import { countPendingMatches } from "@/lib/services/matching";
 import { Categorize } from "@/components/finances/categorize";
 import { categorySummary } from "@/lib/services/categories";
 import { SpendingInsights } from "@/components/finances/insights";
+import { CreditHealth } from "@/components/finances/credit";
 import type { MovementView, ProjectionHorizon, ForecastItem, ConnectionView } from "@/lib/types";
 
 const HORIZONS: { key: ProjectionHorizon; label: string }[] = [
@@ -321,6 +322,16 @@ export default async function FinancesPage({
           <span className="tier-sub">read-only · deterministic · transfers &amp; income excluded</span>
         </div>
         <SpendingInsights />
+      </section>
+
+      {/* 1c.0a — Credit & financial health (manual, read-only educational guidance) */}
+      <section className="tier">
+        <div className="tier-head">
+          <span className="tier-tick" style={{ background: "var(--explore)" }} />
+          <span className="tier-name">Credit &amp; financial health</span>
+          <span className="tier-sub">manual · read-only · no bureau connection · educational only</span>
+        </div>
+        <CreditHealth />
       </section>
 
       {/* 1b.4a — Suggested matches (deterministic, suggestion-only, owner-confirmed) */}

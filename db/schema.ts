@@ -1177,6 +1177,134 @@ export const financialInsightDismissals = pgTable(
   ],
 );
 
+/* ---------------------------------------------------- credit (1C.0A) --- */
+/* Manual, owner-entered credit profile. NO bureau/Credit-Karma connection,
+ * no auto-inference from bank data, no money movement. Type/status fields are
+ * server-validated varchars (same convention as financial_accounts.type) to
+ * keep the migration minimal + additive. All calculations are read-only. */
+
+export const creditScoreSnapshots = pgTable(
+  "credit_score_snapshots",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    score: integer("score").notNull(), // bounded 250–900 in the service
+    source: varchar("source", { length: 40 }).notNull(), // experian|equifax|transunion|credit_karma|bank|lender|other
+    bureau: varchar("bureau", { length: 40 }), // nullable — bureau behind the score if known
+    scoringModel: varchar("scoring_model", { length: 60 }), // nullable — e.g. FICO 8, VantageScore 3
+    asOfDate: date("as_of_date").notNull(),
+    notes: text("notes"),
+    ...timestamps,
+  },
+  (t) => [
+    index("credit_score_snapshots_user_idx").on(t.userId),
+    // One snapshot per (owner, source, model, date, score) → idempotent, no silent duplicate.
+    uniqueIndex("credit_score_snapshots_uq").on(t.userId, t.source, t.scoringModel, t.asOfDate, t.score),
+  ],
+);
+
+export const creditAccounts = pgTable(
+  "credit_accounts",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    accountType: varchar("account_type", { length: 30 }).notNull(), // credit_card|secured_card|auto_loan|personal_loan|student_loan|mortgage|retail_card|other
+    name: varchar("name", { length: 120 }).notNull(),
+    issuer: varchar("issuer", { length: 120 }),
+    status: varchar("status", { length: 20 }).notNull().default("open"), // open|closed|charged_off|delinquent|unknown
+    isRevolving: boolean("is_revolving").notNull().default(false),
+    creditLimit: numeric("credit_limit", { precision: 14, scale: 2 }), // nullable — required for revolving utilization
+    currentBalance: numeric("current_balance", { precision: 14, scale: 2 }).notNull().default("0"),
+    minimumPayment: numeric("minimum_payment", { precision: 14, scale: 2 }),
+    interestRate: numeric("interest_rate", { precision: 6, scale: 3 }), // APR %, nullable
+    openedDate: date("opened_date"),
+    closedDate: date("closed_date"),
+    statementDate: date("statement_date"),
+    paymentDueDate: date("payment_due_date"),
+    lastReportedDate: date("last_reported_date"),
+    isAuthorizedUser: boolean("is_authorized_user").notNull().default(false),
+    notes: text("notes"),
+    ...timestamps,
+  },
+  (t) => [index("credit_accounts_user_idx").on(t.userId)],
+);
+
+export const creditCollections = pgTable(
+  "credit_collections",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    collectorName: varchar("collector_name", { length: 160 }).notNull(),
+    originalCreditor: varchar("original_creditor", { length: 160 }),
+    reportedBalance: numeric("reported_balance", { precision: 14, scale: 2 }).notNull().default("0"),
+    status: varchar("status", { length: 20 }).notNull().default("reported"), // reported|disputed|validated|settled|paid|removed|unknown
+    dateOpened: date("date_opened"),
+    dateReported: date("date_reported"),
+    lastUpdatedDate: date("last_updated_date"),
+    validationStatus: varchar("validation_status", { length: 24 }).notNull().default("not_requested"), // not_requested|requested|received|incomplete|verified_by_owner
+    settlementOffer: numeric("settlement_offer", { precision: 14, scale: 2 }), // owner-entered only
+    payForDeleteRequested: boolean("pay_for_delete_requested").notNull().default(false),
+    notes: text("notes"),
+    ...timestamps,
+  },
+  (t) => [index("credit_collections_user_idx").on(t.userId)],
+);
+
+export const creditLatePayments = pgTable(
+  "credit_late_payments",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    creditAccountId: integer("credit_account_id").notNull().references(() => creditAccounts.id, { onDelete: "cascade" }),
+    daysLate: integer("days_late").notNull(),
+    reportedDate: date("reported_date").notNull(),
+    amountPastDue: numeric("amount_past_due", { precision: 14, scale: 2 }),
+    status: varchar("status", { length: 16 }).notNull().default("reported"), // reported|resolved|disputed|removed
+    notes: text("notes"),
+    ...timestamps,
+  },
+  (t) => [
+    index("credit_late_payments_user_idx").on(t.userId),
+    index("credit_late_payments_account_idx").on(t.creditAccountId),
+  ],
+);
+
+export const creditInquiries = pgTable(
+  "credit_inquiries",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    creditorName: varchar("creditor_name", { length: 160 }).notNull(),
+    inquiryDate: date("inquiry_date").notNull(),
+    bureau: varchar("bureau", { length: 40 }),
+    inquiryType: varchar("inquiry_type", { length: 8 }).notNull().default("hard"), // hard|soft
+    purpose: varchar("purpose", { length: 120 }),
+    notes: text("notes"),
+    ...timestamps,
+  },
+  (t) => [
+    index("credit_inquiries_user_idx").on(t.userId),
+    // Guard against clearly-identical duplicates (same creditor + date + type).
+    uniqueIndex("credit_inquiries_uq").on(t.userId, t.creditorName, t.inquiryDate, t.inquiryType),
+  ],
+);
+
+export const creditGoals = pgTable(
+  "credit_goals",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    goalType: varchar("goal_type", { length: 30 }).notNull(), // score_target|utilization_target|collection_resolution|on_time_payment_streak|debt_balance_target
+    targetValue: numeric("target_value", { precision: 14, scale: 2 }).notNull(),
+    targetDate: date("target_date"),
+    status: varchar("status", { length: 16 }).notNull().default("active"), // active|achieved|paused|abandoned
+    priority: varchar("priority", { length: 8 }).notNull().default("medium"), // low|medium|high
+    notes: text("notes"),
+    ...timestamps,
+  },
+  (t) => [index("credit_goals_user_idx").on(t.userId)],
+);
+
 /* -------------------------------------------------------------- signals --- */
 
 export const signalSources = pgTable("signal_sources", {

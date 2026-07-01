@@ -141,6 +141,13 @@
       "when": 1782914576375,
       "tag": "0019_majestic_chimera",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1782923703505,
+      "tag": "0020_new_sentinel",
+      "breakpoints": true
     }
   ]
 }

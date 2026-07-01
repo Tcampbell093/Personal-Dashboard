@@ -51,10 +51,17 @@
   cards, each separating observed fact / calculation / inferred opportunity / estimated upside /
   confidence / limitation; calculated view + minimal dismissal persistence only; changes no
   transaction/balance/movement/cursor/evidence and moves no money) is **done** (implemented, uncommitted;
-  `scripts/verify-finance1b5b.ts` 108/108). **No AI, no money movement, Sandbox-only, owner-confirmed.**
-  Next: **budgets/goals/forecasts**, the **manual→linked authority-handoff** transition (deferred from
-  1B.2), reversal of evidence confirmations, mixed linked/manual transfer support, and repair/disconnect
-  hardening. Real Chase/BofA
+  `scripts/verify-finance1b5b.ts` 108/108). **1C.0A** (**manual credit profile + financial-health
+  baseline** — owner-entered score snapshots, revolving/installment accounts, collections, late payments,
+  hard/soft inquiries, credit goals → deterministic utilization, credit-history/collections summaries, 12
+  observations, 10 prioritized action cards, six-section health summary; **read-only, no bureau/Credit-
+  Karma connection, no dispute/settlement/application automation, no money movement, no guaranteed
+  score claims**; verify-first collection warnings; cash-flow-aware but never spends; Personal Advantage
+  Engine output shape prepared) is **done** (implemented, uncommitted; `scripts/verify-finance1c0a.ts`
+  125/125). **No AI, no money movement, Sandbox-only, owner-confirmed.** Next: the **Personal Advantage
+  Engine**, **budgets/goals/forecasts**, the **manual→linked authority-handoff** transition (deferred
+  from 1B.2), reversal of evidence confirmations, mixed linked/manual transfer support, and
+  repair/disconnect hardening. Real Chase/BofA
   need eligible Production/OAuth (a later owner step). See
   `docs/BANK_INTEGRATION_SECURITY.md` and `docs/DECISIONS.md` ADR-027/028/029/030. (The active approved
   task is always in `docs/HANDOFF.md`.)

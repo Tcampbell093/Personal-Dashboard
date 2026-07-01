@@ -592,6 +592,66 @@
   + typecheck + build + all regressions green + secret scan clean. Owner's real Sandbox connection
   untouched. Older suites' superseded `!/plaid/i`/migration/scope guards updated (disclosed NOTEs).
 
+### ADR-037 — Finance 1C.0A: manual credit profile + financial-health baseline
+- **Classification:** Owner-approved decision (owner approved the 1C.0A scope).
+- **Detail:** Adds a **manual, owner-entered, read-only** credit profile and a **deterministic**
+  financial-health engine: score snapshots, revolving/installment accounts, collections, late
+  payments, hard/soft inquiries, and credit goals — turned into utilization math, credit-history and
+  collections summaries, 12 observation types, 10 prioritized action-card types, and a six-section
+  health summary. Service `lib/services/credit.ts`; routes under `app/api/finances/credit/*`; UI
+  `components/finances/credit.tsx` (a tabbed **Credit & financial health** section); Home surfaces at
+  most one urgent action + one progress item + a stale reminder via `homeCreditSummary`.
+  - **Hard boundaries (verified):** NO credit-bureau API, NO Credit Karma integration/scraping, NO
+    browser automation, NO dispute-letter automation, NO debt-settlement negotiation, NO lender
+    recommendation, NO card/loan application, NO identity verification, NO Production Plaid, NO
+    AI-generated freeform advice, and **no money movement**. Credit calculations change **no** imported
+    transaction, category/merchant rule, movement, balance, provider snapshot, cursor, bill, income,
+    transfer, or matching/event evidence (asserted). The service contains no
+    `update(financialConnections|financialAccounts|providerAccounts)`, no evidence write, no
+    task-creation, and no `plaid`/`production` reference.
+  - **No guarantees:** Xanther never claims a specific action will raise a score by a fixed amount,
+    that paying a collection improves a score, that a debt is valid, or that an account should be
+    closed without weighing age/utilization/fees; it never presents tax/legal/investment/credit
+    certainty. Every collection payment path carries a **verify-the-debt-and-get-written-terms-first**
+    warning. Every observation/action distinguishes owner-entered fact, calculated metric, educational
+    guidance, uncertain inference, required verification, possible upside, and cash-flow tradeoff.
+  - **Score-source safety:** scores record their **source** (Experian/Equifax/TransUnion/Credit
+    Karma/bank/lender/other) + optional bureau/model; different sources are **never averaged** and
+    trends are computed **within the same source/model only**, with a "scores from different bureaus
+    and models may differ" note whenever more than one source exists.
+  - **Utilization (deterministic):** per-account + aggregate over **open revolving accounts with a
+    valid positive limit**; installment loans excluded; closed revolving excluded from the current
+    aggregate (kept historical); missing/zero limits produce an incomplete-data warning (zero/negative
+    rejected at input); authorized-user accounts are counted but surfaced explicitly; amounts to reach
+    below 50/30/10% are `max(0, balance − threshold×limit)`. Reduction estimates never assume a score
+    change.
+  - **Cash-flow awareness (read-only context):** reuses `computeFinancialOutlook` (estimated available
+    after upcoming bills, next payday) to flag when a credit action's cash requirement is risky; it
+    **never** moves money, schedules a payment, alters a bill/account, treats a provider balance as
+    guaranteed cash, or recommends using rent/essential-bill funds.
+  - **Persistence:** smallest additive schema — six new tables (migration `0020`); the health engine is
+    a **calculated view** (recomputed per request, never persisted). Idempotency via partial-unique
+    indexes (score = `(userId, source, scoringModel, asOfDate, score)`; inquiry =
+    `(userId, creditorName, inquiryDate, inquiryType)`) + `onConflictDoNothing`; foreign-owner and
+    invalid score/date/balance/limit/percentage inputs are rejected; account delete archives when a
+    late-payment references it.
+  - **Personal Advantage Engine prep:** every action card exposes a stable shape (`domain: "credit"`,
+    `actionType`, `urgency`, `estimatedUpside`, `estimatedCost`, `timeRequired`, `riskLevel`,
+    `confidence`, `evidence`, `nextStep`, `professionalVerificationRecommended`) for a later engine —
+    the engine itself is **not** built here.
+  - **Surfaces:** `/finances` gains a **Credit & financial health** section (Overview / Credit profile /
+    Goals / Guidance tabs; add/edit flows for every entity; manual + stale-data warnings). Home shows
+    ≤1 action + ≤1 progress + stale reminder (rolling). `/manage` unchanged; no auto task creation.
+- **Evidence:** `scripts/verify-finance1c0a.ts` (**125/125** across score snapshots [1–10], accounts +
+  utilization [11–24], collections [25–33], late/inquiries [34–40], goals [41–47], observations [48–60],
+  action cards [61–73], UI [74–95], domain boundaries [96–114], owner protection [115–125]) + all
+  regressions green + typecheck + build + secret scan + browser run (desktop + 375px, no console errors).
+  Owner's BofA connection + Plaid Checking + 19 imported transactions + request 222 preserved; no
+  balance/movement/snapshot/cursor/evidence change.
+- **Known limitations:** all data is manual and may go stale (surfaced honestly); no bureau/Credit-Karma
+  connection; estimates are illustrative, not advice; utilization needs valid limits; deterministic only
+  (no AI); the Personal Advantage Engine, budgets/forecasts, and reversal/audit tooling are deferred.
+
 ### ADR-036 — Finance 1B.5B: spending insights + financial opportunity detection
 - **Classification:** Owner-approved decision (owner approved the 1B.5B scope).
 - **Detail:** Turns categorized transaction data into explainable, **read-only** deterministic

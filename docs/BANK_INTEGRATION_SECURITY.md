@@ -284,6 +284,27 @@ transfers, and removed/pending rows; periods are bounded (America/New_York). Est
 low-confidence opportunities are hidden by default; data-quality (uncategorized coverage, short history)
 is disclosed honestly. Ownership is server-derived; foreign-owner/oversized dismissals are rejected.
 
+## Manual credit profile + financial-health baseline (Finance 1C.0A)
+
+The credit feature is **manual, owner-entered, and read-only**. Xanther does **not** connect to a credit
+bureau (Experian/Equifax/TransUnion) or Credit Karma, does **not** scrape or drive a browser against any
+credit site, does **not** file disputes, negotiate settlements, recommend lenders, apply for cards/loans,
+verify identity, or move money. Score snapshots, accounts, collections, late payments, inquiries, and
+goals are all typed in by the owner; the migration creates schema only (no backfill, no inferred data).
+The financial-health engine (utilization, summaries, observations, action cards, health) is a **read-only
+calculated view** — it mutates no imported transaction, category/merchant rule, movement, account balance,
+provider snapshot, sync cursor, bill, income occurrence, transfer, or matching/event evidence (asserted by
+`scripts/verify-finance1c0a.ts` domain-boundary checks [96–114]), and the service contains no
+`plaid`/`production` reference. Guidance is **deterministic and educational** — never AI-generated, never a
+guaranteed score change; every collection payment path warns to **verify the debt and obtain written terms
+first**, and Xanther never declares a debt valid. Score **sources are never averaged**; trends compare
+within the same source/model only. Cash-flow context is reused read-only from `computeFinancialOutlook`
+(estimated available after bills, next payday) purely to flag risky actions — it never spends, schedules,
+or treats a provider balance as guaranteed cash, and never recommends rent/essential-bill funds. Ownership
+is server-derived; foreign-owner access and invalid score/date/balance/limit/percentage inputs are
+rejected. Each action card exposes a stable Personal Advantage Engine output shape for a later engine
+(which is **not** built in this phase).
+
 ## What is NOT functional yet (deferred to later 1B phases)
 
 No budgets/goals/forecasts (deferred beyond Finance 1B.5B), no reversal of

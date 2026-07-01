@@ -158,6 +158,21 @@ export function MoneyAwareness({ section }: { section: HomeSection<HomeMoney> })
               <span className="sub">↗ {section.data!.topOpportunity}</span>
             </div>
           )}
+          {section.data!.creditAction && (
+            <div className="home-statline">
+              <span className="sub">◆ Credit: {section.data!.creditAction}</span>
+            </div>
+          )}
+          {section.data!.creditProgress && (
+            <div className="home-statline">
+              <span className="sub">✓ Credit: {section.data!.creditProgress}</span>
+            </div>
+          )}
+          {section.data!.creditStale && (
+            <div className="home-statline">
+              <span className="sub">⚠ {section.data!.creditStale}</span>
+            </div>
+          )}
           <div className="home-statline num">
             <span>Bills before payday</span>
             <span>{money(section.data!.billsDueBeforePayday)}</span>

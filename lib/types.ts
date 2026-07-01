@@ -480,6 +480,10 @@ export interface HomeMoney {
   // Finance 1B.5B: at most one spending insight + one opportunity for Home (nonsecret text).
   topInsight: string | null;
   topOpportunity: string | null;
+  // Finance 1C.0A: at most one urgent credit action + one progress item + stale reminder.
+  creditAction: string | null;
+  creditProgress: string | null;
+  creditStale: string | null;
 }
 
 export interface HomeMomentum {

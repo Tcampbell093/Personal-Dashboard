@@ -33,6 +33,7 @@ import { listTransfers, toTransferViews } from "@/lib/services/transfers";
 import { countPendingMatches } from "@/lib/services/matching";
 import { countUncategorized } from "@/lib/services/categories";
 import { homeInsightSummary } from "@/lib/services/insights";
+import { homeCreditSummary } from "@/lib/services/credit";
 import { computeProjection } from "@/lib/services/finance-projection";
 import { linkedBalanceMap } from "@/lib/services/provider-accounts";
 import {
@@ -145,7 +146,7 @@ async function loadComingUp(userId: number): Promise<HomeComingItem[]> {
 }
 
 async function loadMoney(userId: number): Promise<HomeMoney> {
-  const [outlook, acctRows, linkedSnap, bills, incomeRows, allocRows, transfers, transactionMatches, transactionsToCategorize, insightSummary] = await Promise.all([
+  const [outlook, acctRows, linkedSnap, bills, incomeRows, allocRows, transfers, transactionMatches, transactionsToCategorize, insightSummary, creditSummary] = await Promise.all([
     computeFinancialOutlook(userId),
     listAccounts(userId),
     linkedBalanceMap(userId),
@@ -156,6 +157,7 @@ async function loadMoney(userId: number): Promise<HomeMoney> {
     countPendingMatches(userId),
     countUncategorized(userId),
     homeInsightSummary(userId),
+    homeCreditSummary(userId),
   ]);
   // Finance 1B.2: resolve linked accounts' provider balances (manual unchanged).
   const accounts = toAccountViews(acctRows, linkedSnap);
@@ -204,6 +206,9 @@ async function loadMoney(userId: number): Promise<HomeMoney> {
     transactionsToCategorize,
     topInsight: insightSummary.topInsight,
     topOpportunity: insightSummary.topOpportunity,
+    creditAction: creditSummary.urgentAction,
+    creditProgress: creditSummary.progress,
+    creditStale: creditSummary.staleReminder,
   };
 }
 

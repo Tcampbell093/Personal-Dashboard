@@ -9,7 +9,29 @@
 > only; technical identifiers (routes, DB, env vars, the `Personal-Dashboard` repo) keep their
 > original names. See `docs/DECISIONS.md` ADR-026.
 
-**Last updated:** 2026-07-01 · **Reflects branch:** `main` (Finance 1B.4B live + production-verified; **Finance 1B.5A — categories + merchant rules — and 1B.5B — spending insights + opportunity detection — implemented, uncommitted**)
+**Last updated:** 2026-07-01 · **Reflects branch:** `main` (Finance 1B.5B live + production-verified; **Finance 1C.0A — manual credit profile + financial-health baseline — implemented, uncommitted**)
+
+> **Finance 1C.0A — manual credit profile + financial-health baseline — implemented (uncommitted).**
+> A **manual, owner-entered, read-only** credit profile + **deterministic** financial-health engine:
+> score snapshots (with source/bureau/model — different sources are **never averaged**, trends are
+> same-source only), revolving/installment accounts, collections, late payments, hard/soft inquiries,
+> and credit goals → utilization math (per-account + aggregate over open revolving accounts with valid
+> limits; amounts to reach <50/30/10%; installment excluded; missing/zero limits warned; authorized-user
+> explicit), credit-history + collections summaries, **12 observation types**, **10 prioritized
+> action-card types**, and a six-section health summary. Six new additive tables (migration `0020`); the
+> engine is a **calculated view** (never persisted). **Hard boundaries:** no credit-bureau API, no Credit
+> Karma, no scraping/browser automation, no dispute automation, no debt settlement, no lender/application,
+> no Production Plaid, no AI freeform advice, **no money movement** — and it mutates **no** transaction/
+> category/rule/balance/movement/snapshot/cursor/bill/income/transfer/evidence. **No guarantees:** never
+> claims a fixed score gain, that paying a collection improves a score, or that a debt is valid; every
+> collection path warns **verify-the-debt-and-get-written-terms first**; cash-flow context (reused from
+> `computeFinancialOutlook`) flags risky actions and never recommends rent/essential-bill funds. Each
+> action card exposes a stable **Personal Advantage Engine** shape (domain/actionType/urgency/upside/
+> cost/time/risk/confidence/evidence/nextStep/professionalVerificationRecommended) for a later engine
+> (not built here). `/finances` gains a tabbed **Credit & financial health** section (Overview / Credit
+> profile / Goals / Guidance, with add/edit flows + manual/stale warnings); Home shows ≤1 action + ≤1
+> progress + stale reminder; `/manage` unchanged. `scripts/verify-finance1c0a.ts` = **125/125** +
+> browser-verified (desktop + 375px). See `docs/DECISIONS.md` ADR-037.
 
 > **Finance 1B.5B — spending insights + financial opportunity detection — implemented (uncommitted).**
 > Turns categorized transactions into explainable, **read-only** deterministic **spending insights** and

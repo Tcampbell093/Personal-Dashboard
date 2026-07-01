@@ -264,6 +264,25 @@ duplicate manual income movements; uncertain matches need owner approval; recurr
   provider-snapshot / cursor change; a linked income occurrence becomes **`received_evidence`** (the
   durable proof is the evidence row). `computeFinancialOutlook` now excludes non-scheduled occurrences
   from expected income (no double-count). See `docs/DECISIONS.md` ADR-034.
+- **1C.0A — DONE (manual credit profile + financial-health baseline)** — additive migration
+  `0020_new_sentinel.sql` adds **six** owner-scoped tables (no enums; type/status fields are
+  server-validated varchars, matching `financial_accounts.type`): **`credit_score_snapshots`** (`score`
+  [bounded 250–900 in the service], `source`, `bureau?`, `scoringModel?`, `asOfDate`, `notes?`;
+  **unique** `(userId, source, scoringModel, asOfDate, score)` → idempotent, no silent overwrite),
+  **`credit_accounts`** (`accountType`, `name`, `issuer?`, `status`, `isRevolving`, `creditLimit?`,
+  `currentBalance`, `minimumPayment?`, `interestRate?`, opened/closed/statement/paymentDue/lastReported
+  dates, `isAuthorizedUser`, `notes?`), **`credit_collections`** (`collectorName`, `originalCreditor?`,
+  `reportedBalance`, `status`, dates, `validationStatus`, `settlementOffer?` [owner-entered],
+  `payForDeleteRequested`, `notes?`), **`credit_late_payments`** (`creditAccountId` FK → credit_accounts
+  cascade, `daysLate`, `reportedDate`, `amountPastDue?`, `status`), **`credit_inquiries`**
+  (`creditorName`, `inquiryDate`, `bureau?`, `inquiryType` hard|soft, `purpose?`; **unique**
+  `(userId, creditorName, inquiryDate, inquiryType)` → duplicate guard), and **`credit_goals`**
+  (`goalType`, `targetValue`, `targetDate?`, `status`, `priority`, `notes?`). **All data is manual and
+  owner-entered** — the migration creates schema only (no score/collection/account/inquiry/late-payment
+  backfill, no inferred owner data). The financial-health engine (utilization, summaries, observations,
+  action cards, health) is a **calculated view**, never persisted, and mutates no bank/finance record
+  and moves no money. No credit-bureau or Credit-Karma connection exists. See `docs/DECISIONS.md`
+  ADR-037.
 - **1B.5B — DONE (spending insights + opportunity detection)** — additive migration
   `0019_majestic_chimera.sql` adds **one** table, `financial_insight_dismissals`: `userId` (FK, cascade),
   `insightKey` (deterministic period-scoped key, e.g. `category_change:current_month:5`), `insightType`,

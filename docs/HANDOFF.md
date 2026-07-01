@@ -12,6 +12,40 @@
 
 ## Next approved task
 
+### Finance 1C.0A — manual credit profile + financial-health baseline
+
+- **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** A **manual, owner-entered,
+  read-only** credit profile + **deterministic** financial-health engine. Six new additive tables
+  (migration `0020_new_sentinel.sql`): `credit_score_snapshots`, `credit_accounts`,
+  `credit_collections`, `credit_late_payments`, `credit_inquiries`, `credit_goals` (server-validated
+  varchars, no enums; idempotency via unique indexes on score + inquiry; account delete archives when a
+  late-payment references it). Service `lib/services/credit.ts` computes utilization (per-account +
+  aggregate over open revolving accounts with valid limits; amounts to reach <50/30/10%; installment
+  excluded; missing/zero limits warned/rejected; authorized-user explicit), credit-history + collections
+  + inquiry summaries, same-source score trends (sources **never averaged**), 12 observation types, 10
+  prioritized action-card types, and a six-section health summary. **Hard boundaries (asserted):** no
+  bureau/Credit-Karma connection, no scraping/browser automation, no dispute/settlement/lender/application
+  automation, no Production Plaid, no AI advice, **no money movement**; changes **no** transaction/
+  category/rule/balance/movement/snapshot/cursor/bill/income/transfer/evidence. **No guarantees:** never
+  a fixed score gain, never "paying a collection improves your score," never declares a debt valid; every
+  collection path warns verify-the-debt-and-get-written-terms first; cash-flow context (from
+  `computeFinancialOutlook`) flags risk and never recommends rent/essential-bill funds. Each action card
+  carries the stable Personal Advantage Engine shape (domain/actionType/urgency/upside/cost/time/risk/
+  confidence/evidence/nextStep/professionalVerificationRecommended). Routes under
+  `app/api/finances/credit/*` (overview GET; scores GET/POST/PATCH/DELETE; accounts GET/POST/PATCH/DELETE;
+  collections/inquiries/late-payments/goals GET/POST/PATCH). UI `components/finances/credit.tsx` (tabbed
+  **Credit & financial health**: Overview / Credit profile / Goals / Guidance, with add/edit flows +
+  manual/stale warnings); Home shows ≤1 action + ≤1 progress + stale reminder; `/manage` unchanged.
+  Files: `db/schema.ts`, `db/migrations/0020_new_sentinel.sql` (+ snapshot/journal),
+  `lib/services/credit.ts`, `app/api/finances/credit/**` (13 route files), `components/finances/credit.tsx`,
+  `app/finances/page.tsx`, `lib/services/home.ts`, `lib/types.ts`, `components/home/sections.tsx`,
+  `app/globals.css`, `scripts/verify-finance1c0a.ts` (+ migration-count guard in `verify-finance1b0.ts`) +
+  6 docs. `scripts/verify-finance1c0a.ts` = **125/125**; all regressions green; typecheck + build + secret
+  scan clean; browser-verified (desktop + 375px, no console errors). **No AI, no money movement,
+  Sandbox-only, owner-entered.** Recommended commit:
+  `feat(finance): add manual credit and financial health tracking`. **Do not commit until reviewed.**
+  Next approved gate after review: the **Personal Advantage Engine** — separate authorization required.
+
 ### Finance 1B.5B — spending insights + financial opportunity detection
 
 - **Status:** **IMPLEMENTED — awaiting owner review (uncommitted).** Turns categorized transactions into
@@ -297,6 +331,53 @@ specific build. Builds are ordered so the manual loop works end-to-end before an
 ---
 
 ## Latest handoff
+
+### Finance 1C.0A — manual credit profile + financial-health baseline — implemented — 2026-07-01
+
+**Task completed** — a manual, owner-entered, read-only credit profile + deterministic financial-health
+engine. Not committed — awaiting owner review.
+
+**Repository state** — base production milestone `e0269a7682b303cbd99b24c3b290f61d224400ed` (1B.5B); branch
+`main`; `.env`/`.env.local` ignored + unstaged. Owner data intact and re-verified after the run: BofA
+Sandbox active, Plaid Checking linked (0 orphans), 19 imported transactions, Chase + BofA manual, request
+222 present.
+
+**Schema & migration** — additive `0020_new_sentinel.sql`: six credit tables + 7 FKs (all on the new
+tables; `credit_late_payments.credit_account_id` → `credit_accounts` cascade, all `user_id` → users
+cascade) + indexes, including a unique score index `(user_id, source, scoring_model, as_of_date, score)`
+and a unique inquiry index `(user_id, creditor_name, inquiry_date, inquiry_type)`. No DROP/owner-ALTER/
+backfill/inferred-data/balance mutation. Applied to Neon; all six tables + indexes verified.
+
+**Design decision — calculated view + manual data only** — the health engine (utilization, summaries,
+observations, actions, health) is recomputed per request and never persisted; only the six owner-entered
+tables hold state. The migration creates schema only — no score/collection/account/inquiry/late-payment
+backfill and no owner data guessed from docs or memory.
+
+**Boundaries (asserted)** — no bureau/Credit-Karma API, no scraping/browser automation, no dispute/
+settlement/lender/application automation, no Production Plaid, no AI advice, no money movement; the service
+has no `update(financialConnections|financialAccounts|providerAccounts)`, no evidence write, no
+task-creation, and no `plaid`/`production` reference. Snapshots of a bank transaction, account, provider
+balances, movements, categories/assignments/rules, and evidence are unchanged across repeated
+`computeCreditOverview` calls. No guaranteed score-improvement claim exists; every collection path warns
+verify-first; sources are never averaged; cash-flow context never spends or recommends essential-bill
+money.
+
+**Surfaces** — `/finances` **Credit & financial health** tabbed section (Overview / Credit profile /
+Goals / Guidance) with add/edit flows for scores, accounts, collections, inquiries, late payments, and
+goals, plus manual + stale-data warnings; Home Money awareness shows ≤1 urgent action + ≤1 progress item +
+stale reminder; `/manage` unchanged.
+
+**Files** — `db/schema.ts`, `db/migrations/0020_new_sentinel.sql` (+ `meta/0020_snapshot.json`,
+`_journal.json`), `lib/services/credit.ts`, 13 route files under `app/api/finances/credit/`,
+`components/finances/credit.tsx`, `app/finances/page.tsx`, `lib/services/home.ts`, `lib/types.ts`,
+`components/home/sections.tsx`, `app/globals.css`, `scripts/verify-finance1c0a.ts`, migration-count guard
+in `scripts/verify-finance1b0.ts`, and 6 docs.
+
+**Verification** — `scripts/verify-finance1c0a.ts` **125/125** (owner-scoped exact-ID temp records, reset
+between scenarios; foreign-owner rejection; full domain-boundary snapshots). All 19 prior verify suites
+green (run serially against shared Neon); `npm run typecheck` + `npm run build` clean; secret scan clean;
+browser-verified at desktop + 375px with no console errors, then temp credit data cleaned (0 residue).
+**Do not commit until reviewed.**
 
 ### Finance 1B.5B — spending insights + financial opportunity detection — implemented — 2026-07-01
 
