@@ -144,10 +144,14 @@ function evalOpportunity(s: DailySignal, today: string): SlotEval {
 
 function evalMove(s: DailySignal, risk: SlotEval, opp: SlotEval, ctx: RankingContext): SlotEval {
   const exclusions: string[] = [];
-  const riskScore = risk.score, oppScore = opp.score;
+  // A move base may come from a source ONLY when that source QUALIFIES. Risk/opportunity keep
+  // diagnostic numeric scores even when ineligible (below threshold, low confidence, etc.); those
+  // diagnostic scores must NOT become a move base via actionability/capacity points.
+  const riskScore = risk.eligible ? risk.score : null;
+  const oppScore = opp.eligible ? opp.score : null;
   const bestBase = Math.max(riskScore ?? Number.NEGATIVE_INFINITY, oppScore ?? Number.NEGATIVE_INFINITY);
   const hasBase = Number.isFinite(bestBase);
-  // Which source is the move base? On a tie, prefer OPPORTUNITY — its score already
+  // Which qualifying source is the move base? On a tie, prefer OPPORTUNITY — its score already
   // bundles actionability + friction, so we must NOT re-add them (avoids double-count).
   const fromOpp = oppScore != null && oppScore >= (riskScore ?? Number.NEGATIVE_INFINITY);
   // Single-count: actionability + friction are ADDED only for a risk-based move (riskScore
@@ -160,7 +164,7 @@ function evalMove(s: DailySignal, risk: SlotEval, opp: SlotEval, ctx: RankingCon
   if (s.reversibility === "irreversible") exclusions.push("irreversible_excluded");
   if (inferredNeedsConfidence(s)) exclusions.push("low_confidence_inferred_excluded");
   if (cap === "exclude") exclusions.push("capacity_known_unsafe_or_impossible");
-  if (!hasBase) exclusions.push("not_a_risk_or_opportunity_candidate");
+  if (!hasBase) exclusions.push("no_qualifying_risk_or_opportunity_base");
   // moveScore = max(riskScore, opportunityScore) + capacityFit  [+ actionability + friction ONCE if risk-based]
   const total = hasBase ? bestBase + addActionability + addFriction + capPts : 0;
   if (hasBase && total < MOVE_MIN) exclusions.push(`below_move_threshold(${total}<${MOVE_MIN})`);

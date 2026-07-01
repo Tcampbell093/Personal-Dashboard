@@ -30,7 +30,7 @@
   financial-family **diversity** rule (nonfinancial candidate within 10 pts preferred where eligible; a
   high-urgency financial risk is never displaced), and structured **selection explanations**
   (`ScoreBreakdown` components sum to totals). Output types: `CollectedSignals`, `RankedSignal`,
-  `SelectionResult`, `DailySelection`. Verified by `scripts/verify-daily-slice2.ts` (**64/64**) + Slice 1
+  `SelectionResult`, `DailySelection`. Verified by `scripts/verify-daily-slice2.ts` (**73/73**) + Slice 1
   (81/81) + all regressions green, typecheck, build, secret scan. **No persistence, migration, API, UI,
   AI, Home integration, or owner-response lifecycle was added** (those are Slice 3+). **Do not merge until
   reviewed. Do not begin Slice 3.** Recommended commit:
@@ -42,7 +42,12 @@
   gating** — the opportunity slot starts from the top opportunity and only prefers a different-domain
   candidate when it is within `DIVERSITY_NEAR_POINTS` (10) of the top; a >10-pt-weaker different-domain
   candidate never displaces the stronger top, and no below-threshold item is chosen for diversity.
-  Regression coverage added ([D1]–[D10]); harness now **64/64**.
+  (3) **qualifying move base** — `evalMove` now uses a source score as the move base **only when that
+  source evaluation is eligible** (`risk.eligible`/`opportunity.eligible`); a below-threshold or
+  low-confidence-ineligible source's diagnostic score can no longer become a move base via
+  actionability/capacity points. When neither source qualifies the move is ineligible with the
+  `no_qualifying_risk_or_opportunity_base` exclusion; below-threshold source diagnostics are preserved.
+  Regression coverage added ([D1]–[D19]); harness now **73/73**.
 - **Next candidate:** DCC **Slice 3 — lifecycle persistence** (`daily_recommendations` + migration), per
   §17. **Not yet approved to build.**
 

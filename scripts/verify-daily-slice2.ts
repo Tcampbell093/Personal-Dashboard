@@ -224,6 +224,38 @@ async function main() {
   const nearSel2 = rankSignals(collect([nearSpendOpp, topCreditOpp, riskCredit]), rctx());
   ok("[D10] diversity selection + explanation is deterministic (order-independent)", JSON.stringify(nearSel.opportunity) === JSON.stringify(nearSel2.opportunity));
 
+  /* =========== REVIEW FIX 3 — only ELIGIBLE source scores may become a move base [D11-D19] =========== */
+  console.log("\n[fix 3 — ineligible source scores can't become a move base]");
+  // A risk-type signal that FAILS the risk threshold (36 < 40) but whose diagnostic risk score
+  // + actionability + capacity would previously clear the move threshold (49 ≥ 45).
+  const belowRisk = mkSig({ domain: "tasks", signalType: "task_overdue", urgency: "low", confidence: "low", effectiveDate: ahead(5), candidateAction: "do", key: "y:belowrisk" });
+  const belowRiskR = rankSignals(collect([belowRisk]), rctx()).ranked.find((r) => r.signal.key === "y:belowrisk")!;
+  ok("[D11] a below-risk-threshold signal cannot become a move via actionability/capacity", belowRiskR.risk.eligible === false && belowRiskR.risk.score != null && belowRiskR.move.eligible === false && belowRiskR.move.score === null);
+  // A low-confidence opportunity-type signal (opportunity-ineligible) whose diagnostic opp score is high.
+  const lowConfOpp = mkSig({ domain: "spending", signalType: "spending_opportunity", class: "recommendation", confidence: "low", urgency: "medium", candidateAction: "trim", key: "y:lowopp" });
+  const lowConfR = rankSignals(collect([lowConfOpp]), rctx()).ranked.find((r) => r.signal.key === "y:lowopp")!;
+  ok("[D12] a low-confidence opportunity-ineligible signal cannot become a move from its numeric opp score", lowConfR.opportunity.eligible === false && lowConfR.opportunity.score != null && lowConfR.move.eligible === false);
+  ok("[D13] neither-eligible signal: move.eligible false + 'no_qualifying_risk_or_opportunity_base' exclusion", belowRiskR.move.exclusions.includes("no_qualifying_risk_or_opportunity_base") && lowConfR.move.exclusions.includes("no_qualifying_risk_or_opportunity_base"));
+  ok("[D14] below-threshold source diagnostics are preserved (not erased)", belowRiskR.risk.score === 36 && lowConfR.opportunity.score != null && lowConfR.opportunity.score > 0);
+  // An eligible risk still yields a risk-based move.
+  const okRisk = mkSig({ domain: "bills", signalType: "bill_overdue", urgency: "high", effectiveDate: ago(2), candidateAction: "pay", key: "y:okrisk" });
+  const okRiskR = rankSignals(collect([okRisk]), rctx()).ranked.find((r) => r.signal.key === "y:okrisk")!;
+  ok("[D15] an eligible risk still produces a risk-based move", okRiskR.risk.eligible === true && okRiskR.move.eligible === true && okRiskR.move.breakdown.baseFrom === "risk");
+  // An eligible opportunity still yields an opportunity-based move.
+  const okOpp = mkSig({ domain: "spending", signalType: "spending_opportunity", class: "recommendation", confidence: "high", urgency: "medium", candidateAction: "trim", key: "y:okopp" });
+  const okOppR = rankSignals(collect([okOpp]), rctx()).ranked.find((r) => r.signal.key === "y:okopp")!;
+  ok("[D16] an eligible opportunity still produces an opportunity-based move", okOppR.opportunity.eligible === true && okOppR.move.eligible === true && okOppR.move.breakdown.baseFrom === "opportunity");
+  // A signal eligible as BOTH risk and opportunity (dual-registry type, high urgency + overdue) → higher used.
+  const both = mkSig({ domain: "data_quality", signalType: "uncategorized_transactions", class: "deterministic_calc", urgency: "high", confidence: "high", effectiveDate: ago(3), candidateAction: "categorize", key: "y:both" });
+  const bothR = rankSignals(collect([both]), rctx()).ranked.find((r) => r.signal.key === "y:both")!;
+  ok("[D17] when both sources are eligible, the higher qualifying score is used (risk 60 > opp 50)", bothR.risk.eligible === true && bothR.opportunity.eligible === true && bothR.risk.score === 60 && bothR.opportunity.score === 50 && bothR.move.breakdown.baseFrom === "risk" && bothR.move.breakdown.base === 60);
+  // Equal qualifying scores → opportunity tie behavior (base from opportunity).
+  const tie = mkSig({ domain: "data_quality", signalType: "uncategorized_transactions", class: "deterministic_calc", urgency: "high", confidence: "high", effectiveDate: ahead(2), candidateAction: "categorize", key: "y:tie" });
+  const tieR = rankSignals(collect([tie]), rctx()).ranked.find((r) => r.signal.key === "y:tie")!;
+  const tb = tieR.move.breakdown;
+  ok("[D18] equal qualifying scores retain the opportunity tie behavior + breakdown sums exactly", tieR.risk.score === 50 && tieR.opportunity.score === 50 && tb.baseFrom === "opportunity" && (tb.base ?? 0) + tb.actionability + numCap(tb.capacityFit) + tb.friction === tb.total && tb.total === tieR.move.score);
+  ok("[D19] no weak item is selected merely to fill the move slot", rankSignals(collect([belowRisk, lowConfOpp]), rctx()).recommendedMove.signalKey === null);
+
   /* ===================== purity / owner protection [50-54] ===================== */
   console.log("\n[purity / owner protection]");
   await collectDailySignals(U, CTX); await collectDailySignals(U, CTX);

@@ -201,7 +201,7 @@ to fill a slot.
 > **Slice 2 status (implemented on branch `daily-command-center-slice2-review`, not merged):** the
 > failure-isolated **orchestrator** (§2) and the deterministic **ranking + bounded selection** (§5/§6/§8/§9)
 > are implemented in `lib/daily/orchestrator.ts` and `lib/daily/ranking.ts`, verified by
-> `scripts/verify-daily-slice2.ts` (64/64). `collectDailySignals` calls every Slice 1 provider via
+> `scripts/verify-daily-slice2.ts` (73/73). `collectDailySignals` calls every Slice 1 provider via
 > `Promise.allSettled`, validates each signal, and returns valid signals + degraded providers + invalid
 > diagnostics; a **request-scoped memoized credit overview** (`SignalContext.sharedCredit`) computes
 > `computeCreditOverview` once per (userId, today) run (no global/cross-user cache, no persistence;
@@ -235,6 +235,13 @@ to fill a slot.
 >   (`risk`|`opportunity`) + `actionabilityInBase`/`frictionInBase`, and components sum exactly to the
 >   total. Move min **45**. Tie-break: urgency → nearer/overdue deadline → confidence → lower money → lower
 >   time → key asc.
+> - **Qualifying move base:** a source score may become the move base **only when that source evaluation is
+>   eligible** — risk only when `risk.eligible`, opportunity only when `opportunity.eligible`. Risk/opportunity
+>   keep diagnostic numeric scores when they fail thresholds/eligibility, but those diagnostic scores must
+>   **not** become a valid move base (a below-threshold or low-confidence source cannot become a move via
+>   actionability/capacity points). If neither source qualifies, the move is ineligible with the
+>   `no_qualifying_risk_or_opportunity_base` exclusion; below-threshold source diagnostics are preserved in
+>   their own evaluations.
 > - **Diversity:** start from the highest-scoring qualifying opportunity; prefer the highest
 >   different-domain-than-risk opportunity **only when it is within `DIVERSITY_NEAR_POINTS` (10) of the top**
 >   — a >10-pt-weaker different-domain candidate never displaces the stronger top; a below-threshold
@@ -630,7 +637,7 @@ behavior must already be covered by that slice's own tests — testing must **no
      empty-domain/empty-state mapping.
 2. **Orchestration + ranking** — `collectDailySignals` (failure-isolated) + `rankSignals` (deterministic,
    extends `lib/briefing.ts`). **✅ IMPLEMENTED** (`lib/daily/orchestrator.ts`, `lib/daily/ranking.ts`;
-   `scripts/verify-daily-slice2.ts` = 64/64) — on branch `daily-command-center-slice2-review`, not merged.
+   `scripts/verify-daily-slice2.ts` = 73/73) — on branch `daily-command-center-slice2-review`, not merged.
    - **Tests in this slice:** **deterministic ranking** (identical inputs → identical order), **tie-break**
      rules, **category caps**, **diversity** (Finance can't crowd out other domains), **suppression/dedupe**,
      **stale-signal handling**, the **at-most-one / no-forced-item** behavior (including the empty/no-
