@@ -131,7 +131,9 @@ follow-through and learn over time.
 
 ## 5. Daily Command Center vision
 
-*(Vision only — not approved for implementation in this phase.)*
+*(Vision only — not approved for implementation in this phase. The concrete first-version product +
+technical design is specified in `docs/DAILY_COMMAND_CENTER_SPEC.md`, which remains documentation-only
+until its implementation slices are separately approved.)*
 
 Opening Xanther should answer, at a glance:
 
@@ -243,7 +245,7 @@ implementation):
 1. **Finance 1C.0A is complete.**
 2. **Formalize Xanther's product alignment** *(this document).*
 3. **Design the Daily Command Center / Personal Advantage Loop** *(design first — not yet approved to
-   build).*
+   build; the design is specified in `docs/DAILY_COMMAND_CENTER_SPEC.md`).*
 4. **Connect existing Finance, Tasks, Calendar, and Goals data** into that loop.
 5. **Add recommendation response and outcome memory** (owner responses, outcomes, and learning).
 6. **Return to Experience and Adventure** as the first rich cross-domain, AI-assisted workflow.

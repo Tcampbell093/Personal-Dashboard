@@ -12,30 +12,39 @@
 
 ## Next approved task
 
-### Product alignment — documentation-only closeout
+### Daily Command Center / Personal Advantage Loop — documentation-only design phase
 
-- **Status:** **APPROVED — DOCUMENTATION ONLY (no implementation).** Formalize Xanther's approved product
-  direction as a source-of-truth document and wire the cross-references. **Scope is strictly
-  documentation:** create `docs/PRODUCT_ALIGNMENT.md` (mission; the five permanent functions — Reality,
-  Risk, Advantage, Decision, Execution; product principles; the eight-step recommendation lifecycle;
-  Daily Command Center vision; cross-domain reasoning; role of AI; hard boundaries; the feature-approval
-  test; the strategic sequence; and the current-state interpretation), and add a brief reference to it
-  from `docs/PRODUCT_VISION.md`, `docs/ROADMAP.md`, and `docs/CURRENT_STATE.md`.
-- **Explicitly out of scope / do NOT do:** no new feature, database/schema change, migration, API route,
-  dependency, AI integration, or UI change; **do not begin or approve the Daily Command Center / Personal
-  Advantage Loop implementation** — that is the *next design step* (sequence item 3) and requires its own
-  explicit owner approval before any code is written. Do not rewrite historical implementation records.
-- **Definition of done:** `docs/PRODUCT_ALIGNMENT.md` exists and matches the approved alignment; the three
-  referencing docs link to it; a docs consistency check passes; changes are documentation-only; committed
-  and pushed. After this, the next candidate remains the **Daily Command Center / Personal Advantage Loop
-  design** — **not yet approved to build**; do not begin it or any new feature until the owner approves a
-  bounded task here.
+- **Status:** **APPROVED — DOCUMENTATION ONLY (no implementation).** Produce the product + technical
+  **specification** for Xanther's first Daily Command Center / Personal Advantage Loop — the smallest
+  complete daily operating loop (collect grounded facts → normalize into a signal contract → prioritize
+  deterministically → bounded daily brief → one recommended next move → owner response → persist outcome →
+  revisit). **Scope is strictly documentation:** create `docs/DAILY_COMMAND_CENTER_SPEC.md` grounded in
+  `docs/PRODUCT_ALIGNMENT.md`, `docs/PRODUCT_VISION.md`, `docs/CURRENT_STATE.md`, `docs/DATA_MODEL.md`,
+  `docs/HANDOFF.md`, and the **actual** existing Finance, Tasks, Calendar-equivalent, Goals (credit), and
+  Home implementations; and add a brief reference from `docs/PRODUCT_ALIGNMENT.md`, `docs/ROADMAP.md`, and
+  `docs/CURRENT_STATE.md`.
+- **Grounding truths the spec must respect (verified in-repo):** there is **no** calendar integration
+  (`externalCalendarId` is reserved/unused) — "schedule" is derived from obligation/bill/income/experience
+  dates; there is **no** general goals domain — only `credit_goals`; relationships/health/career/
+  travel/knowledge have **no** grounded daily data (future slots / truthful empty states); the deterministic
+  ranker `lib/briefing.ts` and `buildHomeView` already exist and are **reused**, not replaced.
+- **Explicitly out of scope / do NOT do:** no application code, schema, migration, API route, dependency,
+  AI call, or UI change; **do not generate a migration**; **do not begin or approve the Daily Command
+  Center implementation** — the spec's implementation slices (§17) are proposed, not approved, and each
+  needs its own bounded HANDOFF task. Do not rewrite historical implementation records.
+- **Definition of done:** `docs/DAILY_COMMAND_CENTER_SPEC.md` exists and covers all 17 required sections
+  grounded truthfully in existing systems; the three referencing docs link to it; a docs consistency check
+  passes; changes are documentation-only; committed and pushed. After this, the next candidate is
+  **implementation slice 1 (signal contracts + deterministic providers)** — **not yet approved to build**;
+  do not begin it or any new feature until the owner approves a bounded task here.
 
 ---
 
-**Recently completed:** Finance 1C.0A is **reviewed, merged to `main`, locally production-build verified,
-and expected to auto-deploy** (see the 1C.0A entry below; live production commit/UI verification remains
-unconfirmed due to the Netlify site-level password and unavailable deploy-status API).
+**Recently completed:** (1) **Product alignment** — `docs/PRODUCT_ALIGNMENT.md` created and referenced
+(strategic sequence item 2, documentation-only). (2) **Finance 1C.0A** is **reviewed, merged to `main`,
+locally production-build verified, and expected to auto-deploy** (see the 1C.0A entry below; live
+production commit/UI verification remains unconfirmed due to the Netlify site-level password and
+unavailable deploy-status API).
 
 ### Finance 1C.0A — manual credit profile + financial-health baseline
 

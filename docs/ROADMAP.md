@@ -11,6 +11,9 @@
 >   strategist, the five permanent functions (Reality, Risk, Advantage, Decision, Execution), the
 >   recommendation lifecycle, the Daily Command Center vision, and the strategic sequence. Candidate items
 >   below should serve those functions and pass the feature-approval test in that document.
+> - **The first Daily Command Center / Personal Advantage Loop is specified in
+>   `docs/DAILY_COMMAND_CENTER_SPEC.md`** (documentation-only design; implementation slices proposed there
+>   are not yet approved).
 
 ## Candidate areas (unordered)
 
