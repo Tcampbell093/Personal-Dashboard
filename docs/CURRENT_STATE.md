@@ -14,6 +14,29 @@
 
 **Last updated:** 2026-07-01 · **Reflects branch:** `main` @ `ca4fcdb` (Finance 1B.5B live; **Finance 1C.0A — manual credit profile + financial-health baseline — reviewed, merged to `main`, locally production-build verified, and expected to auto-deploy; live production verification unconfirmed**)
 
+> **Daily Command Center — Slice 4 (secure read/present/respond/outcome APIs) — implemented on the
+> `daily-command-center-slice4-review` branch, awaiting review; NOT merged, NOT deployed.** Exposes the
+> merged DCC engine (Slices 1–3) through owner-scoped server APIs and a bounded public view-model — **no
+> migration, no UI, no Home/AI/notifications/background jobs, no external calls, no consequential actions.**
+> Routes (all `force-dynamic`, all `no-store`): **`GET /api/daily`** (owner-scoped, **read-only** — no
+> lifecycle writes; returns the bounded `DailyBriefView`), **`POST …/[key]/present`** (records presentation
+> only for the **currently-selected** recommended-move key; arbitrary/stale/suppressed keys → 409;
+> `presentedCount` increments once, idempotent), **`POST …/[key]/respond`** (`{response, note?, deferUntil?}`;
+> `pending` reopens; `defer` requires a future `America/New_York` date), **`POST …/[key]/outcome`**
+> (`{outcomeNote?, verificationState?}`; requires `complete`; empty rejected; **no automated verification**).
+> Owner is server-derived (`CURRENT_USER_ID`); request bodies are strict (client-supplied `userId`/ids/
+> timestamps/fingerprints/scores rejected); cross-owner keys → 404 (no existence leak). `lib/daily/view.ts`
+> `DailyBriefView` = `{date, generatedAt, today{items,empty}, whatChanged, risk, opportunity,
+> recommendedMove, degraded[], lifecycle}` — never exposes raw signals/ranked arrays/DB rows/SQL/stack/
+> provider errors; `capacity` is `ok|tight|unknown` (`unknown` when cash unavailable); `personalRelevance`
+> always `null`. **Today** = max 3 concrete dated tasks/obligations/bills (overdue→today→soon), empty when
+> nothing qualifies. **`whatChanged`** is a **truthful** `not_available` capability boundary (no
+> `daily_brief_log`/change detection this slice). One provider failure yields HTTP 200 + sanitized
+> `degraded[]`. Idempotency lives in the lifecycle service. `scripts/verify-daily-slice4.ts` = **66/66**
+> (route handlers + view-model + service); Slice 3 62/62; Slice 2 73/73; Slice 1 81/81; all regressions
+> green; typecheck + build clean; **migration guard unchanged at 0023**. See
+> `docs/DAILY_COMMAND_CENTER_SPEC.md` §§10–13/§17.
+
 > **Daily Command Center — Slice 3 (recommendation lifecycle persistence) — reviewed and merged to `main`
 > (commit `9f0faec`; review branch deleted).** Migration `0022_new_sprite.sql` adds one
 > table `daily_recommendations` (+ response/verification enums; live-only partial unique on

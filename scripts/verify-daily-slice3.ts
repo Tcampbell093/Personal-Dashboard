@@ -132,7 +132,7 @@ async function main() {
   ok("[23] defer requires a FUTURE deferUntil (missing or past rejected)", deferred.response === "defer" && deferred.deferUntil === ahead(5) && await threw(() => L.respondToRecommendation(U, kd, "defer", { now: NOWD, today: NOW })) && await threw(() => L.respondToRecommendation(U, kd, "defer", { now: NOWD, today: NOW, deferUntil: "2026-06-01" })));
   const comp = responded.find((r) => r.response === "complete")!;
   ok("[24] complete sets completedAt + verificationState unverified", comp.completedAt != null && comp.verificationState === "unverified");
-  ok("[25] invalid transition rejected — 'pending' via respond, and respond on a non-existent active key", await threw(() => L.respondToRecommendation(U, "z3:resp:accept", "pending" as L.ResponseValue, { now: NOWD, today: NOW })) && await threw(() => L.respondToRecommendation(U, "z3:nope", "accept", { now: NOWD, today: NOW })));
+  ok("[25] 'pending' via respond reopens the active row (Slice 4 contract); respond on a non-existent active key rejected", (await L.respondToRecommendation(U, "z3:resp:accept", "pending", { now: NOWD, today: NOW })).response === "pending" && await threw(() => L.respondToRecommendation(U, "z3:nope", "accept", { now: NOWD, today: NOW })));
   const acc = responded.find((r) => r.response === "accept")!;
   const corrected = await L.correctResponse(U, acc.id, "reject", { now: NOWD, today: NOW });
   const reopened = await L.reopenRecommendation(U, acc.id, { now: NOWD });

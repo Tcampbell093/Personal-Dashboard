@@ -547,7 +547,49 @@ Existing Home functionality is preserved; the DCC is an orchestration layer on t
 
 ---
 
-## 13. API & service boundaries (proposed — not implemented)
+## 13. API & service boundaries (IMPLEMENTED in Slice 4 — `daily-command-center-slice4-review`, awaiting review)
+
+> **Slice 4 status.** The API surface below is **implemented** on the `daily-command-center-slice4-review`
+> branch (awaiting review; not merged). It exposes the merged Slice 1–3 engine through owner-scoped server
+> APIs and a bounded public view-model. **No migration** was added (guard stays at `0023`); **no UI, Home,
+> AI, notifications, background jobs, external calls, or consequential actions.**
+>
+> **Endpoints (as built) — all `export const dynamic = "force-dynamic"`, all responses `no-store`
+> (owner-specific + time-sensitive; never CDN- or cross-owner-cached):**
+> - **`GET /api/daily`** — owner-scoped and **READ-ONLY**. It calls the read-only `runDailySelection`
+>   **without `present: true`**, so a read never records presentation or mutates lifecycle. This is why GET
+>   performs **no lifecycle writes**: presentation is a distinct, deliberate act (below), not a side effect
+>   of viewing the brief — a page load, a prefetch, or a bot hitting the URL must not create or bump a
+>   recommendation row. Returns the bounded `DailyBriefView` (§below).
+> - **`POST /api/daily/recommendations/[key]/present`** — the **explicit presentation-recording** endpoint.
+>   The server recomputes the current selection and accepts the key **only if it is exactly the
+>   currently-selected recommended-move key**; arbitrary, stale, suppressed, below-threshold, or
+>   no-longer-current keys are rejected (409), so the browser cannot invent a key and persist it. Reuses the
+>   active row and increments `presentedCount` **exactly once** per accepted request (idempotent).
+> - **`POST …/[key]/respond`** — body `{response, note?, deferUntil?}`; `pending` explicitly **reopens** the
+>   active row; `defer` requires a **future** `deferUntil` in `America/New_York`.
+> - **`POST …/[key]/outcome`** — body `{outcomeNote?, verificationState?}`; requires the recommendation to be
+>   `complete` (else 409); an empty request is rejected (400); verification is a recorded owner/system
+>   assertion only — **no automated verification**.
+>
+> **Public `DailyBriefView` shape (`lib/daily/view.ts`) — bounded; never leaks internals:**
+> `{date, generatedAt, today{items,empty}, whatChanged{items,state,message}, risk, opportunity,
+> recommendedMove, degraded[], lifecycle{activeRecommendation}}`. It never returns raw `CollectedSignals`,
+> full ranked arrays, internal duplicate/exclusion diagnostics, DB rows, SQL/stack traces, raw provider
+> errors, or secret source records. `capacity ∈ {ok, tight, unknown}` — **`unknown` when available cash is
+> unavailable** (never a false "ok"); the move's `personalRelevance` is always `null` (never invented).
+> **Today** is max 3 concrete dated tasks/obligations/bills (overdue→today→soon, then urgency, then key),
+> suppression-aware and provenance-preserving, empty when nothing qualifies. **`whatChanged`** is always
+> `{items:[], state:"not_available", message:"Change tracking is not available until a prior brief baseline
+> exists."}` — a **truthful capability boundary**, not an error (no `daily_brief_log` or change detection was
+> added in this slice; see §9).
+>
+> **Ownership:** owner is server-derived (`CURRENT_USER_ID`); request bodies are **strict** — any unlisted
+> field (incl. `userId`/`ownerId`/timestamps/row ids/fingerprints/scores/source refs/verification-on-respond)
+> is rejected (400); a cross-owner key returns the standard **not-found** (404) with no existence leak.
+> **Idempotency** (spec §11) is implemented in the lifecycle service, not just the handlers. **Degraded
+> isolation:** one provider failure yields HTTP 200 with surviving sections + a sanitized `degraded[]`.
+> Verified by `scripts/verify-daily-slice4.ts` (**66/66**).
 
 - **Signal-provider interfaces** — one read-only provider per grounded domain (`getTaskSignals`,
   `getObligationSignals`, `getBillSignals`, `getFinanceSignals`, `getCreditSignals`, `getSpendingSignals`,
@@ -562,13 +604,18 @@ Existing Home functionality is preserved; the DCC is an orchestration layer on t
 - **Recommendation lifecycle service** — `presentRecommendation` (idempotent create/update by
   `recommendationKey`), `respondToRecommendation` (accept/defer/reject/not_relevant/complete),
   `recordOutcome`, `reverseResponse`.
-- **Endpoints (read + respond only):** `GET /api/daily` (assembled brief), `POST
-  /api/daily/recommendations/[key]/respond`, `POST /api/daily/recommendations/[key]/outcome`. No endpoint
-  performs a consequential action; consequential in-app actions reuse the **existing** confirmed routes.
+- **Endpoints (read + explicit-present + respond + outcome; no consequential action):** `GET /api/daily`
+  (assembled brief, **read-only** — records nothing), `POST /api/daily/recommendations/[key]/present`
+  (explicit presentation recording, current-key only), `POST /api/daily/recommendations/[key]/respond`,
+  `POST /api/daily/recommendations/[key]/outcome`. No endpoint performs a consequential action;
+  consequential in-app actions reuse the **existing** confirmed routes. **Presentation is recorded only by
+  the explicit `present` endpoint — never as a side effect of `GET`** (a view, prefetch, or bot must not
+  create or bump a lifecycle row).
 - **Ownership/authorization:** server-derived owner (`CURRENT_USER_ID`); every query owner-scoped; the
-  browser never supplies a user id.
-- **Idempotency:** `presentRecommendation` and `respond` are idempotent by `recommendationKey`; re-presenting
-  the same live signal updates `presentedCount`, not a duplicate row (live-only partial unique, §8).
+  browser never supplies a user id, and cross-owner keys return not-found (no existence leak).
+- **Idempotency:** `presentRecommendation` and `respond` are idempotent by `recommendationKey`; an explicit
+  re-present of the still-current live signal updates `presentedCount` once, not a duplicate row (live-only
+  partial unique, §8); idempotency is enforced in the lifecycle service.
 - **Timezone:** all date-only logic in `America/New_York` (reuse `lib/time.ts` `localToday`), consistent
   with insights/credit.
 - **Failure isolation:** a Finance failure must not erase Tasks/Calendar-derived/Credit sections — the
@@ -674,10 +721,18 @@ behavior must already be covered by that slice's own tests — testing must **no
      partial unique; soft-deleted/superseded rows don't block re-creation); **owner isolation**
      (foreign-owner rejected); and **recurrence** (defer-until return, reject/not-relevant cooldown,
      resurface-only-on-material-change).
-4. **Read/respond APIs** — `GET /api/daily`, respond/outcome endpoints; idempotency; ownership.
-   - **Tests in this slice:** endpoint **read** shape, **respond/outcome** happy paths + validation errors,
-     **idempotency** by `recommendationKey`, **ownership/authorization** (server-derived owner; browser
-     cannot supply a user id), and graceful-degradation response when a domain is unavailable.
+4. **Secure read/present/respond/outcome APIs** — `GET /api/daily` (read-only), explicit `present`,
+   `respond`, and `outcome` endpoints; bounded public view-model; idempotency; ownership. **✅ IMPLEMENTED ·
+   AWAITING REVIEW** on the `daily-command-center-slice4-review` branch (`app/api/daily/**`,
+   `lib/daily/view.ts`, `lib/daily/api-helpers.ts`, lifecycle additions; `scripts/verify-daily-slice4.ts` =
+   66/66; **no migration** — guard stays `0023`). See §13 for the as-built surface.
+   - **Tests in this slice:** endpoint **read** shape (bounded `DailyBriefView`; no raw internals) + GET
+     **read-only** (zero lifecycle writes), **present** (current-key-only, arbitrary/stale/suppressed
+     rejected, idempotent single increment), **respond/outcome** happy paths + validation errors,
+     **idempotency** by `recommendationKey` (enforced in the service), **ownership/authorization**
+     (server-derived owner; browser cannot supply a user id; cross-owner → not-found), **truthful
+     `whatChanged: not_available`**, `no-store`, and graceful-degradation (HTTP 200 + sanitized `degraded[]`)
+     when a domain is unavailable.
 5. **Daily Command Center UI** — the five sections + **at most one** recommended move; empty states;
    response controls.
    - **Tests in this slice:** section rendering + **caps/empty-state** rendering (including the no-move

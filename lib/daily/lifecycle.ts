@@ -28,6 +28,7 @@ export const NOT_RELEVANT_COOLDOWN_DAYS = 90;
 export type ResponseValue = "pending" | "accept" | "defer" | "reject" | "not_relevant" | "complete";
 export type VerificationValue = "unverified" | "verified" | "could_not_verify";
 const RESPONDABLE: ResponseValue[] = ["accept", "defer", "reject", "not_relevant", "complete"];
+const VERIFICATIONS: VerificationValue[] = ["unverified", "verified", "could_not_verify"];
 
 export type LifecycleRow = typeof dailyRecommendations.$inferSelect;
 
@@ -156,12 +157,48 @@ export interface RespondOpts { note?: string | null; deferUntil?: string | null;
 /** Record an owner response on the active row (spec §5). Superseded/deleted rows
  * are not active and cannot be responded to here (use reopen/correct). */
 export async function respondToRecommendation(userId: number, recommendationKey: string, response: ResponseValue, opts: RespondOpts = {}): Promise<LifecycleRow> {
-  if (!RESPONDABLE.includes(response)) throw new LifecycleError(400, `Invalid response: ${response}. (Use reopen to return to pending.)`);
   const now = opts.now ?? new Date();
   const today = opts.today ?? now.toISOString().slice(0, 10);
   const row = await activeRow(userId, recommendationKey);
   if (!row) throw new LifecycleError(404, "No active recommendation for that key.");
+  // `pending` = explicit reopen (spec §3C). Idempotent when already pending.
+  if (response === "pending") return row.response === "pending" ? row : reopenRecommendation(userId, row.id, { now });
+  if (!RESPONDABLE.includes(response)) throw new LifecycleError(400, `Invalid response: ${response}.`);
+  // IDEMPOTENCY (spec §11): an identical response + identical params is a no-op — it must NOT
+  // replace `respondedAt`/`completedAt` or re-extend a cooldown. A changed response/param is a
+  // genuine correction and updates the row. Implemented in the service so all callers share it.
+  if (row.response === response) {
+    const noteEq = (row.responseNote ?? null) === (opts.note ?? null);
+    const deferEq = response !== "defer" || ((row.deferUntil as unknown as string | null) ?? null) === (opts.deferUntil ?? null);
+    if (noteEq && deferEq) return row;
+  }
   return applyResponse(userId, row.id, response, opts, now, today);
+}
+
+/** Read the owner's ACTIVE (live, non-superseded) lifecycle row for a key, or null.
+ * Owner-scoped — a key belonging only to another owner returns null (no existence leak). */
+export async function getActiveRecommendation(userId: number, recommendationKey: string): Promise<LifecycleRow | null> {
+  return activeRow(userId, recommendationKey);
+}
+
+export interface OutcomeOpts { outcomeNote?: string | null; verificationState?: VerificationValue; now?: Date; }
+/** Record a bounded outcome and/or verification on the owner's COMPLETED active row
+ * (spec §12). Owner-scoped; requires `complete`; rejects an empty request; verification
+ * is a recorded assertion only (NO automated verification). Idempotent on identical retry. */
+export async function recordRecommendationOutcome(userId: number, recommendationKey: string, opts: OutcomeOpts): Promise<LifecycleRow> {
+  const now = opts.now ?? new Date();
+  const hasNote = opts.outcomeNote !== undefined;
+  const hasVer = opts.verificationState !== undefined;
+  if (!hasNote && !hasVer) throw new LifecycleError(400, "Provide an outcome note, a verification state, or both.");
+  if (hasVer && !VERIFICATIONS.includes(opts.verificationState as VerificationValue)) throw new LifecycleError(400, "Invalid verification state.");
+  const row = await activeRow(userId, recommendationKey);
+  if (!row) throw new LifecycleError(404, "No active recommendation for that key.");
+  if (row.response !== "complete") throw new LifecycleError(409, "Outcome can only be recorded on a completed recommendation.");
+  const note = hasNote ? (opts.outcomeNote == null || opts.outcomeNote === "" ? null : String(opts.outcomeNote).slice(0, 1000)) : (row.outcomeNote ?? null);
+  const ver = hasVer ? (opts.verificationState as VerificationValue) : (row.verificationState as VerificationValue);
+  if ((row.outcomeNote ?? null) === note && row.verificationState === ver) return row; // idempotent
+  const [updated] = await db.update(dailyRecommendations).set({ outcomeNote: note, verificationState: ver, updatedAt: now }).where(and(eq(dailyRecommendations.userId, userId), eq(dailyRecommendations.id, row.id))).returning();
+  return updated;
 }
 
 async function applyResponse(userId: number, id: number, response: ResponseValue, opts: RespondOpts, now: Date, today: string): Promise<LifecycleRow> {

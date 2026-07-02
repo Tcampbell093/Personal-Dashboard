@@ -12,10 +12,10 @@
 
 ## Next approved task
 
-> **None in progress.** DCC **Slices 1, 2, and 3** are **reviewed and merged to `main`** (see below). The
-> next candidate is DCC **Slice 4 — read/respond APIs** (`GET /api/daily`, respond/outcome endpoints), per
-> `docs/DAILY_COMMAND_CENTER_SPEC.md` §17 — **not yet approved. Do not begin Slice 4 or any new feature**
-> until the owner approves a bounded task here.
+> **None in progress.** DCC **Slice 4 — secure read/present/respond/outcome APIs** is **implemented on the
+> `daily-command-center-slice4-review` branch, awaiting review** (see the latest handoff report below). It is
+> **not merged.** DCC **Slices 1, 2, and 3** are **reviewed and merged to `main`**. **Do not begin Slice 5 or
+> any new feature** until the owner approves a bounded task here.
 
 ### Daily Command Center — Slice 3 (recommendation lifecycle persistence)
 
@@ -468,6 +468,74 @@ specific build. Builds are ordered so the manual loop works end-to-end before an
 ---
 
 ## Latest handoff
+
+### Daily Command Center — Slice 4 (secure read/present/respond/outcome APIs) — implemented, awaiting review — 2026-07-02
+
+**Task implemented on the `daily-command-center-slice4-review` branch (branched from `main` at
+`9f0faec…`). NOT merged. NOT deployed.** Slice 4 exposes the existing, already-merged DCC engine
+(Slices 1–3) through **secure, owner-scoped server APIs** and a **bounded public view-model**. No UI, Home
+integration, AI, notifications, background jobs, external calls, migrations, or consequential actions were
+added.
+
+- **Endpoints (all `export const dynamic = "force-dynamic"`, all `no-store`):**
+  - **`GET /api/daily`** — owner-scoped, **READ-ONLY**. Collects signals (failure-isolated), loads lifecycle
+    suppression, ranks, and returns a bounded `DailyBriefView`. Performs **no writes** — it does **not** pass
+    `present: true` to `runDailySelection`, so a read never records presentation or mutates lifecycle.
+  - **`POST /api/daily/recommendations/[key]/present`** — explicit presentation recording. The server
+    **recomputes** the current selection and accepts the key **only if it is exactly the currently-selected
+    recommended-move key**; arbitrary / stale / suppressed / no-longer-current keys are rejected (409). Reuses
+    the active row and **increments `presentedCount` exactly once** per accepted request (idempotent — no
+    duplicate rows).
+  - **`POST …/respond`** — body `{response, note?, deferUntil?}`. `pending` explicitly **reopens**; `defer`
+    requires a **future** `deferUntil` under `America/New_York`. Idempotent on identical repeats.
+  - **`POST …/outcome`** — body `{outcomeNote?, verificationState?}`. Requires the recommendation to be
+    `complete` (else 409); rejects an empty request (400); verification is a **recorded owner/system
+    assertion only — no automated verification**.
+- **Server-derived ownership:** owner is `CURRENT_USER_ID` from `lib/auth.ts` via `ownerContext()`; the
+  browser never supplies it. Request bodies are **strict** — any unlisted field (incl. `userId`, `ownerId`,
+  timestamps, row ids, fingerprints, scores, source refs, verification-on-respond) is rejected (400). A
+  cross-owner key returns the standard **not-found** (404) with no existence leak (verified against a temp
+  secondary user).
+- **Bounded public contract (`lib/daily/view.ts`):** `DailyBriefView` = `{date, generatedAt,
+  today{items,empty}, whatChanged{items,state,message}, risk, opportunity, recommendedMove, degraded[],
+  lifecycle{activeRecommendation}}`. Never returns raw `CollectedSignals`, full ranked arrays, internal
+  duplicate/exclusion diagnostics, DB rows, SQL/stack/provider errors, or secret source records. `capacity`
+  is `ok|tight|unknown` (**`unknown` when available cash is unavailable** — never a false "ok"); the move's
+  `personalRelevance` is always `null` (never invented). **Today** is max 3 concrete dated
+  tasks/obligations/bills, ordered overdue→today→soon then urgency then key, suppression-aware,
+  provenance-preserving, empty when nothing qualifies. **`whatChanged`** is always
+  `{items:[], state:"not_available", message:"Change tracking is not available until a prior brief baseline
+  exists."}` — a **truthful capability boundary**, not an error (no `daily_brief_log` / change detection in
+  this slice).
+- **Degraded-domain isolation:** one provider failure does not fail `GET` when usable domains remain — the
+  route returns HTTP 200 with surviving sections plus a bounded, sanitized `degraded[]` list
+  (`"The {domain} section is temporarily unavailable."`).
+- **Idempotency (spec §11) is implemented in the lifecycle service, not just the handlers:** a repeated
+  identical `present` reuses the row and increments once; an identical `respond` does not create another row,
+  extend cooldown, or replace `respondedAt`; identical `complete` preserves `completedAt`; identical `defer`
+  preserves `respondedAt`; retrying `pending` is a no-op. Outcome retries are idempotent; `updatedAt` is
+  server-controlled.
+- **Files added:** `app/api/daily/route.ts`, `app/api/daily/recommendations/[key]/present/route.ts`,
+  `…/respond/route.ts`, `…/outcome/route.ts`, `lib/daily/view.ts` (public view-model, pure/read-only),
+  `lib/daily/api-helpers.ts` (server-only ownership/decode/body/no-store/error helpers),
+  `scripts/verify-daily-slice4.ts`. **Modified:** `lib/daily/lifecycle.ts` (added `getActiveRecommendation`,
+  idempotent `respondToRecommendation` with `pending`-reopen, and `recordRecommendationOutcome`);
+  `scripts/verify-daily-slice3.ts` ([25] updated — `pending` via `respond` now correctly **reopens** the
+  active row per the Slice 4 contract, replacing the prior assertion that it was rejected).
+- **Verification:** `scripts/verify-daily-slice4.ts` **66/66** — exercises the real route handlers (invoked
+  directly) plus the view-model and lifecycle service: GET read-only/zero-writes/NY-date/bounded-shape/no
+  raw internals/Today-max-3/deterministic-order/empty-truthful/no-store; present only-current-key /
+  arbitrary-rejected / suppressed-rejected / idempotent-increment / malformed+oversized+blank key;
+  respond all-responses / defer-future-only / malformed-JSON / strict-unknown-field / oversized-note /
+  cross-owner-404 / pending-reopen / correction / service idempotency + timestamp preservation /
+  deleted-row-404; outcome complete-required / empty-rejected / invalid-verification / oversized /
+  idempotent / cross-owner-404; purity/boundary scans; owner-data-intact + temp-user cleanup.
+  Full regression sweep green: DCC Slice 3 **62/62**, Slice 2 **73/73**, Slice 1 **81/81**, and all
+  finance/home/tasks/build suites; `npm run typecheck` clean; `npm run build` succeeds with the four routes
+  registered as dynamic (ƒ); secret scan clean; **migration guard unchanged at 0023** (no new migration).
+- **Not done (out of scope, by design):** no UI, no Home integration, no AI, no notifications, no background
+  jobs, no external/network calls, no migration, no consequential actions (no money/publish/contact), no
+  `daily_brief_log` or change detection. **Do not merge. Do not begin Slice 5.**
 
 ### Finance 1C.0A — manual credit profile + financial-health baseline — reviewed & merged — 2026-07-01
 
