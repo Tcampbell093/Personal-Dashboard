@@ -156,6 +156,11 @@ async function main() {
   ok("[40f] deferUntil supplied with a non-defer response rejected (400)", (await respondPOST(jReq({ response: "accept", deferUntil: ahead(5) }), params(key3))).status === 400 && (await respondPOST(jReq({ response: "reject", deferUntil: ahead(5) }), params(key3))).status === 400 && (await respondPOST(jReq({ response: "complete", deferUntil: ahead(5) }), params(key3))).status === 400 && (await respondPOST(jReq({ response: "pending", deferUntil: ahead(5) }), params(key3))).status === 400);
   ok("[40g] valid future defer accepted (200)", (await respondPOST(jReq({ response: "defer", deferUntil: "2030-06-15" }), params(key3))).status === 200);
   ok("[40h] isStrictISODate rejects rollover dates the lenient parser accepts", !isStrictISODate("2026-02-29") && !isStrictISODate("2026-04-31") && !isStrictISODate("2026-13-01") && !isStrictISODate("2026-01-00") && isStrictISODate("2028-02-29") && isStrictISODate("2026-07-01"));
+  // deferUntil semantics by field PRESENCE (not value) — a supplied `null` is still a supplied field.
+  ok("[40i] non-defer response with deferUntil: null rejected (400)", (await respondPOST(jReq({ response: "accept", deferUntil: null }), params(key3))).status === 400);
+  ok("[40j] defer response with deferUntil: null rejected (400)", (await respondPOST(jReq({ response: "defer", deferUntil: null }), params(key3))).status === 400);
+  ok("[40k] non-defer response with deferUntil omitted remains valid (200)", (await respondPOST(jReq({ response: "accept" }), params(key3))).status === 200);
+  ok("[40l] defer with a valid future date remains valid (200)", (await respondPOST(jReq({ response: "defer", deferUntil: "2030-06-15" }), params(key3))).status === 200);
   // service-level idempotency + timestamps (injected now/today for determinism)
   await resetLifecycleU();
   const isig = mkSig({ domain: "credit", signalType: "credit_action", class: "recommendation", key: "z4:idem", candidateAction: "do" });

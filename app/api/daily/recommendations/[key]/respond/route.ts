@@ -24,16 +24,21 @@ export async function POST(request: Request, { params }: Ctx) {
       throw new LifecycleError(400, `response must be one of: ${RESPONSE_VALUES.join(", ")}.`);
     }
     const note = optBoundedString(body.note, "note", NOTE_MAX);
-    // Defer-field semantics: deferUntil is valid ONLY with a defer response, must be a real future
-    // calendar date, and is REQUIRED for defer. The future comparison is done in the service under
-    // America/New_York (ctx.today). Strict calendar validation rejects impossible dates (e.g. 2026-02-29).
+    // Defer-field semantics (by field PRESENCE, not value): deferUntil is valid ONLY with a defer
+    // response — supplying it with any other response is rejected even when its value is `null`. For
+    // defer it is REQUIRED and must be a real calendar date; the future comparison happens in the
+    // service under America/New_York (ctx.today). Strict validation rejects impossible dates (2026-02-29).
+    const hasDeferUntil = Object.prototype.hasOwnProperty.call(body, "deferUntil");
     let deferUntil: string | undefined;
-    if (body.deferUntil !== undefined && body.deferUntil !== null) {
-      if (response !== "defer") throw new LifecycleError(400, "deferUntil is only valid with a defer response.");
-      if (!isStrictISODate(body.deferUntil)) throw new LifecycleError(400, "deferUntil must be a valid YYYY-MM-DD calendar date.");
+    if (response !== "defer" && hasDeferUntil) {
+      throw new LifecycleError(400, "deferUntil is only valid with a defer response.");
+    }
+    if (response === "defer") {
+      if (!hasDeferUntil || !isStrictISODate(body.deferUntil)) {
+        throw new LifecycleError(400, "defer requires a valid future deferUntil date.");
+      }
       deferUntil = body.deferUntil;
     }
-    if (response === "defer" && deferUntil === undefined) throw new LifecycleError(400, "defer requires a future deferUntil date.");
     const { userId, ctx } = ownerContext();
     const row = await respondToRecommendation(userId, key, response as ResponseValue, { note: note ?? null, deferUntil, today: ctx.today });
     return noStore({ lifecycle: toPublicLifecycle(row) });

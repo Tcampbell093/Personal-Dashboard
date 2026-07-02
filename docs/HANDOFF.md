@@ -491,8 +491,13 @@ JSON media type (`application/json`, optional charset) via `requireJsonContentTy
 JSON with **415**; `deferUntil` is validated with a new strict `isStrictISODate` (rejects impossible dates
 such as `2026-02-29`/`2026-04-31`/month 00-13/day 00 that lenient `Date.parse` accepts), is required for
 `defer`, and is rejected with a non-`defer` response; future comparison stays in `America/New_York`.
+(4) **`deferUntil: null` semantics by field PRESENCE** — the defer-field guard now uses
+`Object.prototype.hasOwnProperty` rather than a non-null-value check, so a supplied `{response:"accept",
+deferUntil:null}` is rejected (400), and `defer` requires the field to be present AND a valid future date
+(`deferUntil:null` on a defer is also rejected); omitting the field on a non-defer response stays valid.
 Regression coverage added ([F1]–[F7] fingerprint suppression/lifecycle gating + write-free; [40a]–[40h]
-content-type/strict-date/defer-semantics; [54a] outcome content-type); harness **82/82**.
+content-type/strict-date/defer-semantics; [40i]–[40l] deferUntil-null presence semantics; [54a] outcome
+content-type); harness **86/86**.
 
 - **Endpoints (all `export const dynamic = "force-dynamic"`, all `no-store`):**
   - **`GET /api/daily`** — owner-scoped, **READ-ONLY**. Collects signals (failure-isolated), loads lifecycle

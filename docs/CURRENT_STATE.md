@@ -38,7 +38,7 @@
 > (overdue→today→soon), empty when nothing qualifies. **`whatChanged`** is a **truthful** `not_available`
 > capability boundary (no `daily_brief_log`/change detection this slice). One provider failure yields HTTP
 > 200 + sanitized `degraded[]`. Idempotency lives in the lifecycle service. `scripts/verify-daily-slice4.ts`
-> = **82/82** (route handlers + view-model + service); Slice 3 62/62; Slice 2 73/73; Slice 1 81/81; all
+> = **86/86** (route handlers + view-model + service); Slice 3 62/62; Slice 2 73/73; Slice 1 81/81; all
 > regressions green; typecheck + build clean; **migration guard unchanged at 0023**. Branch merge base is
 > `main` @ `9f5f7ef`. See `docs/DAILY_COMMAND_CENTER_SPEC.md` §§10–13/§17.
 
