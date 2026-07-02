@@ -12,11 +12,18 @@
 
 ## Next approved task
 
+> **None in progress.** DCC **Slices 1, 2, and 3** are **reviewed and merged to `main`** (see below). The
+> next candidate is DCC **Slice 4 — read/respond APIs** (`GET /api/daily`, respond/outcome endpoints), per
+> `docs/DAILY_COMMAND_CENTER_SPEC.md` §17 — **not yet approved. Do not begin Slice 4 or any new feature**
+> until the owner approves a bounded task here.
+
 ### Daily Command Center — Slice 3 (recommendation lifecycle persistence)
 
-- **Status:** **IMPLEMENTED ON REVIEW BRANCH — awaiting owner review (uncommitted to `main`).** Branch
-  `daily-command-center-slice3-review`. Persists **only the lifecycle** of a recommended move — no
-  calculated signals, ranked arrays, source-domain facts, or generated briefs.
+- **Status:** **REVIEWED · MERGED TO `main` · LOCALLY PRODUCTION-BUILD VERIFIED · AUTO-DEPLOY EXPECTED.**
+  Merged via fast-forward as commit `9f0faecfebb48e3a641e16784c0af72cbf903838`; the
+  `daily-command-center-slice3-review` branch has been deleted locally and remotely. Persists **only the
+  lifecycle** of a recommended move — no calculated signals, ranked arrays, source-domain facts, or
+  generated briefs.
 - **Delivered:** migration **`0022_new_sprite.sql`** (table `daily_recommendations` + two enums
   `daily_recommendation_response`/`daily_recommendation_verification`; live-only partial unique index on
   `(userId, recommendationKey) WHERE deleted_at IS NULL AND superseded_at IS NULL`; self-FK

@@ -14,8 +14,8 @@
 
 **Last updated:** 2026-07-01 · **Reflects branch:** `main` @ `ca4fcdb` (Finance 1B.5B live; **Finance 1C.0A — manual credit profile + financial-health baseline — reviewed, merged to `main`, locally production-build verified, and expected to auto-deploy; live production verification unconfirmed**)
 
-> **Daily Command Center — Slice 3 (recommendation lifecycle persistence) — implemented on review branch
-> `daily-command-center-slice3-review` (NOT merged to `main`).** Migration `0022_new_sprite.sql` adds one
+> **Daily Command Center — Slice 3 (recommendation lifecycle persistence) — reviewed and merged to `main`
+> (commit `9f0faec`; review branch deleted).** Migration `0022_new_sprite.sql` adds one
 > table `daily_recommendations` (+ response/verification enums; live-only partial unique on
 > `(userId, recommendationKey)`; self-FK `supersededById` + `supersededAt`), and migration
 > `0023_supersede_function.sql` adds a plpgsql `supersede_daily_recommendation` function for

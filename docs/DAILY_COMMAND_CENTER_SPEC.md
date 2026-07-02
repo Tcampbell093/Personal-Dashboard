@@ -210,7 +210,7 @@ to fill a slot.
 > recommended move — `null` when nothing clears its threshold (weak items are never promoted to fill a
 > slot). APIs (§13) and UI/Home (§3/§12) remain **unimplemented** — later, separately-approved slices.
 >
-> **Slice 3 status (implemented on branch `daily-command-center-slice3-review`, not merged):** recommendation
+> **Slice 3 status (reviewed and merged to `main`, commit `9f0faec`):** recommendation
 > **lifecycle persistence** (§§5/7/8/9) is implemented in `lib/daily/lifecycle.ts` + `lib/daily/fingerprint.ts`
 > with migrations `0022` (`daily_recommendations`) + `0023` (`supersede_daily_recommendation` plpgsql
 > function for **genuinely-atomic** supersession — one `SELECT` statement, all-or-nothing), verified by
@@ -665,10 +665,10 @@ behavior must already be covered by that slice's own tests — testing must **no
      qualifying-candidate path), and **partial-failure isolation** (one provider throwing degrades only its
      part).
 3. **Lifecycle persistence** — the minimal `daily_recommendations` table with a dedicated migration;
-   live-only partial unique; foreign-owner rejection. **✅ IMPLEMENTED** (`lib/daily/lifecycle.ts`,
-   `lib/daily/fingerprint.ts`, migrations `0022` + `0023` (atomic-supersession function);
-   `scripts/verify-daily-slice3.ts` = 62/62) — on branch
-   `daily-command-center-slice3-review`, not merged. (`daily_brief_log` intentionally NOT created.)
+   live-only partial unique; foreign-owner rejection. **✅ IMPLEMENTED · REVIEWED · MERGED TO `main`**
+   (`lib/daily/lifecycle.ts`, `lib/daily/fingerprint.ts`, migrations `0022` + `0023` (atomic-supersession
+   function); `scripts/verify-daily-slice3.ts` = 62/62; commit `9f0faec`; review branch deleted).
+   (`daily_brief_log` intentionally NOT created.)
    - **Tests in this slice:** **migration** applies additively; **lifecycle** transitions
      (present → accept/defer/reject/not_relevant/complete → outcome/verify); **uniqueness** (live-only
      partial unique; soft-deleted/superseded rows don't block re-creation); **owner isolation**
