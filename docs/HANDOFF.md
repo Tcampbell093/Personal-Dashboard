@@ -27,15 +27,26 @@
   `respondToRecommendation` (accept/defer/reject/not_relevant/complete; defer requires a future date;
   complete sets `completedAt`+unverified), `correctResponse` + `reopenRecommendation` (explicit
   reversibility), `getSuppression`/`suppressedKeySet`/`loadSuppressedKeys` (accept while active; defer
-  through `deferUntil` inclusive; **reject 14-day** + **not_relevant 90-day** cooldowns; completed
-  unchanged; materially-changed fingerprint un-suppresses; structured diagnostics), transactional-safe
-  supersession (deactivate → insert → link; partial-unique race guard), and a **read-only-by-default**
-  `runDailySelection` coordinator (collect → suppress → rank; writes only when `present: true`). Ranking
-  and collection stay pure/write-free. Verified by `scripts/verify-daily-slice3.ts` (**56/56**) + Slice 2
-  (73/73) + Slice 1 (81/81) + all regressions green, typecheck, build, secret scan; migration guard
-  updated to 0022. **No API, UI, AI, Home integration, notifications, or automated verification jobs were
-  added.** **Do not merge until reviewed. Do not begin Slice 4.** Recommended commit:
-  `feat(daily): add recommendation lifecycle persistence (DCC slice 3)`.
+  through `deferUntil` inclusive; **reject 14-day** + **not_relevant 90-day** cooldowns (EXCLUSIVE —
+  eligible on `respondedDate + 14`/`+ 90`); completed unchanged; materially-changed fingerprint
+  un-suppresses; structured diagnostics with `eligibleOn`), **genuinely-atomic** supersession, and a
+  **read-only-by-default** `runDailySelection` coordinator (collect → suppress → rank; writes only when
+  `present: true`). Ranking and collection stay pure/write-free. Verified by
+  `scripts/verify-daily-slice3.ts` (**62/62**) + Slice 2 (73/73) + Slice 1 (81/81) + all regressions green,
+  typecheck, build, secret scan; migration guard updated to 0023. **No API, UI, AI, Home integration,
+  notifications, or automated verification jobs were added.** **Do not merge until reviewed. Do not begin
+  Slice 4.** Recommended commit: `feat(daily): add recommendation lifecycle persistence (DCC slice 3)`.
+- **Review fixes (landed before review):** (1) **genuinely-atomic supersession** — migration
+  **`0023_supersede_function.sql`** adds a plpgsql function `supersede_daily_recommendation`; `presentRecommendation`
+  invokes it via ONE `SELECT` statement, so PostgreSQL rolls back all of (deactivate old → insert new →
+  link old→new) on any failure. Inside the function statements run sequentially (a writable CTE can't
+  modify the same row twice, so it silently dropped the `supersededById` link — caught by tests); the
+  live-only partial unique index remains the concurrency race guard (23505 / NULL → return the active
+  winner). (2) **exclusive cooldown boundaries** — reject/not_relevant now use `eligibleOn =
+  respondedDate + 14/+ 90` and suppress only when `today < eligibleOn` (fixed the off-by-one extra day);
+  `suppressedUntil` is the true last suppressed date; defer stays inclusive (`deferUntil`, eligible +1).
+  Regression coverage added ([S1]–[S6] atomicity/rollback/concurrency/cross-owner + exact boundary tests);
+  harness **62/62**.
 - **Next candidate:** DCC **Slice 4** (read/respond APIs), per `docs/DAILY_COMMAND_CENTER_SPEC.md` §17.
   **Not yet approved to build.**
 

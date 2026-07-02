@@ -13,7 +13,7 @@
  * (`daily_recommendations_active_uq`) is the race guard (23505 → return winner).
  * ===========================================================================*/
 
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { dailyRecommendations } from "@/db/schema";
 import type { DailySignal, SignalContext } from "./contract";
@@ -98,18 +98,43 @@ export async function presentRecommendation(userId: number, sig: DailySignal, sn
   }
 
   if (existing) {
-    // Active row with a DIFFERENT fingerprint and a real response → supersede transactionally-safe:
-    // 1) deactivate old (supersededAt), 2) insert new active pending row, 3) link supersededById.
-    await db.update(dailyRecommendations).set({ supersededAt: now, updatedAt: now })
-      .where(and(eq(dailyRecommendations.userId, userId), eq(dailyRecommendations.id, existing.id)));
-    const created = await insertActive(userId, sig, snapshot, fp, ctx, now);
-    await db.update(dailyRecommendations).set({ supersededById: created.id, updatedAt: now })
-      .where(and(eq(dailyRecommendations.userId, userId), eq(dailyRecommendations.id, existing.id)));
-    return created;
+    // Active row with a DIFFERENT fingerprint and a real response → supersede ATOMICALLY.
+    return supersedeAtomic(userId, existing.id, sig, snapshot, fp, ctx, now);
   }
 
   // No active row → create pending.
   return insertActive(userId, sig, snapshot, fp, ctx, now);
+}
+
+/** GENUINELY ATOMIC supersession: ONE SQL statement — a `SELECT` of the
+ * `supersede_daily_recommendation` plpgsql function (migration `0023`). The whole
+ * call is a single statement, so PostgreSQL rolls back ALL of (deactivate old +
+ * insert new + link old→new) on any failure (proven by verify-daily-slice3 [S2]).
+ * Inside the function statements run SEQUENTIALLY (unlike writable CTEs, which are
+ * snapshot-isolated and cannot modify the same row twice), so the old row is
+ * deactivated first, the insert then sees it inactive (no partial-unique conflict),
+ * and the link is applied. The live-only partial unique index remains the
+ * concurrency race guard (23505 or a NULL return → return the current active winner).
+ * neon-http needs no interactive transaction. All owner-scoped. */
+async function supersedeAtomic(userId: number, oldId: number, sig: DailySignal, snapshot: RecommendationSnapshot, fp: string, ctx: SignalContext, now: Date): Promise<LifecycleRow> {
+  const ts = now.toISOString();
+  try {
+    const res = await db.execute(sql`
+      SELECT supersede_daily_recommendation(
+        ${userId}, ${oldId}, ${sig.key}, ${sig.domain}, ${sig.signalType},
+        ${JSON.stringify(sig.sourceRefs)}::jsonb, ${fp}, ${ctx.today}::date, ${JSON.stringify(snapshot)}::jsonb, ${ts}::timestamptz
+      ) AS new_id`);
+    const rows = (res as unknown as { rows?: { new_id: number | null }[] }).rows ?? (res as unknown as { new_id: number | null }[]);
+    const newId = Array.isArray(rows) && rows[0] ? rows[0].new_id : null;
+    if (newId != null) { const [row] = await db.select().from(dailyRecommendations).where(eq(dailyRecommendations.id, newId)); return row; }
+    // NULL → old row was already inactive (a concurrent supersession won); return the active winner.
+    const winner = await activeRow(userId, sig.key);
+    if (winner) return winner;
+    throw new LifecycleError(409, "Supersession could not resolve an active row.");
+  } catch (e) {
+    if (isUniqueViolation(e)) { const winner = await activeRow(userId, sig.key); if (winner) return winner; } // concurrency race guard
+    throw e;
+  }
 }
 
 async function insertActive(userId: number, sig: DailySignal, snapshot: RecommendationSnapshot, fp: string, ctx: SignalContext, now: Date): Promise<LifecycleRow> {
@@ -176,7 +201,12 @@ export async function reopenRecommendation(userId: number, id: number, opts: { n
 }
 
 /* ------------------------------------------------ suppression (spec §6) --- */
-export interface SuppressionDiag { recommendationKey: string; rowId: number; response: ResponseValue; reason: string; suppressedUntil: string | null; fingerprint: string; }
+export interface SuppressionDiag {
+  recommendationKey: string; rowId: number; response: ResponseValue; reason: string;
+  suppressedUntil: string | null; // the LAST date on which the item is suppressed (inclusive)
+  eligibleOn: string | null;      // the FIRST date on which the item is eligible again (exclusive boundary)
+  fingerprint: string;
+}
 
 /** Currently-suppressed recommendation keys + structured reasons for an owner/date.
  * `currentFingerprints` (key → fingerprint of the live signal) lets a materially
@@ -187,32 +217,35 @@ export async function getSuppression(userId: number, today: string, currentFinge
     .where(and(eq(dailyRecommendations.userId, userId), isNull(dailyRecommendations.deletedAt), isNull(dailyRecommendations.supersededAt)));
   const out: SuppressionDiag[] = [];
   const unchanged = (r: LifecycleRow) => { const cur = currentFingerprints?.get(r.recommendationKey); return cur == null ? true : cur === r.signalFingerprint; };
-  const diag = (r: LifecycleRow, reason: string, until: string | null) => out.push({ recommendationKey: r.recommendationKey, rowId: r.id, response: r.response as ResponseValue, reason, suppressedUntil: until, fingerprint: r.signalFingerprint });
+  const diag = (r: LifecycleRow, reason: string, until: string | null, eligibleOn: string | null) => out.push({ recommendationKey: r.recommendationKey, rowId: r.id, response: r.response as ResponseValue, reason, suppressedUntil: until, eligibleOn, fingerprint: r.signalFingerprint });
 
   for (const r of rows) {
     switch (r.response as ResponseValue) {
       case "pending": break; // eligible
-      case "accept": if (unchanged(r)) diag(r, "accepted_active", null); break;
+      case "accept": if (unchanged(r)) diag(r, "accepted_active", null, null); break;
       case "defer": {
         // deferUntil is a date column (string). Suppress through deferUntil INCLUSIVE (time-based,
-        // fingerprint-independent per spec §6); eligible again the day after the boundary.
+        // fingerprint-independent per spec §6); eligible the FOLLOWING day (deferUntil + 1).
         const boundary = (r.deferUntil as unknown as string) ?? null;
-        if (boundary && dayDiff(boundary, today) >= 0) diag(r, "deferred_until_boundary", boundary);
+        if (boundary && dayDiff(boundary, today) >= 0) diag(r, "deferred_until_boundary", boundary, isoAddDays(boundary, 1));
         break;
       }
       case "reject": {
+        // EXCLUSIVE cooldown: eligibleOn = respondedDate + 14; suppress only when today < eligibleOn.
+        // (respondedDate .. respondedDate+13 suppressed → 14 calendar days; eligible on +14.)
         const from = dateOf(r.respondedAt);
-        const boundary = from ? isoAddDays(from, REJECT_COOLDOWN_DAYS) : null;
-        if (boundary && dayDiff(boundary, today) >= 0 && unchanged(r)) diag(r, "rejected_cooldown_14d", boundary);
+        const eligibleOn = from ? isoAddDays(from, REJECT_COOLDOWN_DAYS) : null;
+        if (eligibleOn && dayDiff(eligibleOn, today) > 0 && unchanged(r)) diag(r, "rejected_cooldown_14d", isoAddDays(eligibleOn, -1), eligibleOn);
         break;
       }
       case "not_relevant": {
+        // EXCLUSIVE cooldown: eligibleOn = respondedDate + 90; suppress only when today < eligibleOn.
         const from = dateOf(r.respondedAt);
-        const boundary = from ? isoAddDays(from, NOT_RELEVANT_COOLDOWN_DAYS) : null;
-        if (boundary && dayDiff(boundary, today) >= 0 && unchanged(r)) diag(r, "not_relevant_cooldown_90d", boundary);
+        const eligibleOn = from ? isoAddDays(from, NOT_RELEVANT_COOLDOWN_DAYS) : null;
+        if (eligibleOn && dayDiff(eligibleOn, today) > 0 && unchanged(r)) diag(r, "not_relevant_cooldown_90d", isoAddDays(eligibleOn, -1), eligibleOn);
         break;
       }
-      case "complete": if (unchanged(r)) diag(r, "completed_unchanged", null); break;
+      case "complete": if (unchanged(r)) diag(r, "completed_unchanged", null, null); break;
     }
   }
   return out;

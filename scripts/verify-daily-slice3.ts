@@ -156,13 +156,18 @@ async function main() {
   const keys = (d: L.SuppressionDiag[]) => new Set(d.map((x) => x.recommendationKey));
   ok("[30] pending remains eligible (not suppressed)", !keys(supNow).has("z3:sup:pending"));
   ok("[31] accepted is suppressed", keys(supNow).has("z3:sup:accept"));
-  ok("[32] deferred suppressed through boundary (inclusive), eligible the day after", keys(await L.getSuppression(U, ahead(5))).has("z3:sup:defer") && !keys(await L.getSuppression(U, ahead(6))).has("z3:sup:defer"));
-  ok("[33] rejected suppressed for 14 days from respondedAt", keys(await L.getSuppression(U, ahead(13))).has("z3:sup:reject") && !keys(await L.getSuppression(U, ahead(15))).has("z3:sup:reject"));
-  ok("[34] not_relevant suppressed for 90 days", keys(await L.getSuppression(U, ahead(89))).has("z3:sup:nr") && !keys(await L.getSuppression(U, ahead(91))).has("z3:sup:nr"));
+  // Defer: INCLUSIVE through deferUntil (ahead 5), eligible the FOLLOWING day (ahead 6).
+  ok("[32] defer suppressed ON deferUntil (inclusive); eligible the following day", keys(await L.getSuppression(U, ahead(5))).has("z3:sup:defer") && !keys(await L.getSuppression(U, ahead(6))).has("z3:sup:defer"));
+  // Reject: EXCLUSIVE cooldown — respondedDay (NOW=day0) and day13 suppressed; day14 (respondedDate+14) ELIGIBLE.
+  ok("[33] reject: response day + day 13 suppressed; day 14 (respondedDate+14) eligible", keys(supNow).has("z3:sup:reject") && keys(await L.getSuppression(U, ahead(13))).has("z3:sup:reject") && !keys(await L.getSuppression(U, ahead(14))).has("z3:sup:reject"));
+  // Not-relevant: EXCLUSIVE — day89 suppressed; day90 (respondedDate+90) ELIGIBLE.
+  ok("[34] not_relevant: day 89 suppressed; day 90 (respondedDate+90) eligible", keys(await L.getSuppression(U, ahead(89))).has("z3:sup:nr") && !keys(await L.getSuppression(U, ahead(90))).has("z3:sup:nr"));
   ok("[35] completed (unchanged fingerprint) suppressed", keys(supNow).has("z3:sup:complete"));
   const rejDiag = supNow.find((d) => d.recommendationKey === "z3:sup:reject");
-  ok("[36] structured suppression diagnostics returned (key/rowId/response/reason/until/fingerprint)", !!rejDiag && typeof rejDiag.rowId === "number" && rejDiag.response === "reject" && /cooldown/.test(rejDiag.reason) && rejDiag.suppressedUntil === ahead(14) && typeof rejDiag.fingerprint === "string");
-  ok("[37] suppressedKeySet + loadSuppressedKeys helper produce the correct Set", L.suppressedKeySet(supNow).has("z3:sup:accept") && (await L.loadSuppressedKeys(U, NOW)).has("z3:sup:reject"));
+  const nrDiag = supNow.find((d) => d.recommendationKey === "z3:sup:nr");
+  ok("[36] diagnostics truthful — eligibleOn = respondedDate+14/+90; suppressedUntil = last suppressed date", !!rejDiag && rejDiag.eligibleOn === ahead(14) && rejDiag.suppressedUntil === ahead(13) && !!nrDiag && nrDiag.eligibleOn === ahead(90) && nrDiag.suppressedUntil === ahead(89) && typeof rejDiag.fingerprint === "string" && typeof rejDiag.rowId === "number");
+  const deferDiag = (await L.getSuppression(U, ahead(3))).find((d) => d.recommendationKey === "z3:sup:defer");
+  ok("[37] defer diagnostic distinct from cooldowns — suppressedUntil = deferUntil (inclusive), eligibleOn = +1", !!deferDiag && deferDiag.suppressedUntil === ahead(5) && deferDiag.eligibleOn === ahead(6) && L.suppressedKeySet(supNow).has("z3:sup:accept") && (await L.loadSuppressedKeys(U, NOW)).has("z3:sup:reject"));
 
   /* ===================== material change / supersession [38-44] ===================== */
   console.log("\n[material change / supersession]");
@@ -184,6 +189,51 @@ async function main() {
   const compChanged = { ...rSig("z3:sup:complete"), estimatedCost: 42 };
   await L.presentRecommendation(U, compChanged, snap(compChanged), CTX, { now: NOWD });
   ok("[44] a completed row can be superseded by a materially-changed fingerprint", (await db.select().from(dailyRecommendations).where(and(eq(dailyRecommendations.userId, U), eq(dailyRecommendations.recommendationKey, "z3:sup:complete"), isNull(dailyRecommendations.supersededAt), isNull(dailyRecommendations.deletedAt)))).length === 1 && (await db.select().from(dailyRecommendations).where(and(eq(dailyRecommendations.userId, U), eq(dailyRecommendations.recommendationKey, "z3:sup:complete")))).length === 2);
+  await resetLifecycle();
+
+  /* =========== REVIEW FIX 1 — genuinely ATOMIC supersession (single statement) [S1-S6] =========== */
+  console.log("\n[atomic supersession]");
+  // Successful supersession via the service → exactly one active row + preserved old + link.
+  const aSig = rSig("z3:atom"); await L.presentRecommendation(U, aSig, snap(aSig), CTX, { now: NOWD });
+  await L.respondToRecommendation(U, "z3:atom", "reject", { now: NOWD, today: NOW });
+  const aOld = (await db.select().from(dailyRecommendations).where(and(eq(dailyRecommendations.userId, U), eq(dailyRecommendations.recommendationKey, "z3:atom"))))[0];
+  const aNew = await L.presentRecommendation(U, { ...aSig, estimatedCost: 500 }, snap({ ...aSig, estimatedCost: 500 }), CTX, { now: NOWD });
+  const aOldAfter = (await db.select().from(dailyRecommendations).where(eq(dailyRecommendations.id, aOld.id)))[0];
+  ok("[S1] atomic supersession leaves exactly one active row + preserves old response/snapshot + links",
+    (await db.select().from(dailyRecommendations).where(and(eq(dailyRecommendations.userId, U), eq(dailyRecommendations.recommendationKey, "z3:atom"), isNull(dailyRecommendations.supersededAt), isNull(dailyRecommendations.deletedAt)))).length === 1
+    && aNew.id !== aOld.id && aOldAfter.response === "reject" && aOldAfter.supersededById === aNew.id && aOldAfter.supersededAt != null);
+  // DB-LEVEL PROOF: a forced replacement-insert failure inside the SAME statement rolls the whole thing
+  // back (old row's superseded_at reverts; no orphan new row) — atomicity is in the statement, not app cleanup.
+  await resetLifecycle();
+  const [rbOld] = await db.insert(dailyRecommendations).values({ userId: U, recommendationKey: "z3:rb", domain: "d", signalType: "t", sourceRefs: [], signalFingerprint: "fp1", presentedOn: NOW, snapshot: {}, response: "reject", respondedAt: NOWD }).returning();
+  // Call the ATOMIC function with a deliberately-failing INSERT (recommendation_key > varchar(240)).
+  // The function deactivates the old row first, then the INSERT fails → the single SELECT statement
+  // rolls the WHOLE thing back (superseded_at reverts; no orphan row) — atomicity is in the DB statement.
+  const rbThrew = await threw(() => db.execute(sql`SELECT supersede_daily_recommendation(${U}, ${rbOld.id}, ${"x".repeat(300)}, 'd', 't', '[]'::jsonb, 'fp2', ${NOW}::date, '{}'::jsonb, now())`));
+  const rbAfter = (await db.select().from(dailyRecommendations).where(eq(dailyRecommendations.id, rbOld.id)))[0];
+  ok("[S2] forced replacement-insert failure ROLLS BACK old-row deactivation (statement atomicity, not app cleanup)",
+    rbThrew === true && rbAfter.supersededAt === null && rbAfter.response === "reject"
+    && (await db.select().from(dailyRecommendations).where(eq(dailyRecommendations.userId, U))).length === 1);
+  ok("[S3] after a failed supersession the original row is still active + usable (can receive a response)", (await L.respondToRecommendation(U, "z3:rb", "accept", { now: NOWD, today: NOW })).response === "accept");
+  // The deactivate + insert + link all run inside ONE plpgsql function call (one SQL statement), so a
+  // link failure rolls the whole op back by the identical mechanism proven in [S2]. The old non-atomic
+  // 3-call flow is gone; the service invokes the function.
+  ok("[S4] supersession is one atomic statement (function call); no separate 3-call flow remains", !/await db\.update\(dailyRecommendations\)\.set\(\{ supersededAt/.test(readFileSync("lib/daily/lifecycle.ts", "utf8")) && /supersede_daily_recommendation/.test(readFileSync("lib/daily/lifecycle.ts", "utf8")));
+  // Concurrency: two concurrent supersessions of the same active row → one active row remains, no duplicate.
+  await resetLifecycle();
+  const cSig = rSig("z3:conc"); await L.presentRecommendation(U, cSig, snap(cSig), CTX, { now: NOWD });
+  await L.respondToRecommendation(U, "z3:conc", "reject", { now: NOWD, today: NOW });
+  const [r1, r2] = await Promise.allSettled([
+    L.presentRecommendation(U, { ...cSig, estimatedCost: 11 }, snap({ ...cSig, estimatedCost: 11 }), CTX, { now: NOWD }),
+    L.presentRecommendation(U, { ...cSig, estimatedCost: 22 }, snap({ ...cSig, estimatedCost: 22 }), CTX, { now: NOWD }),
+  ]);
+  ok("[S5] concurrent supersessions resolve to exactly one active row (race guard, no duplicates)",
+    (await db.select().from(dailyRecommendations).where(and(eq(dailyRecommendations.userId, U), eq(dailyRecommendations.recommendationKey, "z3:conc"), isNull(dailyRecommendations.supersededAt), isNull(dailyRecommendations.deletedAt)))).length === 1 && r1.status === "fulfilled" && r2.status === "fulfilled");
+  // Cross-owner: another owner presenting the same key never supersedes THIS owner's active row.
+  const uActive = (await db.select().from(dailyRecommendations).where(and(eq(dailyRecommendations.userId, U), eq(dailyRecommendations.recommendationKey, "z3:conc"), isNull(dailyRecommendations.supersededAt))))[0];
+  await L.presentRecommendation(OTHER, { ...cSig, estimatedCost: 99 }, snap({ ...cSig, estimatedCost: 99 }), CTX, { now: NOWD });
+  const uAfter = (await db.select().from(dailyRecommendations).where(eq(dailyRecommendations.id, uActive.id)))[0];
+  ok("[S6] cross-owner: another owner cannot supersede this owner's row (owner-scoped)", uAfter.supersededAt === null && uAfter.userId === U && (await db.select().from(dailyRecommendations).where(and(eq(dailyRecommendations.userId, OTHER), eq(dailyRecommendations.recommendationKey, "z3:conc")))).length === 1);
   await resetLifecycle();
 
   /* ===================== Slice 2 integration [45-49] ===================== */

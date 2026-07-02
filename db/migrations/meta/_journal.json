@@ -162,6 +162,13 @@
       "when": 1782946814788,
       "tag": "0022_new_sprite",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1782946815788,
+      "tag": "0023_supersede_function",
+      "breakpoints": true
     }
   ]
 }

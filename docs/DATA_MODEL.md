@@ -23,8 +23,11 @@
 > active lifecycle row per owner/key; soft-deleted or superseded rows never block a new active row.
 > It persists **only the lifecycle** of a recommended move — **no** calculated `DailySignal[]`, ranked
 > arrays, source-domain facts, balances, transactions, credit records, or generated briefs; `sourceRefs`
-> and `snapshot` never hold raw payloads, tokens, or secrets. See `docs/DAILY_COMMAND_CENTER_SPEC.md`
-> §§5/7/8.
+> and `snapshot` never hold raw payloads, tokens, or secrets. Follow-up migration
+> `0023_supersede_function.sql` adds a plpgsql function `supersede_daily_recommendation` (additive; no
+> table/data change) for **genuinely-atomic** supersession — one `SELECT` statement runs deactivate → insert
+> → link sequentially so PostgreSQL rolls the whole thing back on any failure (a writable CTE cannot modify
+> the same row twice, which silently dropped the link). See `docs/DAILY_COMMAND_CENTER_SPEC.md` §§5/7/8.
 
 ## Conventions (applied across all domain tables)
 

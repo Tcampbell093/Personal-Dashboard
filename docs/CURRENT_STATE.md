@@ -17,14 +17,16 @@
 > **Daily Command Center — Slice 3 (recommendation lifecycle persistence) — implemented on review branch
 > `daily-command-center-slice3-review` (NOT merged to `main`).** Migration `0022_new_sprite.sql` adds one
 > table `daily_recommendations` (+ response/verification enums; live-only partial unique on
-> `(userId, recommendationKey)`; self-FK `supersededById` + `supersededAt`). `lib/daily/fingerprint.ts`
-> (deterministic sha256 of the material condition) + `lib/daily/lifecycle.ts` (present/reuse/supersede,
-> owner responses + correct/reopen, suppression with defer-inclusive / **reject-14d** / **not_relevant-90d**
-> cooldowns / accept / completed rules, atomic-safe supersession, and a read-only `runDailySelection`
-> coordinator). Persists **only the recommended-move lifecycle** — no calculated signals, ranked arrays,
+> `(userId, recommendationKey)`; self-FK `supersededById` + `supersededAt`), and migration
+> `0023_supersede_function.sql` adds a plpgsql `supersede_daily_recommendation` function for
+> **genuinely-atomic** supersession (one `SELECT` statement — deactivate/insert/link all-or-nothing).
+> `lib/daily/fingerprint.ts` (deterministic sha256 of the material condition) + `lib/daily/lifecycle.ts`
+> (present/reuse/supersede, owner responses + correct/reopen, suppression with defer-inclusive /
+> **reject-14d** / **not_relevant-90d** EXCLUSIVE cooldowns (`eligibleOn = respondedDate + 14/+ 90`) /
+> accept / completed rules, atomic supersession, and a read-only `runDailySelection` coordinator). Persists **only the recommended-move lifecycle** — no calculated signals, ranked arrays,
 > source facts, or briefs; `sourceRefs`/`snapshot` are references/bounded-presentation only. Ranking +
 > collection remain pure/write-free. **No API/UI/AI/Home/notifications.** `scripts/verify-daily-slice3.ts`
-> = **56/56**; Slice 2 73/73; Slice 1 81/81; all regressions green. See `docs/DAILY_COMMAND_CENTER_SPEC.md`
+> = **62/62**; Slice 2 73/73; Slice 1 81/81; all regressions green. See `docs/DAILY_COMMAND_CENTER_SPEC.md`
 > §§5/7/8/9.
 
 > **Daily Command Center — Slice 2 (orchestration + deterministic ranking) — reviewed and merged to `main`

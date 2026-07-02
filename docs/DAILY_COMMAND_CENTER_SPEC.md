@@ -212,7 +212,10 @@ to fill a slot.
 >
 > **Slice 3 status (implemented on branch `daily-command-center-slice3-review`, not merged):** recommendation
 > **lifecycle persistence** (§§5/7/8/9) is implemented in `lib/daily/lifecycle.ts` + `lib/daily/fingerprint.ts`
-> with migration `0022` (`daily_recommendations`), verified by `scripts/verify-daily-slice3.ts` (56/56). It
+> with migrations `0022` (`daily_recommendations`) + `0023` (`supersede_daily_recommendation` plpgsql
+> function for **genuinely-atomic** supersession — one `SELECT` statement, all-or-nothing), verified by
+> `scripts/verify-daily-slice3.ts` (62/62). Cooldowns are **exclusive** (reject/not_relevant eligible on
+> `respondedDate + 14`/`+ 90`; defer inclusive through `deferUntil`, eligible +1). It
 > persists only the lifecycle of a recommended move: `presentRecommendation` (present/reuse/supersede),
 > `respondToRecommendation` + `correctResponse` + `reopenRecommendation` (owner responses), `getSuppression`
 > / `loadSuppressedKeys` (suppression + recurrence: accept while active; defer through `deferUntil` inclusive;
@@ -663,7 +666,8 @@ behavior must already be covered by that slice's own tests — testing must **no
      part).
 3. **Lifecycle persistence** — the minimal `daily_recommendations` table with a dedicated migration;
    live-only partial unique; foreign-owner rejection. **✅ IMPLEMENTED** (`lib/daily/lifecycle.ts`,
-   `lib/daily/fingerprint.ts`, migration `0022`; `scripts/verify-daily-slice3.ts` = 56/56) — on branch
+   `lib/daily/fingerprint.ts`, migrations `0022` + `0023` (atomic-supersession function);
+   `scripts/verify-daily-slice3.ts` = 62/62) — on branch
    `daily-command-center-slice3-review`, not merged. (`daily_brief_log` intentionally NOT created.)
    - **Tests in this slice:** **migration** applies additively; **lifecycle** transitions
      (present → accept/defer/reject/not_relevant/complete → outcome/verify); **uniqueness** (live-only

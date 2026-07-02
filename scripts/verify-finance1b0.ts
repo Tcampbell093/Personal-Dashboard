@@ -326,7 +326,8 @@ async function main() {
   // NOTE: 0020 (1C.0A credit_* tables) is additive.
   // NOTE: 0021 (1C.0A review fix — live-only partial unique indexes on credit scores + inquiries).
   // NOTE: 0022 (DCC Slice 3 — daily_recommendations lifecycle table) is additive.
-  ok("[23] migrations are sequential + additive/constraint-only (latest is DCC Slice 3's 0022)", maxMig === 22);
+  // NOTE: 0023 (DCC Slice 3 review fix — supersede_daily_recommendation plpgsql function; additive).
+  ok("[23] migrations are sequential + additive/constraint-only (latest is DCC Slice 3's 0023)", maxMig === 23);
   // [24] no external provider API call: no plaid.com API URL anywhere in code.
   ok("[24] no external provider API call occurs (no plaid.com API URL in code)",
     !/https?:\/\/[^"'\s]*plaid\.com/.test(providerBlob + read("app/finances/page.tsx")));
