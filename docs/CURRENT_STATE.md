@@ -12,12 +12,13 @@
 > only; technical identifiers (routes, DB, env vars, the `Personal-Dashboard` repo) keep their
 > original names. See `docs/DECISIONS.md` ADR-026.
 
-**Last updated:** 2026-07-01 · **Reflects branch:** `main` @ `ca4fcdb` (Finance 1B.5B live; **Finance 1C.0A — manual credit profile + financial-health baseline — reviewed, merged to `main`, locally production-build verified, and expected to auto-deploy; live production verification unconfirmed**)
+**Last updated:** 2026-07-02 · **Reflects branch:** `main` @ `5d2ed9d` (**DCC Slice 4 — secure read/present/respond/outcome APIs — reviewed, merged to `main` (fast-forward), locally production-build verified, and expected to auto-deploy; live production verification unconfirmed**)
 
-> **Daily Command Center — Slice 4 (secure read/present/respond/outcome APIs) — implemented on the
-> `daily-command-center-slice4-review` branch, awaiting review; NOT merged, NOT deployed.** Exposes the
-> merged DCC engine (Slices 1–3) through owner-scoped server APIs and a bounded public view-model — **no
-> migration, no UI, no Home/AI/notifications/background jobs, no external calls, no consequential actions.**
+> **Daily Command Center — Slice 4 (secure read/present/respond/outcome APIs) — reviewed and merged to `main`
+> (fast-forward; final head `5d2ed9d`, code commits `465db9b`/`511afc7`/`5d2ed9d`; review branch deleted
+> locally + remotely). Live production verification unconfirmed.** Exposes the merged DCC engine (Slices 1–3)
+> through owner-scoped server APIs and a bounded public view-model — **no migration, no UI, no
+> Home/AI/notifications/background jobs, no external calls, no consequential actions.**
 > Routes (all `force-dynamic`, all `no-store`): **`GET /api/daily`** (owner-scoped, **read-only** — no
 > lifecycle writes; returns the bounded `DailyBriefView`), **`POST …/[key]/present`** (records presentation
 > only for the **currently-selected** recommended-move key; arbitrary/stale/suppressed keys → 409;

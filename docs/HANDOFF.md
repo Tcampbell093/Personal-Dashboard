@@ -12,10 +12,10 @@
 
 ## Next approved task
 
-> **None in progress.** DCC **Slice 4 — secure read/present/respond/outcome APIs** is **implemented on the
-> `daily-command-center-slice4-review` branch, awaiting review** (see the latest handoff report below). It is
-> **not merged.** DCC **Slices 1, 2, and 3** are **reviewed and merged to `main`**. **Do not begin Slice 5 or
-> any new feature** until the owner approves a bounded task here.
+> **None in progress.** DCC **Slices 1–4** are **reviewed and merged to `main`** (Slice 4 fast-forwarded to
+> `main` @ `5d2ed9d`; review branch deleted — see the latest handoff report below). The next candidate is
+> DCC **Slice 5 — Daily Command Center UI** (per `docs/DAILY_COMMAND_CENTER_SPEC.md` §17 item 5), **not yet
+> approved**. **Do not begin Slice 5 or any new feature** until the owner approves a bounded task here.
 
 ### Daily Command Center — Slice 3 (recommendation lifecycle persistence)
 
@@ -469,14 +469,20 @@ specific build. Builds are ordered so the manual loop works end-to-end before an
 
 ## Latest handoff
 
-### Daily Command Center — Slice 4 (secure read/present/respond/outcome APIs) — implemented, awaiting review — 2026-07-02
+### Daily Command Center — Slice 4 (secure read/present/respond/outcome APIs) — reviewed & merged — 2026-07-02
 
-**Task implemented on the `daily-command-center-slice4-review` branch (merge base `main` @
-`9f5f7ef616b9ca9b74eed9d88e97c7a4a9d345b2` — the "docs(daily): mark DCC Slice 3 reviewed and merged to
-main" commit; note `9f0faec` was the Slice 3 *fix* commit, an ancestor, not this branch's base). NOT
-merged. NOT deployed.** Slice 4 exposes the existing, already-merged DCC engine (Slices 1–3) through
-**secure, owner-scoped server APIs** and a **bounded public view-model**. No UI, Home integration, AI,
-notifications, background jobs, external calls, migrations, or consequential actions were added.
+- **Status:** **REVIEWED · MERGED TO `main` · LOCALLY PRODUCTION-BUILD VERIFIED · AUTO-DEPLOY EXPECTED.**
+  Fast-forwarded (no merge commit) from merge base `main` @ `9f5f7ef616b9ca9b74eed9d88e97c7a4a9d345b2` to
+  final review head **`5d2ed9d596b95b3825e11a7835ce34dfd9318c82`**, which is now `main`. Slice 4 code landed
+  across three commits: `465db9b` (feat — the initial implementation), `511afc7` (review round 1 —
+  fingerprint-aware GET + JSON-only strict-date mutations), and `5d2ed9d` (review round 2 — `deferUntil`
+  rejected by field presence). The `daily-command-center-slice4-review` branch has been **deleted locally and
+  remotely**. **Live production commit/UI verification remains unconfirmed** (Netlify site-level password +
+  unavailable deploy-status API) — expected to auto-deploy on push to `main`.
+
+**Slice 4 exposes the existing, already-merged DCC engine (Slices 1–3) through secure, owner-scoped server
+APIs and a bounded public view-model. No UI, Home integration, AI, notifications, background jobs, external
+calls, migrations, or consequential actions were added.**
 
 **Review fixes (landed on this branch before re-review):** (1) **one fingerprint-aware suppression result
 in GET** — `GET /api/daily` now derives Today's suppression from `suppressedKeySet(run.suppression)` (the
