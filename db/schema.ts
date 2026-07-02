@@ -1309,6 +1309,57 @@ export const creditGoals = pgTable(
   (t) => [index("credit_goals_user_idx").on(t.userId)],
 );
 
+/* -------------------------------- Daily Command Center — Slice 3 --------- */
+/* Recommendation LIFECYCLE persistence only (DCC spec §§5/7/8/9). Stores the
+ * lifecycle of a single recommended move — NOT calculated signals, ranked
+ * candidate arrays, source-domain facts, or generated briefs. `sourceRefs` and
+ * `snapshot` are bounded references/presentation data only (no payloads/secrets).
+ * "Active" = deleted_at IS NULL AND superseded_at IS NULL. Supersession uses
+ * `superseded_at` as the deactivation marker (set first — no new-id circularity
+ * on neon-http, which has no interactive transactions) + `superseded_by_id` as
+ * the audit link; the live-only partial unique index is the race guard. */
+export const dailyRecommendationResponse = pgEnum("daily_recommendation_response", [
+  "pending", "accept", "defer", "reject", "not_relevant", "complete",
+]);
+export const dailyRecommendationVerification = pgEnum("daily_recommendation_verification", [
+  "unverified", "verified", "could_not_verify",
+]);
+
+export const dailyRecommendations = pgTable(
+  "daily_recommendations",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    recommendationKey: varchar("recommendation_key", { length: 240 }).notNull(),
+    domain: varchar("domain", { length: 24 }).notNull(),
+    signalType: varchar("signal_type", { length: 48 }).notNull(),
+    sourceRefs: jsonb("source_refs").notNull(),                 // references only (no payloads/secrets)
+    signalFingerprint: varchar("signal_fingerprint", { length: 64 }).notNull(), // sha256 hex of the material condition
+    presentedOn: date("presented_on").notNull(),
+    lastPresentedAt: timestamp("last_presented_at", { withTimezone: true }).defaultNow().notNull(),
+    presentedCount: integer("presented_count").notNull().default(1),
+    snapshot: jsonb("snapshot").notNull(),                      // bounded presentation snapshot
+    response: dailyRecommendationResponse("response").notNull().default("pending"),
+    responseNote: text("response_note"),
+    deferUntil: date("defer_until"),
+    respondedAt: timestamp("responded_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    outcomeNote: text("outcome_note"),
+    verificationState: dailyRecommendationVerification("verification_state").notNull().default("unverified"),
+    supersededById: integer("superseded_by_id").references((): AnyPgColumn => dailyRecommendations.id),
+    supersededAt: timestamp("superseded_at", { withTimezone: true }), // deactivation marker for atomic-safe supersession
+    ...timestamps,
+  },
+  (t) => [
+    index("daily_recommendations_user_idx").on(t.userId),
+    // At most one ACTIVE lifecycle row per (owner, recommendationKey). Soft-deleted or
+    // superseded rows are excluded, so they never block a new active row.
+    uniqueIndex("daily_recommendations_active_uq")
+      .on(t.userId, t.recommendationKey)
+      .where(sql`${t.deletedAt} is null and ${t.supersededAt} is null`),
+  ],
+);
+
 /* -------------------------------------------------------------- signals --- */
 
 export const signalSources = pgTable("signal_sources", {

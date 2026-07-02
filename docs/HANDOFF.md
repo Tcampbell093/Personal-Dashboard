@@ -12,10 +12,36 @@
 
 ## Next approved task
 
-> **None in progress.** DCC **Slice 1** and **Slice 2** are **reviewed and merged to `main`** (see below).
-> The next candidate is DCC **Slice 3 — lifecycle persistence** (`daily_recommendations` + migration), per
-> `docs/DAILY_COMMAND_CENTER_SPEC.md` §17 — **not yet approved. Do not begin Slice 3 or any new feature**
-> until the owner approves a bounded task here.
+### Daily Command Center — Slice 3 (recommendation lifecycle persistence)
+
+- **Status:** **IMPLEMENTED ON REVIEW BRANCH — awaiting owner review (uncommitted to `main`).** Branch
+  `daily-command-center-slice3-review`. Persists **only the lifecycle** of a recommended move — no
+  calculated signals, ranked arrays, source-domain facts, or generated briefs.
+- **Delivered:** migration **`0022_new_sprite.sql`** (table `daily_recommendations` + two enums
+  `daily_recommendation_response`/`daily_recommendation_verification`; live-only partial unique index on
+  `(userId, recommendationKey) WHERE deleted_at IS NULL AND superseded_at IS NULL`; self-FK
+  `supersededById` + `supersededAt` deactivation marker). `lib/daily/fingerprint.ts` — deterministic
+  sha256 `signalFingerprint` over material fields only (order-independent reason-codes/source-refs;
+  excludes timestamps/prose/randomness). `lib/daily/lifecycle.ts` — `presentRecommendation`
+  (present/reuse/supersede; idempotent; snapshot bounded to allowed fields; references only),
+  `respondToRecommendation` (accept/defer/reject/not_relevant/complete; defer requires a future date;
+  complete sets `completedAt`+unverified), `correctResponse` + `reopenRecommendation` (explicit
+  reversibility), `getSuppression`/`suppressedKeySet`/`loadSuppressedKeys` (accept while active; defer
+  through `deferUntil` inclusive; **reject 14-day** + **not_relevant 90-day** cooldowns; completed
+  unchanged; materially-changed fingerprint un-suppresses; structured diagnostics), transactional-safe
+  supersession (deactivate → insert → link; partial-unique race guard), and a **read-only-by-default**
+  `runDailySelection` coordinator (collect → suppress → rank; writes only when `present: true`). Ranking
+  and collection stay pure/write-free. Verified by `scripts/verify-daily-slice3.ts` (**56/56**) + Slice 2
+  (73/73) + Slice 1 (81/81) + all regressions green, typecheck, build, secret scan; migration guard
+  updated to 0022. **No API, UI, AI, Home integration, notifications, or automated verification jobs were
+  added.** **Do not merge until reviewed. Do not begin Slice 4.** Recommended commit:
+  `feat(daily): add recommendation lifecycle persistence (DCC slice 3)`.
+- **Next candidate:** DCC **Slice 4** (read/respond APIs), per `docs/DAILY_COMMAND_CENTER_SPEC.md` §17.
+  **Not yet approved to build.**
+
+---
+
+**Recently completed:** DCC **Slice 1** and **Slice 2** are **reviewed and merged to `main`** (see below).
 
 ### Daily Command Center — Slice 2 (orchestration + deterministic ranking)
 

@@ -208,9 +208,21 @@ to fill a slot.
 > providers stay independently callable). `rankSignals` excludes stale/invalid/suppressed signals, dedupes
 > by key, scores from the documented registries below, and selects **at most one** risk / opportunity /
 > recommended move — `null` when nothing clears its threshold (weak items are never promoted to fill a
-> slot). Owner-response **lifecycle (§7)**, persistence (§8), APIs (§13), and UI/Home (§3/§12) remain
-> **unimplemented** — later, separately-approved slices. Optional in-memory `suppressedKeys` is accepted
-> for tests/future Slice 3, but no durable suppression exists yet.
+> slot). APIs (§13) and UI/Home (§3/§12) remain **unimplemented** — later, separately-approved slices.
+>
+> **Slice 3 status (implemented on branch `daily-command-center-slice3-review`, not merged):** recommendation
+> **lifecycle persistence** (§§5/7/8/9) is implemented in `lib/daily/lifecycle.ts` + `lib/daily/fingerprint.ts`
+> with migration `0022` (`daily_recommendations`), verified by `scripts/verify-daily-slice3.ts` (56/56). It
+> persists only the lifecycle of a recommended move: `presentRecommendation` (present/reuse/supersede),
+> `respondToRecommendation` + `correctResponse` + `reopenRecommendation` (owner responses), `getSuppression`
+> / `loadSuppressedKeys` (suppression + recurrence: accept while active; defer through `deferUntil` inclusive;
+> **reject 14-day** + **not_relevant 90-day** cooldowns; completed unchanged; a materially-changed
+> fingerprint un-suppresses/supersedes), and a read-only `runDailySelection` coordinator (writes only when
+> `present: true`). A stable sha256 `signalFingerprint` (material fields only; order-independent; excludes
+> timestamps/prose/randomness) distinguishes "same condition re-shown" from "materially changed". Owner-scoped;
+> supersession is atomic-safe (deactivate-then-insert-then-link) with the live-only partial unique index as
+> the race guard. **APIs (§13), UI/Home (§3/§12), AI (§11), notifications, and automated verification jobs
+> remain unimplemented.**
 >
 > **Slice 2 constants (approved registries + thresholds):**
 > - **Risk base weights:** projected_shortfall 40, payment_overdue 38, bill_overdue 36, cash_flow_conflict
@@ -397,7 +409,12 @@ recorded responses, not statistical models.
 
 ---
 
-## 8. Persistence design (proposed — no migration in this phase)
+## 8. Persistence design (IMPLEMENTED in Slice 3 — migration `0022`)
+
+> **Note (updated for Slice 3):** the design below was proposed during the documentation/design phases,
+> which created **no** migration. **Slice 3 is the approved persistence implementation phase** and adds
+> migration `0022_new_sprite.sql` (`daily_recommendations`). The earlier "no migration in this phase"
+> wording applied to the design phases only; it does not apply to Slice 3.
 
 Persist **only the recommendation lifecycle**, not the source facts (those stay in their domains and are
 recomputed). Prefer a **single minimal lifecycle table** plus an optional lightweight brief-log.
@@ -431,7 +448,8 @@ compare against `daily_recommendations` + domain `updatedAt` alone — decide du
    stored.
 
 **Recompute vs. store:** recompute signals and the brief; store only lifecycle state and (optionally) the
-per-day shown-keys log. **Do not generate a migration in this phase.**
+per-day shown-keys log. **(Slice 3 implemented the `daily_recommendations` lifecycle table via migration
+`0022`; `daily_brief_log` was intentionally NOT created — it belongs to later "What changed" work.)**
 
 ---
 
@@ -643,8 +661,10 @@ behavior must already be covered by that slice's own tests — testing must **no
      **stale-signal handling**, the **at-most-one / no-forced-item** behavior (including the empty/no-
      qualifying-candidate path), and **partial-failure isolation** (one provider throwing degrades only its
      part).
-3. **Lifecycle persistence** — the minimal `daily_recommendations` table (+ optional brief log) with a
-   dedicated migration at that time; live-only partial unique; foreign-owner rejection.
+3. **Lifecycle persistence** — the minimal `daily_recommendations` table with a dedicated migration;
+   live-only partial unique; foreign-owner rejection. **✅ IMPLEMENTED** (`lib/daily/lifecycle.ts`,
+   `lib/daily/fingerprint.ts`, migration `0022`; `scripts/verify-daily-slice3.ts` = 56/56) — on branch
+   `daily-command-center-slice3-review`, not merged. (`daily_brief_log` intentionally NOT created.)
    - **Tests in this slice:** **migration** applies additively; **lifecycle** transitions
      (present → accept/defer/reject/not_relevant/complete → outcome/verify); **uniqueness** (live-only
      partial unique; soft-deleted/superseded rows don't block re-creation); **owner isolation**

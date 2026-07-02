@@ -5,10 +5,26 @@
 > disagree, **`db/schema.ts` wins** and this file should be corrected. No real/personal
 > data appears here.
 >
-> **Daily Command Center — Slice 1 adds NO schema.** The `DailySignal` layer (`lib/daily/contract.ts` +
-> `lib/daily/providers.ts`) is a **read-only calculated view** over existing domain tables — it stores
-> nothing and creates no migration. The recommendation-lifecycle table (`daily_recommendations`) proposed
-> in `docs/DAILY_COMMAND_CENTER_SPEC.md` §8 is deferred to a later slice (Slice 3), not built here.
+> **Daily Command Center — Slices 1 & 2 add NO schema.** The `DailySignal` layer (`lib/daily/contract.ts`,
+> `lib/daily/providers.ts`) and the orchestration/ranking layer (`lib/daily/orchestrator.ts`,
+> `lib/daily/ranking.ts`) are **read-only calculated views** over existing domain tables — they store
+> nothing and create no migration.
+>
+> **Daily Command Center — Slice 3 (recommendation lifecycle persistence)** — additive migration
+> `0022_new_sprite.sql` adds **one** table, `daily_recommendations`, plus two enums
+> (`daily_recommendation_response` = pending|accept|defer|reject|not_relevant|complete;
+> `daily_recommendation_verification` = unverified|verified|could_not_verify). Columns: `userId` (FK,
+> cascade), `recommendationKey`, `domain`, `signalType`, `sourceRefs` (jsonb — **references only**),
+> `signalFingerprint` (sha256 of the material condition), `presentedOn`, `lastPresentedAt`,
+> `presentedCount`, `snapshot` (jsonb — **bounded presentation fields only**), `response`, `responseNote`,
+> `deferUntil`, `respondedAt`, `completedAt`, `outcomeNote`, `verificationState`, `supersededById`
+> (self-FK, audit link), `supersededAt` (deactivation marker), timestamps. **Live-only partial unique**
+> index on `(userId, recommendationKey) WHERE deleted_at IS NULL AND superseded_at IS NULL` → at most one
+> active lifecycle row per owner/key; soft-deleted or superseded rows never block a new active row.
+> It persists **only the lifecycle** of a recommended move — **no** calculated `DailySignal[]`, ranked
+> arrays, source-domain facts, balances, transactions, credit records, or generated briefs; `sourceRefs`
+> and `snapshot` never hold raw payloads, tokens, or secrets. See `docs/DAILY_COMMAND_CENTER_SPEC.md`
+> §§5/7/8.
 
 ## Conventions (applied across all domain tables)
 
