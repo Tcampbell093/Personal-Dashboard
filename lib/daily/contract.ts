@@ -105,6 +105,17 @@ export interface DailySignalProvider {
 /* ---------------------------------------------------- helpers ------------- */
 export const DEFAULT_FRESHNESS_DAYS = 1;
 export const isISODate = (s: unknown): s is string => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
+/** STRICT calendar-date validator: exactly YYYY-MM-DD AND a REAL calendar date.
+ * Unlike `isISODate`, this never relies on `Date.parse`'s lenient rollover, so it
+ * rejects impossible dates (2026-02-29, 2026-04-31, month 00/13, day 00) by parsing
+ * the numeric parts, constructing a UTC date, and confirming the round-trip matches. */
+export const isStrictISODate = (s: unknown): s is string => {
+  if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const [y, m, d] = s.split("-").map(Number);
+  if (m < 1 || m > 12 || d < 1 || d > 31) return false;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+};
 export const isoAddDays = (iso: string, d: number) => new Date(Date.parse(iso) + d * 86400000).toISOString().slice(0, 10);
 export const dayDiff = (a: string, b: string) => Math.round((Date.parse(a) - Date.parse(b)) / 86400000);
 

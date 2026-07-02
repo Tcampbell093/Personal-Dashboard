@@ -561,16 +561,27 @@ Existing Home functionality is preserved; the DCC is an orchestration layer on t
 >   performs **no lifecycle writes**: presentation is a distinct, deliberate act (below), not a side effect
 >   of viewing the brief — a page load, a prefetch, or a bot hitting the URL must not create or bump a
 >   recommendation row. Returns the bounded `DailyBriefView` (§below).
+>   GET also uses **one** fingerprint-aware suppression result (`suppressedKeySet(run.suppression)`) for
+>   both ranking and Today — never a second fingerprint-less lookup — and attaches lifecycle to the selected
+>   move **only when the stored `signalFingerprint` matches the current signal's fingerprint** (a
+>   prior-condition accept/complete/reject is shown as `null`, never as the new move's state).
 > - **`POST /api/daily/recommendations/[key]/present`** — the **explicit presentation-recording** endpoint.
 >   The server recomputes the current selection and accepts the key **only if it is exactly the
 >   currently-selected recommended-move key**; arbitrary, stale, suppressed, below-threshold, or
 >   no-longer-current keys are rejected (409), so the browser cannot invent a key and persist it. Reuses the
->   active row and increments `presentedCount` **exactly once** per accepted request (idempotent).
+>   active row and increments `presentedCount` **exactly once** per accepted request (idempotent). This is
+>   also the point at which a materially-changed move supersedes its stale row and returns a fresh pending
+>   lifecycle.
 > - **`POST …/[key]/respond`** — body `{response, note?, deferUntil?}`; `pending` explicitly **reopens** the
->   active row; `defer` requires a **future** `deferUntil` in `America/New_York`.
+>   active row; `defer` requires a **future** `deferUntil` in `America/New_York`. `deferUntil` is validated
+>   with a **strict calendar check** (`isStrictISODate` — rejects impossible dates like `2026-02-29` that
+>   lenient `Date.parse` would roll over), is required for `defer`, and is rejected with a non-`defer` response.
 > - **`POST …/[key]/outcome`** — body `{outcomeNote?, verificationState?}`; requires the recommendation to be
 >   `complete` (else 409); an empty request is rejected (400); verification is a recorded owner/system
 >   assertion only — **no automated verification**.
+> - **Media type:** the body-bearing mutations (`respond`, `outcome`) require a JSON content type
+>   (`application/json`, optional charset); a missing or non-JSON `Content-Type` is rejected with **415**.
+>   The `present` route has no body and does not require this check.
 >
 > **Public `DailyBriefView` shape (`lib/daily/view.ts`) — bounded; never leaks internals:**
 > `{date, generatedAt, today{items,empty}, whatChanged{items,state,message}, risk, opportunity,

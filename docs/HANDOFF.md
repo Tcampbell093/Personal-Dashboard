@@ -471,11 +471,28 @@ specific build. Builds are ordered so the manual loop works end-to-end before an
 
 ### Daily Command Center — Slice 4 (secure read/present/respond/outcome APIs) — implemented, awaiting review — 2026-07-02
 
-**Task implemented on the `daily-command-center-slice4-review` branch (branched from `main` at
-`9f0faec…`). NOT merged. NOT deployed.** Slice 4 exposes the existing, already-merged DCC engine
-(Slices 1–3) through **secure, owner-scoped server APIs** and a **bounded public view-model**. No UI, Home
-integration, AI, notifications, background jobs, external calls, migrations, or consequential actions were
-added.
+**Task implemented on the `daily-command-center-slice4-review` branch (merge base `main` @
+`9f5f7ef616b9ca9b74eed9d88e97c7a4a9d345b2` — the "docs(daily): mark DCC Slice 3 reviewed and merged to
+main" commit; note `9f0faec` was the Slice 3 *fix* commit, an ancestor, not this branch's base). NOT
+merged. NOT deployed.** Slice 4 exposes the existing, already-merged DCC engine (Slices 1–3) through
+**secure, owner-scoped server APIs** and a **bounded public view-model**. No UI, Home integration, AI,
+notifications, background jobs, external calls, migrations, or consequential actions were added.
+
+**Review fixes (landed on this branch before re-review):** (1) **one fingerprint-aware suppression result
+in GET** — `GET /api/daily` now derives Today's suppression from `suppressedKeySet(run.suppression)` (the
+fingerprint-aware set already computed by `runDailySelection`), removing the second fingerprint-less
+`loadSuppressedKeys(userId, ctx.today)` query and its import; ranking and Today can no longer disagree, and a
+materially-changed accepted/rejected/completed key is not falsely re-suppressed. (2) **no stale lifecycle on
+a materially-changed move** — GET attaches the active lifecycle row to the selected move only when
+`row.signalFingerprint === fingerprintOfSignal(currentSignal)`; otherwise it passes `null` (a prior-condition
+accept/complete/reject is never surfaced as the new move's state) until an explicit `present` supersedes the
+row. Still write-free. (3) **JSON-only mutations + strict calendar dates** — `respond`/`outcome` require a
+JSON media type (`application/json`, optional charset) via `requireJsonContentType`, rejecting missing/non-
+JSON with **415**; `deferUntil` is validated with a new strict `isStrictISODate` (rejects impossible dates
+such as `2026-02-29`/`2026-04-31`/month 00-13/day 00 that lenient `Date.parse` accepts), is required for
+`defer`, and is rejected with a non-`defer` response; future comparison stays in `America/New_York`.
+Regression coverage added ([F1]–[F7] fingerprint suppression/lifecycle gating + write-free; [40a]–[40h]
+content-type/strict-date/defer-semantics; [54a] outcome content-type); harness **82/82**.
 
 - **Endpoints (all `export const dynamic = "force-dynamic"`, all `no-store`):**
   - **`GET /api/daily`** — owner-scoped, **READ-ONLY**. Collects signals (failure-isolated), loads lifecycle

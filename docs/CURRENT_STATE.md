@@ -22,20 +22,25 @@
 > lifecycle writes; returns the bounded `DailyBriefView`), **`POST …/[key]/present`** (records presentation
 > only for the **currently-selected** recommended-move key; arbitrary/stale/suppressed keys → 409;
 > `presentedCount` increments once, idempotent), **`POST …/[key]/respond`** (`{response, note?, deferUntil?}`;
-> `pending` reopens; `defer` requires a future `America/New_York` date), **`POST …/[key]/outcome`**
-> (`{outcomeNote?, verificationState?}`; requires `complete`; empty rejected; **no automated verification**).
-> Owner is server-derived (`CURRENT_USER_ID`); request bodies are strict (client-supplied `userId`/ids/
-> timestamps/fingerprints/scores rejected); cross-owner keys → 404 (no existence leak). `lib/daily/view.ts`
-> `DailyBriefView` = `{date, generatedAt, today{items,empty}, whatChanged, risk, opportunity,
-> recommendedMove, degraded[], lifecycle}` — never exposes raw signals/ranked arrays/DB rows/SQL/stack/
-> provider errors; `capacity` is `ok|tight|unknown` (`unknown` when cash unavailable); `personalRelevance`
-> always `null`. **Today** = max 3 concrete dated tasks/obligations/bills (overdue→today→soon), empty when
-> nothing qualifies. **`whatChanged`** is a **truthful** `not_available` capability boundary (no
-> `daily_brief_log`/change detection this slice). One provider failure yields HTTP 200 + sanitized
-> `degraded[]`. Idempotency lives in the lifecycle service. `scripts/verify-daily-slice4.ts` = **66/66**
-> (route handlers + view-model + service); Slice 3 62/62; Slice 2 73/73; Slice 1 81/81; all regressions
-> green; typecheck + build clean; **migration guard unchanged at 0023**. See
-> `docs/DAILY_COMMAND_CENTER_SPEC.md` §§10–13/§17.
+> `pending` reopens; `defer` requires a future `America/New_York` date validated by a **strict calendar
+> check** (`isStrictISODate` rejects impossible dates like `2026-02-29`; required for `defer`, rejected with
+> a non-`defer` response)), **`POST …/[key]/outcome`** (`{outcomeNote?, verificationState?}`; requires
+> `complete`; empty rejected; **no automated verification**). Body-bearing mutations (`respond`/`outcome`)
+> require a JSON media type (missing/non-JSON → **415**). Owner is server-derived (`CURRENT_USER_ID`);
+> request bodies are strict (client-supplied `userId`/ids/timestamps/fingerprints/scores rejected);
+> cross-owner keys → 404 (no existence leak). GET uses **one fingerprint-aware suppression result**
+> (`run.suppression`) for both ranking and Today, and attaches lifecycle to the selected move **only when the
+> stored fingerprint matches the current signal** (a prior-condition accept/complete/reject is never surfaced
+> as the new move's state). `lib/daily/view.ts` `DailyBriefView` = `{date, generatedAt, today{items,empty},
+> whatChanged, risk, opportunity, recommendedMove, degraded[], lifecycle}` — never exposes raw signals/ranked
+> arrays/DB rows/SQL/stack/provider errors; `capacity` is `ok|tight|unknown` (`unknown` when cash
+> unavailable); `personalRelevance` always `null`. **Today** = max 3 concrete dated tasks/obligations/bills
+> (overdue→today→soon), empty when nothing qualifies. **`whatChanged`** is a **truthful** `not_available`
+> capability boundary (no `daily_brief_log`/change detection this slice). One provider failure yields HTTP
+> 200 + sanitized `degraded[]`. Idempotency lives in the lifecycle service. `scripts/verify-daily-slice4.ts`
+> = **82/82** (route handlers + view-model + service); Slice 3 62/62; Slice 2 73/73; Slice 1 81/81; all
+> regressions green; typecheck + build clean; **migration guard unchanged at 0023**. Branch merge base is
+> `main` @ `9f5f7ef`. See `docs/DAILY_COMMAND_CENTER_SPEC.md` §§10–13/§17.
 
 > **Daily Command Center — Slice 3 (recommendation lifecycle persistence) — reviewed and merged to `main`
 > (commit `9f0faec`; review branch deleted).** Migration `0022_new_sprite.sql` adds one

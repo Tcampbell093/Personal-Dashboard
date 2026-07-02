@@ -13,7 +13,8 @@ import { db } from "@/db";
 import { dailyRecommendations, tasks, users, financialConnections, financialAccounts, providerAccounts, importedTransactions, experienceRequests } from "@/db/schema";
 import { CURRENT_USER_ID as U } from "@/lib/auth";
 import { localToday } from "@/lib/time";
-import type { DailySignal, SignalContext } from "@/lib/daily/contract";
+import { isStrictISODate, type DailySignal, type SignalContext } from "@/lib/daily/contract";
+import { fingerprintOfSignal } from "@/lib/daily/fingerprint";
 import { rankSignals, type RankingContext } from "@/lib/daily/ranking";
 import type { CollectedSignals } from "@/lib/daily/orchestrator";
 import * as L from "@/lib/daily/lifecycle";
@@ -32,6 +33,8 @@ const CTX: SignalContext = { today: NOW, timezone: "America/New_York", now: `${N
 const params = (key: string) => ({ params: Promise.resolve({ key: encodeURIComponent(key) }) });
 const rawParams = (rawKey: string) => ({ params: Promise.resolve({ key: rawKey }) });
 const jReq = (body: unknown) => new Request("http://t/", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+const jReqCT = (body: unknown, ct: string) => new Request("http://t/", { method: "POST", headers: { "content-type": ct }, body: JSON.stringify(body) });
+const noCtReq = (body: unknown) => new Request("http://t/", { method: "POST", body: JSON.stringify(body) }); // no Content-Type header
 const rawReq = (raw: string) => new Request("http://t/", { method: "POST", headers: { "content-type": "application/json" }, body: raw });
 async function threw(fn: () => Promise<unknown>): Promise<boolean> { try { await fn(); return false; } catch (e) { return e instanceof L.LifecycleError; } }
 
@@ -144,6 +147,15 @@ async function main() {
   ok("[38] defer with past date rejected (400)", (await respondPOST(jReq({ response: "defer", deferUntil: ago(2) }), params(key3))).status === 400);
   ok("[39] oversized note rejected (400)", (await respondPOST(jReq({ response: "accept", note: "x".repeat(600) }), params(key3))).status === 400);
   ok("[40] respond on missing/cross-owner key returns not found (404)", (await respondPOST(jReq({ response: "accept" }), params("tasks:task_overdue:does-not-exist"))).status === 404);
+  // Issue #3 — JSON-only content type + strict calendar dates + defer-field semantics (route level)
+  ok("[40a] missing Content-Type rejected (415)", (await respondPOST(noCtReq({ response: "accept" }), params(key3))).status === 415);
+  ok("[40b] non-JSON Content-Type rejected (415)", (await respondPOST(jReqCT({ response: "accept" }, "text/plain"), params(key3))).status === 415);
+  ok("[40c] application/json; charset=utf-8 accepted (200)", (await respondPOST(jReqCT({ response: "accept" }, "application/json; charset=utf-8"), params(key3))).status === 200);
+  ok("[40d] impossible calendar date (2026-02-29) rejected (400)", (await respondPOST(jReq({ response: "defer", deferUntil: "2026-02-29" }), params(key3))).status === 400 && (await respondPOST(jReq({ response: "defer", deferUntil: "2026-04-31" }), params(key3))).status === 400 && (await respondPOST(jReq({ response: "defer", deferUntil: "2026-13-01" }), params(key3))).status === 400 && (await respondPOST(jReq({ response: "defer", deferUntil: "2026-00-10" }), params(key3))).status === 400);
+  ok("[40e] valid leap-year date (2028-02-29) accepted for a future defer (200)", (await respondPOST(jReq({ response: "defer", deferUntil: "2028-02-29" }), params(key3))).status === 200);
+  ok("[40f] deferUntil supplied with a non-defer response rejected (400)", (await respondPOST(jReq({ response: "accept", deferUntil: ahead(5) }), params(key3))).status === 400 && (await respondPOST(jReq({ response: "reject", deferUntil: ahead(5) }), params(key3))).status === 400 && (await respondPOST(jReq({ response: "complete", deferUntil: ahead(5) }), params(key3))).status === 400 && (await respondPOST(jReq({ response: "pending", deferUntil: ahead(5) }), params(key3))).status === 400);
+  ok("[40g] valid future defer accepted (200)", (await respondPOST(jReq({ response: "defer", deferUntil: "2030-06-15" }), params(key3))).status === 200);
+  ok("[40h] isStrictISODate rejects rollover dates the lenient parser accepts", !isStrictISODate("2026-02-29") && !isStrictISODate("2026-04-31") && !isStrictISODate("2026-13-01") && !isStrictISODate("2026-01-00") && isStrictISODate("2028-02-29") && isStrictISODate("2026-07-01"));
   // service-level idempotency + timestamps (injected now/today for determinism)
   await resetLifecycleU();
   const isig = mkSig({ domain: "credit", signalType: "credit_action", class: "recommendation", key: "z4:idem", candidateAction: "do" });
@@ -182,6 +194,7 @@ async function main() {
   const oIdem1 = (await bodyOf(await outcomePOST(jReq({ verificationState: "verified" }), params("z4:out")))).lifecycle as { verificationState: string };
   const oIdem2 = (await bodyOf(await outcomePOST(jReq({ verificationState: "verified" }), params("z4:out")))).lifecycle as { verificationState: string };
   ok("[54] identical outcome retry is idempotent", oIdem1.verificationState === "verified" && oIdem2.verificationState === "verified");
+  ok("[54a] outcome route enforces JSON content type (missing → 415, text/plain → 415, charset ok → 200)", (await outcomePOST(noCtReq({ verificationState: "verified" }), params("z4:out"))).status === 415 && (await outcomePOST(jReqCT({ verificationState: "verified" }, "text/plain"), params("z4:out"))).status === 415 && (await outcomePOST(jReqCT({ verificationState: "verified" }, "application/json; charset=utf-8"), params("z4:out"))).status === 200);
   await resetLifecycleU();
 
   /* ===================== cross-owner isolation [55-57] ===================== */
@@ -193,6 +206,47 @@ async function main() {
   ok("[55] another owner's key returns not-found via respond (no existence leak)", (await respondPOST(jReq({ response: "accept" }), params("z4:cross"))).status === 404);
   ok("[56] another owner's key returns not-found via outcome", (await outcomePOST(jReq({ verificationState: "verified" }), params("z4:cross"))).status === 404);
   ok("[57] the other owner's row is untouched by owner-scoped calls", (await L.getActiveRecommendation(other.id, "z4:cross"))!.response === "complete");
+
+  /* ============ fingerprint-aware suppression + stale-lifecycle gating in GET [F1-F7] ============ */
+  console.log("\n[fingerprint-aware GET]");
+  await resetLifecycleU();
+  const fMoveKey = (await bodyOf(await dailyGET()) as unknown as typeof gv).recommendedMove!.key;
+  // F1 — a fresh present writes a pending row whose fingerprint matches the live signal → GET exposes it.
+  await presentPOST(new Request("http://t/", { method: "POST" }), params(fMoveKey));
+  const gExpose = await bodyOf(await dailyGET()) as unknown as typeof gv;
+  ok("[F1] matching-fingerprint lifecycle is exposed on the selected move (pending)", gExpose.recommendedMove?.key === fMoveKey && gExpose.recommendedMove?.lifecycle?.response === "pending" && gExpose.lifecycle.activeRecommendation?.response === "pending");
+  // F2/F3 — owner accepts; the stored row is then forced to represent a PRIOR material condition
+  // (fingerprint no longer matches). The changed condition un-suppresses the key (still selectable),
+  // but its stale accept must NOT surface as the new move's lifecycle.
+  await respondPOST(jReq({ response: "accept" }), params(fMoveKey));
+  await db.update(dailyRecommendations).set({ signalFingerprint: "stale-fp-prior-condition" }).where(and(eq(dailyRecommendations.userId, U), eq(dailyRecommendations.recommendationKey, fMoveKey), isNull(dailyRecommendations.supersededAt), isNull(dailyRecommendations.deletedAt)));
+  const gStale = await bodyOf(await dailyGET()) as unknown as typeof gv;
+  ok("[F2] a materially-changed accepted key is NOT suppressed in ranking/Today (fingerprint-aware run.suppression)", gStale.recommendedMove?.key === fMoveKey);
+  ok("[F3] stale-fingerprint lifecycle (old accept) is NOT exposed as the new move's state", gStale.recommendedMove?.lifecycle === null && gStale.lifecycle.activeRecommendation === null);
+  // F4 — explicit presentation supersedes the stale row → GET exposes a fresh pending lifecycle.
+  const beforePresent = (await db.select().from(dailyRecommendations).where(and(eq(dailyRecommendations.userId, U), isNull(dailyRecommendations.supersededAt), isNull(dailyRecommendations.deletedAt)))).length;
+  await presentPOST(new Request("http://t/", { method: "POST" }), params(fMoveKey));
+  const gAfter = await bodyOf(await dailyGET()) as unknown as typeof gv;
+  ok("[F4] explicit presentation supersedes the stale row → GET exposes the new pending lifecycle", beforePresent === 1 && gAfter.recommendedMove?.lifecycle?.response === "pending");
+  // F5 — GET is write-free.
+  const cntA = (await db.select().from(dailyRecommendations).where(eq(dailyRecommendations.userId, U))).length;
+  await dailyGET(); await dailyGET();
+  const cntB = (await db.select().from(dailyRecommendations).where(eq(dailyRecommendations.userId, U))).length;
+  ok("[F5] GET remains write-free (row count unchanged across reads)", cntA === cntB && cntA > 0);
+  // F6 — service proof: fingerprint-aware suppression un-suppresses a changed accepted key; a
+  // fingerprint-less lookup (the removed second query) would conservatively re-suppress it.
+  await resetLifecycleU();
+  const fsig = mkSig({ domain: "tasks", signalType: "task_overdue", key: "z4:fp", effectiveDate: ago(2), staleDate: ahead(3) });
+  await L.presentRecommendation(U, fsig, L.buildSnapshot(fsig, "r"), CTX, { now: NOWD });
+  await L.respondToRecommendation(U, "z4:fp", "accept", { now: NOWD, today: NOW });
+  const changed: DailySignal = { ...fsig, urgency: "high" }; // materially changed (urgency is a fingerprint field), same key
+  const awareSet = L.suppressedKeySet(await L.getSuppression(U, NOW, new Map([["z4:fp", fingerprintOfSignal(changed)]])));
+  const blindSet = L.suppressedKeySet(await L.getSuppression(U, NOW)); // fingerprint-less (conservative)
+  ok("[F6] fingerprint-aware suppression excludes a changed key; fingerprint-less would re-suppress it", fingerprintOfSignal(changed) !== fingerprintOfSignal(fsig) && !awareSet.has("z4:fp") && blindSet.has("z4:fp"));
+  // F7 — GET wires ONE suppression interpretation (run.suppression) + fingerprint-gated lifecycle.
+  const getSrc = readFileSync("app/api/daily/route.ts", "utf8");
+  ok("[F7] GET uses run.suppression only (no fingerprint-less loadSuppressedKeys) + gates lifecycle by fingerprint", /run\.suppression/.test(getSrc) && !/loadSuppressedKeys/.test(getSrc) && /signalFingerprint === fingerprintOfSignal/.test(getSrc));
+  await resetLifecycleU();
 
   /* ===================== purity / boundaries [58-62] ===================== */
   console.log("\n[purity / boundaries]");

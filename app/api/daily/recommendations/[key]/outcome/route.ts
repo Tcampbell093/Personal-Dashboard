@@ -7,13 +7,14 @@
 
 import { recordRecommendationOutcome, LifecycleError, type VerificationValue } from "@/lib/daily/lifecycle";
 import { toPublicLifecycle } from "@/lib/daily/view";
-import { ownerContext, decodeKey, readJsonBody, rejectUnknownFields, optBoundedString, noStore, errorResponse, VERIFICATION_VALUES, OUTCOME_NOTE_MAX } from "@/lib/daily/api-helpers";
+import { ownerContext, decodeKey, requireJsonContentType, readJsonBody, rejectUnknownFields, optBoundedString, noStore, errorResponse, VERIFICATION_VALUES, OUTCOME_NOTE_MAX } from "@/lib/daily/api-helpers";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ key: string }> };
 
 export async function POST(request: Request, { params }: Ctx) {
   try {
+    requireJsonContentType(request);
     const key = decodeKey((await params).key);
     const body = await readJsonBody(request);
     rejectUnknownFields(body, ["outcomeNote", "verificationState"]);

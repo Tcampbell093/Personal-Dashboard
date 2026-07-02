@@ -44,6 +44,14 @@ export function decodeKey(raw: string): string {
   return key;
 }
 
+/** Require a JSON request media type on body-bearing mutations. Accepts `application/json`
+ * with an optional charset suffix (e.g. `application/json; charset=utf-8`); a missing or
+ * non-JSON Content-Type is rejected with 415 (Unsupported Media Type). */
+export function requireJsonContentType(request: Request): void {
+  const ct = (request.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+  if (ct !== "application/json") throw new LifecycleError(415, "Content-Type must be application/json.");
+}
+
 /** Parse a mutation body as JSON; malformed JSON is a validation error, not a crash. */
 export async function readJsonBody(request: Request): Promise<Record<string, unknown>> {
   const raw = await request.text();
